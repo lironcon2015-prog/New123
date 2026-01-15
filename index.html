@@ -22,9 +22,7 @@
 
         <main class="content-area">
             <div id="ui-week" class="screen active">
-                <div class="hero-section">
-                    <h1>ברוך הבא,<span>מוכן לשבור שיא?</span></h1>
-                </div>
+                <div class="hero-section"><h1>ברוך הבא,<span>מוכן לשבור שיא?</span></h1></div>
                 <button onclick="initAudio()" id="audio-init-btn" class="action-card primary-gradient">
                     <div class="card-icon">⚡</div>
                     <div class="card-text">לחץ להפעלת מנוע סאונד</div>
@@ -58,7 +56,7 @@
                     <button class="menu-card" onclick="showExerciseList('חזה')">חזה</button>
                     <button class="menu-card" onclick="showExerciseList('גב')">גב</button>
                 </div>
-                <button id="btn-finish-extra" class="btn-text" style="display:none" onclick="finishExtraPhase()">סיום והמשך לידיים ➔</button>
+                <button id="btn-finish-extra" class="btn-text secondary-btn" style="display:none; margin-top:20px;" onclick="finishExtraPhase()">סיום והמשך לידיים ➔</button>
             </div>
 
             <div id="ui-variation" class="screen">
@@ -69,8 +67,7 @@
 
             <div id="ui-main" class="screen">
                 <div class="exercise-header">
-                    <div class="badge-row">
-                        <span id="set-counter" class="ios-badge">SET 1/3</span>
+                    <div class="badge-stack"> <span id="set-counter" class="ios-badge">SET 1/3</span>
                         <div id="unilateral-note" class="uni-badge">UNILATERAL</div>
                     </div>
                     <h2 id="ex-display-name"></h2>
@@ -92,6 +89,18 @@
                 </div>
             </div>
 
+            <div id="ui-1rm" class="screen">
+                <div class="hero-section"><h2 id="rm-title" style="font-size: 1.8em;"></h2></div>
+                <div class="rm-selector-card">
+                    <div class="rm-label">משקל מקסימלי (RM)</div>
+                    <div class="rm-input-wrapper">
+                        <span>kg</span>
+                        <select id="rm-picker" class="rm-select-input"></select>
+                    </div>
+                </div>
+                <button class="btn-main primary-gradient" style="margin-top: 30px;" onclick="save1RM()">צור אימון</button>
+            </div>
+
             <div id="ui-extra" class="screen flex-center">
                 <div class="glass-card bonus-card">
                     <h3>התרגיל הושלם!</h3>
@@ -100,6 +109,15 @@
                         <button class="btn-main secondary" onclick="interruptWorkout()">➕ הוסף תרגיל ביניים</button>
                         <button class="btn-main primary-gradient" onclick="handleExtra(false)">המשך</button>
                     </div>
+                </div>
+            </div>
+
+            <div id="ui-confirm" class="screen flex-center">
+                <div class="confirm-box">
+                    <p style="color:var(--text-dim)">התרגיל הבא במערכת:</p>
+                    <h2 id="confirm-ex-name" style="font-size:2em; margin: 15px 0;"></h2>
+                    <button class="btn-main primary-gradient" onclick="confirmExercise(true)">התחל תרגיל</button>
+                    <button class="btn-text" onclick="confirmExercise(false)">דלג על התרגיל</button>
                 </div>
             </div>
 
@@ -129,23 +147,6 @@
                 <div class="hero-section"><h2>סיכום אימון</h2></div>
                 <div id="summary-area" class="summary-card"></div>
                 <button class="btn-main primary-gradient" onclick="copyResult()">העתק וסגור</button>
-            </div>
-
-            <div id="ui-1rm" class="screen flex-center">
-                <div class="glass-card confirm-box">
-                    <h2 id="rm-title" style="margin-bottom:20px;"></h2>
-                    <select id="rm-picker" class="ios-picker" style="font-size:3em; margin-bottom:30px;"></select>
-                    <button class="btn-main primary-gradient" onclick="save1RM()">המשך לאימון</button>
-                </div>
-            </div>
-
-            <div id="ui-confirm" class="screen flex-center">
-                <div class="confirm-box">
-                    <p style="color:var(--text-dim)">התרגיל הבא במערכת:</p>
-                    <h2 id="confirm-ex-name" style="font-size:2em; margin: 15px 0;"></h2>
-                    <button class="btn-main primary-gradient" onclick="confirmExercise(true)">התחל תרגיל</button>
-                    <button class="btn-text" onclick="confirmExercise(false)">דלג על התרגיל</button>
-                </div>
             </div>
         </main>
     </div>
