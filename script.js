@@ -1,5 +1,5 @@
 /**
- * GYMPRO ELITE V10.9 - DESIGN & LOGIC SYNC
+ * GYMPRO ELITE V10.9 - FINAL
  */
 
 let state = {
@@ -19,7 +19,6 @@ let wakeLock = null;
 
 const unilateralExercises = ["Dumbbell Peck Fly", "Lateral Raises", "Single Leg Curl", "Dumbbell Bicep Curls", "Cable Fly", "Concentration Curls"];
 
-// --- DATABASE (Same as original) ---
 const exerciseDatabase = [
     { name: "Overhead Press (Main)", muscles: ["כתפיים"], isCalc: true, baseRM: 77.5, rmRange: [65, 90], manualRange: {base: 50, min: 40, max: 80, step: 2.5} },
     { name: "Lateral Raises", muscles: ["כתפיים"], sets: [{w: 12.5, r: 13}, {w: 12.5, r: 13}, {w: 12.5, r: 11}], step: 0.5 },
@@ -36,64 +35,42 @@ const exerciseDatabase = [
     { name: "Deadlift", muscles: ["רגליים"], sets: [{w: 100, r: 5}, {w: 100, r: 5}, {w: 100, r: 5}], step: 2.5, minW: 60, maxW: 180 },
     { name: "Romanian Deadlift", muscles: ["רגליים"], sets: [{w: 100, r: 8}, {w: 100, r: 8}, {w: 100, r: 8}], step: 2.5, minW: 60, maxW: 180 },
     { name: "Single Leg Curl", muscles: ["רגליים"], sets: [{w: 25, r: 8}, {w: 30, r: 6}, {w: 25, r: 8}], step: 2.5 },
-    { name: "Lying Leg Curl (Double)", muscles: ["רגליים"], sets: [{w: 50, r: 8}, {w: 60, r: 6}, {w: 50, r: 8}], step: 5 },
-    { name: "Seated Calf Raise", muscles: ["רגליים"], sets: [{w: 70, r: 10}, {w: 70, r: 10}, {w: 70, r: 12}], step: 5 },
-    { name: "Standing Calf Raise", muscles: ["רגליים"], sets: [{w: 110, r: 10}, {w: 110, r: 10}, {w: 110, r: 12}], step: 10 },
     { name: "Lat Pulldown", muscles: ["גב"], sets: [{w: 75, r: 10}, {w: 75, r: 10}, {w: 75, r: 11}], step: 2.5 },
-    { name: "Pull Ups", muscles: ["גב"], isBW: true, sets: [{w: 0, r: 8}, {w: 0, r: 8}, {w: 0, r: 8}] },
-    { name: "Cable Row", muscles: ["גב"], sets: [{w: 65, r: 10}, {w: 65, r: 10}, {w: 65, r: 12}], step: 2.5 },
-    { name: "Machine Row", muscles: ["גב"], sets: [{w: 50, r: 10}, {w: 50, r: 10}, {w: 50, r: 12}], step: 5 },
-    { name: "Straight Arm Pulldown", muscles: ["גב"], sets: [{w: 30, r: 10}, {w: 30, r: 12}, {w: 30, r: 12}], step: 2.5 },
-    { name: "Back Extension", muscles: ["גב"], sets: [{w: 0, r: 12}, {w: 0, r: 12}, {w: 0, r: 12}], step: 5, minW: 0, maxW: 50, isBW: true }
+    { name: "Cable Row", muscles: ["גב"], sets: [{w: 65, r: 10}, {w: 65, r: 10}, {w: 65, r: 12}], step: 2.5 }
 ];
 
 const armExercises = {
-    biceps: [
-        { name: "Dumbbell Bicep Curls", sets: [{w: 12, r: 8}], step: 0.5 },
-        { name: "Barbell Bicep Curls", sets: [{w: 25, r: 8}], step: 1 },
-        { name: "Concentration Curls", sets: [{w: 10, r: 10}], step: 0.5 }
-    ],
-    triceps: [
-        { name: "Triceps Pushdown", sets: [{w: 35, r: 8}], step: 2.5 },
-        { name: "Lying Triceps Extension", sets: [{w: 25, r: 8}], step: 2.5 }
-    ]
+    biceps: [{ name: "Dumbbell Bicep Curls", sets: [{w: 12, r: 8}], step: 0.5 }, { name: "Concentration Curls", sets: [{w: 10, r: 10}], step: 0.5 }],
+    triceps: [{ name: "Triceps Pushdown", sets: [{w: 35, r: 8}], step: 2.5 }, { name: "Lying Triceps Extension", sets: [{w: 25, r: 8}], step: 2.5 }]
 };
 
 const workouts = {
     'A': ["Overhead Press (Main)", "Barbell Shrugs", "Lateral Raises", "Weighted Pull Ups", "Face Pulls", "Incline Bench Press"],
-    'B': ["Leg Press", "Single Leg Curl", "Lat Pulldown", "Cable Row", "Seated Calf Raise", "Straight Arm Pulldown"],
-    'C': ["Bench Press (Main)", "Incline Bench Press", "Dumbbell Peck Fly", "Lateral Raises", "Face Pulls"]
+    'B': ["Leg Press", "Single Leg Curl", "Lat Pulldown", "Cable Row"],
+    'C': ["Bench Press (Main)", "Incline Bench Press", "Dumbbell Peck Fly", "Lateral Raises"]
 };
 
 const workoutNames = { 'A': "אימון A", 'B': "אימון B", 'C': "אימון C", 'Freestyle': "Freestyle" };
 
-// --- UTILS ---
-function haptic(type = 'light') {
-    if (!("vibrate" in navigator)) return;
-    const p = { light: 20, medium: 40, success: [50, 50, 50], warning: [30, 30] };
-    try { navigator.vibrate(p[type] || 20); } catch(e) {}
-}
+// --- CORE ---
+function haptic(type = 'light') { if (navigator.vibrate) { const p = { light: 20, medium: 40, success: [50, 50, 50], warning: [30, 30] }; navigator.vibrate(p[type] || 20); } }
 
 function playBeep(times = 1) {
     if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioContext.state === 'suspended') audioContext.resume();
     for (let i = 0; i < times; i++) {
         setTimeout(() => {
             const o = audioContext.createOscillator(), g = audioContext.createGain();
             o.type = 'sine'; o.frequency.setValueAtTime(880, audioContext.currentTime);
-            g.gain.setValueAtTime(0.3, audioContext.currentTime);
-            g.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
-            o.connect(g); g.connect(audioContext.destination);
-            o.start(); o.stop(audioContext.currentTime + 0.4);
+            g.gain.setValueAtTime(0.3, audioContext.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+            o.connect(g); g.connect(audioContext.destination); o.start(); o.stop(audioContext.currentTime + 0.4);
         }, i * 500);
     }
 }
 
 async function initAudio() {
     haptic('medium'); playBeep(1);
-    const btn = document.getElementById('audio-init-btn');
+    const btn = document.getElementById('audio-init-btn'); btn.style.background = "var(--success-gradient)";
     btn.innerHTML = `<div class="card-icon">✅</div><div class="card-text">מצב אימון פעיל</div>`;
-    btn.style.background = "var(--success-gradient)";
     try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
 }
 
@@ -109,41 +86,33 @@ function navigate(id) {
 function handleBackClick() {
     haptic('warning');
     if (state.historyStack.length <= 1) return;
-
     const currentScreen = state.historyStack[state.historyStack.length - 1];
-
-    // תיקון בעיה 1: חזרה ממסך בונוס
     if (currentScreen === 'ui-extra') {
-        state.historyStack.pop(); 
-        state.log.pop();
+        state.historyStack.pop(); state.log.pop();
         state.lastLoggedSet = state.log.length > 0 ? state.log[state.log.length - 1] : null;
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById('ui-main').classList.add('active');
-        initPickers(); // מפעיל טיימר מחדש
-        return; 
+        initPickers(); return; 
     }
-
     state.historyStack.pop();
-    const prevScreen = state.historyStack[state.historyStack.length - 1];
+    const prev = state.historyStack[state.historyStack.length - 1];
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(prevScreen).classList.add('active');
-    document.getElementById('global-back').style.visibility = (prevScreen === 'ui-week') ? 'hidden' : 'visible';
+    document.getElementById(prev).classList.add('active');
+    document.getElementById('global-back').style.visibility = (prev === 'ui-week') ? 'hidden' : 'visible';
 }
 
 // --- FLOW ---
 function selectWeek(w) { state.week = w; navigate('ui-workout-type'); }
 
 function selectWorkout(t) {
-    state.type = t; state.exIdx = 0; state.log = [];
-    state.completedExInSession = []; state.isArmPhase = false; state.isFreestyle = false; state.isExtraPhase = false; state.isInterruption = false;
-    state.workoutStartTime = Date.now();
-    showConfirmScreen();
+    state.type = t; state.exIdx = 0; state.log = []; state.completedExInSession = [];
+    state.isArmPhase = false; state.isFreestyle = false; state.isExtraPhase = false; state.isInterruption = false;
+    state.workoutStartTime = Date.now(); showConfirmScreen();
 }
 
 function startFreestyle() {
     state.type = 'Freestyle'; state.log = []; state.completedExInSession = [];
-    state.isArmPhase = false; state.isFreestyle = true; state.isExtraPhase = false; state.isInterruption = false;
-    state.workoutStartTime = Date.now();
+    state.isFreestyle = true; state.workoutStartTime = Date.now();
     document.getElementById('btn-resume-flow').style.display = 'none';
     document.getElementById('btn-finish-extra').style.display = 'none';
     navigate('ui-muscle-select');
@@ -151,54 +120,48 @@ function startFreestyle() {
 
 function showExerciseList(muscle) {
     state.currentMuscle = muscle;
-    const options = document.getElementById('variation-options');
-    options.innerHTML = "";
+    const opts = document.getElementById('variation-options'); opts.innerHTML = "";
     document.getElementById('variation-title').innerText = `תרגילי ${muscle}`;
-    const filtered = exerciseDatabase.filter(ex => ex.muscles.includes(muscle) && !state.completedExInSession.includes(ex.name));
-    filtered.forEach(ex => {
+    exerciseDatabase.filter(ex => ex.muscles.includes(muscle) && !state.completedExInSession.includes(ex.name)).forEach(ex => {
         const btn = document.createElement('button'); btn.className = "menu-card"; btn.innerHTML = `<span>${ex.name}</span><div class="arrow">➔</div>`;
         btn.onclick = () => {
-            const dbRef = exerciseDatabase.find(d => d.name === ex.name);
-            state.currentEx = JSON.parse(JSON.stringify(dbRef)); state.currentExName = ex.name;
+            state.currentEx = JSON.parse(JSON.stringify(ex)); state.currentExName = ex.name;
             if (state.currentEx.isCalc) state.currentEx.sets = Array(3).fill({w: state.currentEx.manualRange.base, r: 8});
             startRecording();
         };
-        options.appendChild(btn);
+        opts.appendChild(btn);
     });
     navigate('ui-variation');
 }
 
 function showConfirmScreen() {
-    const exName = workouts[state.type][state.exIdx];
-    const exData = exerciseDatabase.find(e => e.name === exName);
+    const exData = exerciseDatabase.find(e => e.name === workouts[state.type][state.exIdx]);
     document.getElementById('confirm-ex-name').innerText = exData.name;
     navigate('ui-confirm');
 }
 
 function confirmExercise(doEx) {
     const exName = workouts[state.type][state.exIdx];
-    const exData = exerciseDatabase.find(e => e.name === exName);
-    if (!doEx) { state.log.push({ skip: true, exName: exData.name }); state.exIdx++; checkFlow(); return; }
-    state.currentEx = JSON.parse(JSON.stringify(exData));
-    state.currentExName = exData.name;
-    if (state.currentEx.isCalc) setupCalculatedEx();
-    else startRecording();
+    if (!doEx) { state.log.push({ skip: true, exName: exName }); state.exIdx++; checkFlow(); return; }
+    state.currentEx = JSON.parse(JSON.stringify(exerciseDatabase.find(e => e.name === exName)));
+    state.currentExName = exName;
+    if (state.currentEx.isCalc) setupCalculatedEx(); else startRecording();
 }
 
 function setupCalculatedEx() {
     document.getElementById('rm-title').innerText = `${state.currentExName} 1RM`;
     const p = document.getElementById('rm-picker'); p.innerHTML = "";
     for(let i = state.currentEx.rmRange[0]; i <= state.currentEx.rmRange[1]; i += 2.5) {
-        let o = new Option(i + " kg", i); if(i === state.currentEx.baseRM) o.selected = true; p.add(o);
+        let o = new Option(i, i); if(i === state.currentEx.baseRM) o.selected = true; p.add(o);
     }
     navigate('ui-1rm');
 }
 
 function save1RM() {
     state.rm = parseFloat(document.getElementById('rm-picker').value);
-    const p = { 1: [0.65, 0.75, 0.85, 0.75, 0.65], 2: [0.70, 0.80, 0.90, 0.80, 0.70, 0.70], 3: [0.75, 0.85, 0.95, 0.85, 0.75, 0.75] };
-    const reps = state.week === 1 ? [5, 5, 5, 8, 10] : (state.week === 2 ? [3, 3, 3, 8, 10, 10] : [5, 3, 1, 8, 10, 10]);
-    state.currentEx.sets = p[state.week].map((pct, i) => ({ w: Math.round((state.rm * pct) / 2.5) * 2.5, r: reps[i] || 10 }));
+    const p = { 1: [0.65, 0.75, 0.85, 0.75, 0.65], 2: [0.70, 0.80, 0.90, 0.80, 0.70], 3: [0.75, 0.85, 0.95, 0.85, 0.75] };
+    const r = [5, 5, 5, 8, 10];
+    state.currentEx.sets = p[state.week].map((pct, i) => ({ w: Math.round((state.rm * pct) / 2.5) * 2.5, r: r[i] }));
     startRecording();
 }
 
@@ -213,42 +176,36 @@ function initPickers() {
     else hist.style.display = 'none';
 
     document.getElementById('unilateral-note').style.display = unilateralExercises.some(u => state.currentExName.includes(u)) ? 'block' : 'none';
-    const timerArea = document.getElementById('timer-area');
-    if (state.setIdx > 0) { timerArea.style.visibility = 'visible'; resetAndStartTimer(); }
-    else { timerArea.style.visibility = 'hidden'; stopRestTimer(); }
+    const tArea = document.getElementById('timer-area');
+    if (state.setIdx > 0) { tArea.style.visibility = 'visible'; resetAndStartTimer(); } else tArea.style.visibility = 'hidden';
 
-    const wPick = document.getElementById('weight-picker'); wPick.innerHTML = "";
-    const step = state.currentEx.step || 2.5;
-    const currentW = target ? target.w : (state.lastLoggedSet ? state.lastLoggedSet.w : 0);
-    for(let i = Math.max(0, currentW - 40); i <= currentW + 50; i = parseFloat((i + step).toFixed(2))) {
-        let o = new Option(i + " kg", i); if(i === currentW) o.selected = true; wPick.add(o);
-    }
-    const rPick = document.getElementById('reps-picker'); rPick.innerHTML = "";
-    const currentR = target ? target.r : 8;
-    for(let i = 1; i <= 30; i++) { let o = new Option(i, i); if(i === currentR) o.selected = true; rPick.add(o); }
-    const rirPick = document.getElementById('rir-picker'); rirPick.innerHTML = "";
-    [0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5].forEach(v => { let o = new Option(v === 0 ? "Fail" : v, v); if(v === 2) o.selected = true; rirPick.add(o); });
+    const wP = document.getElementById('weight-picker'); wP.innerHTML = "";
+    const curW = target ? target.w : (state.lastLoggedSet ? state.lastLoggedSet.w : 0);
+    for(let i = Math.max(0, curW - 40); i <= curW + 50; i += 2.5) { let o = new Option(i + " kg", i); if(i === curW) o.selected = true; wP.add(o); }
+    const rP = document.getElementById('reps-picker'); rP.innerHTML = "";
+    const curR = target ? target.r : 8;
+    for(let i = 1; i <= 30; i++) { let o = new Option(i, i); if(i === curR) o.selected = true; rP.add(o); }
+    const rirP = document.getElementById('rir-picker'); rirP.innerHTML = "";
+    [0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5].forEach(v => { let o = new Option(v||"Fail", v); if(v===2) o.selected = true; rirP.add(o); });
 }
 
 function resetAndStartTimer() {
     stopRestTimer(); state.seconds = 0; state.startTime = Date.now();
-    const target = 90; const circle = document.getElementById('timer-progress'); const text = document.getElementById('rest-timer');
+    const circ = document.getElementById('timer-progress'); const txt = document.getElementById('rest-timer');
     state.timerInterval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-        state.seconds = elapsed; text.innerText = `${Math.floor(elapsed/60).toString().padStart(2,'0')}:${(elapsed%60).toString().padStart(2,'0')}`;
-        circle.style.strokeDashoffset = 283 - (Math.min(elapsed / target, 1) * 283);
-        if (elapsed === target) playBeep(2);
+        const el = Math.floor((Date.now() - state.startTime) / 1000);
+        txt.innerText = `${Math.floor(el/60).toString().padStart(2,'0')}:${(el%60).toString().padStart(2,'0')}`;
+        circ.style.strokeDashoffset = 283 - (Math.min(el / 90, 1) * 283);
+        if (el === 90) playBeep(2);
     }, 100);
 }
 
 function stopRestTimer() { if (state.timerInterval) clearInterval(state.timerInterval); state.timerInterval = null; }
 
 function nextStep() {
-    haptic('light');
     const entry = { exName: state.currentExName, w: parseFloat(document.getElementById('weight-picker').value), r: parseInt(document.getElementById('reps-picker').value), rir: document.getElementById('rir-picker').value };
     state.log.push(entry); state.lastLoggedSet = entry;
-    if (state.setIdx < state.currentEx.sets.length - 1) { state.setIdx++; initPickers(); }
-    else { haptic('medium'); navigate('ui-extra'); }
+    if (state.setIdx < state.currentEx.sets.length - 1) { state.setIdx++; initPickers(); } else { haptic('medium'); navigate('ui-extra'); }
 }
 
 function handleExtra(isBonus) {
@@ -256,20 +213,17 @@ function handleExtra(isBonus) {
     else {
         state.completedExInSession.push(state.currentExName);
         if (state.isArmPhase) { showArmSelection(); return; }
-        if (state.isInterruption) { resumeWorkout(); }
-        else if (state.isExtraPhase) { navigate('ui-ask-extra'); }
+        if (state.isInterruption) { resumeWorkout(); return; }
+        if (state.isExtraPhase) { navigate('ui-ask-extra'); }
         else if (state.isFreestyle) { showExerciseList(state.currentMuscle); }
         else { state.exIdx++; checkFlow(); }
     }
 }
 
-function checkFlow() {
-    if (state.exIdx < workouts[state.type].length) showConfirmScreen();
-    else navigate('ui-ask-extra');
-}
+function checkFlow() { if (state.exIdx < workouts[state.type].length) showConfirmScreen(); else navigate('ui-ask-extra'); }
 
 function interruptWorkout() {
-    if (!state.isInterruption) state.interruptionSavedIdx = state.exIdx;
+    state.interruptionSavedIdx = state.exIdx; // שמירת המיקום שבו עצרנו
     state.isInterruption = true;
     document.getElementById('btn-resume-flow').style.display = 'flex';
     document.getElementById('btn-finish-extra').style.display = 'none';
@@ -278,7 +232,8 @@ function interruptWorkout() {
 
 function resumeWorkout() {
     state.isInterruption = false;
-    if (state.interruptionSavedIdx !== null) state.exIdx = state.interruptionSavedIdx;
+    // תיקון לוגיקה: מעכשיו מקדמים לתרגיל הבא ברגע שחוזרים מהפרעה
+    if (state.interruptionSavedIdx !== null) state.exIdx = state.interruptionSavedIdx + 1;
     checkFlow();
 }
 
@@ -295,43 +250,29 @@ function startArmWorkout() { state.isArmPhase = true; state.armGroup = 'biceps';
 
 function showArmSelection() {
     const list = armExercises[state.armGroup];
-    const remaining = list.filter(ex => !state.completedExInSession.includes(ex.name));
-    if (remaining.length === 0) {
-        if (state.armGroup === 'biceps') { state.armGroup = 'triceps'; showArmSelection(); }
-        else finish();
-        return;
-    }
+    const rem = list.filter(ex => !state.completedExInSession.includes(ex.name));
+    if (rem.length === 0) { if (state.armGroup === 'biceps') { state.armGroup = 'triceps'; showArmSelection(); } else finish(); return; }
     document.getElementById('arm-selection-title').innerText = state.armGroup === 'biceps' ? "בחר בייספס" : "בחר טרייספס";
     const opts = document.getElementById('arm-options'); opts.innerHTML = "";
-    remaining.forEach(ex => {
+    rem.forEach(ex => {
         const btn = document.createElement('button'); btn.className = "menu-card"; btn.innerHTML = `<span>${ex.name}</span><div class="arrow">➔</div>`;
-        btn.onclick = () => {
-            state.currentEx = JSON.parse(JSON.stringify(ex)); state.currentExName = ex.name;
-            state.currentEx.sets = [ex.sets[0], ex.sets[0], ex.sets[0]]; startRecording();
-        };
+        btn.onclick = () => { state.currentEx = JSON.parse(JSON.stringify(ex)); state.currentExName = ex.name; state.currentEx.sets = [ex.sets[0], ex.sets[0], ex.sets[0]]; startRecording(); };
         opts.appendChild(btn);
     });
-    const skipBtn = document.getElementById('btn-skip-arm-group');
-    skipBtn.innerText = state.armGroup === 'biceps' ? "דלג לטרייספס ➔" : "סיים אימון ➔";
-    skipBtn.onclick = () => { if (state.armGroup === 'biceps') { state.armGroup = 'triceps'; showArmSelection(); } else finish(); };
+    const skip = document.getElementById('btn-skip-arm-group');
+    skip.innerText = state.armGroup === 'biceps' ? "דלג לטרייספס ➔" : "סיים אימון ➔";
+    skip.onclick = () => { if (state.armGroup === 'biceps') { state.armGroup = 'triceps'; showArmSelection(); } else finish(); };
     navigate('ui-arm-selection');
 }
 
 function finish() {
-    haptic('success');
     state.workoutDurationMins = Math.floor((Date.now() - state.workoutStartTime) / 60000);
     navigate('ui-summary');
-    let summaryText = `GYMPRO ELITE SUMMARY\n${workoutNames[state.type] || state.type} | שבוע: ${state.week}\n\n`;
+    let summary = `GYMPRO ELITE SUMMARY\n${workoutNames[state.type] || state.type} | שבוע: ${state.week}\n\n`;
     let grouped = {};
-    state.log.forEach(e => {
-        if(!grouped[e.exName]) grouped[e.exName] = { sets: [] };
-        if(!e.skip) grouped[e.exName].sets.push(`${e.w}kg x ${e.r} (RIR ${e.rir})`);
-    });
-    for (let ex in grouped) summaryText += `${ex}:\n${grouped[ex].sets.join('\n')}\n\n`;
-    document.getElementById('summary-area').innerText = summaryText.trim();
+    state.log.forEach(e => { if(!grouped[e.exName]) grouped[e.exName] = { sets: [] }; if(!e.skip) grouped[e.exName].sets.push(`${e.w}kg x ${e.r} (RIR ${e.rir})`); });
+    for (let ex in grouped) summary += `${ex}:\n${grouped[ex].sets.join('\n')}\n\n`;
+    document.getElementById('summary-area').innerText = summary.trim();
 }
 
-function copyResult() {
-    const text = document.getElementById('summary-area').innerText;
-    navigator.clipboard.writeText(text).then(() => { alert("הסיכום הועתק!"); location.reload(); });
-}
+function copyResult() { navigator.clipboard.writeText(document.getElementById('summary-area').innerText).then(() => { alert("הסיכום הועתק!"); location.reload(); }); }
