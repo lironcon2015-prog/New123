@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>GymPro Elite 10.9</title>
+    <title>GymPro Elite 10.8</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="glass-overlay"></div>
@@ -17,16 +17,19 @@
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             </button>
             <div class="brand-logo">GYMPRO <span>ELITE</span></div>
-            <div class="version-tag">V 10.9</div>
+            <div class="version-tag">V 10.8</div>
         </header>
 
         <main class="content-area">
+            
             <div id="ui-week" class="screen active">
                 <div class="hero-section"><h1>ברוך הבא,<span>מוכן לשבור שיא?</span></h1></div>
+                
                 <button onclick="initAudio()" id="audio-init-btn" class="action-card primary-gradient">
                     <div class="card-icon">⚡</div>
                     <div class="card-text">לחץ להפעלת מנוע סאונד</div>
                 </button>
+
                 <div class="section-label">בחר תוכנית שבועית</div>
                 <div class="grid-menu">
                     <button class="menu-card" onclick="selectWeek(1)"><span>שבוע 1</span><div class="arrow">➔</div></button>
@@ -47,23 +50,26 @@
 
             <div id="ui-muscle-select" class="screen">
                 <h2 class="section-title">בחר שריר</h2>
+                
                 <button id="btn-resume-flow" class="action-card success-gradient" style="display:none; margin-bottom: 20px;" onclick="resumeWorkout()">
-                    <div class="card-icon">↻</div>
                     <div class="card-text">חזור למסלול המקורי</div>
+                    <div class="card-icon">↻</div>
                 </button>
+
                 <div class="grid-menu">
                     <button class="menu-card" onclick="showExerciseList('כתפיים')">כתפיים</button>
                     <button class="menu-card" onclick="showExerciseList('רגליים')">רגליים</button>
                     <button class="menu-card" onclick="showExerciseList('חזה')">חזה</button>
                     <button class="menu-card" onclick="showExerciseList('גב')">גב</button>
                 </div>
-                <button id="btn-finish-extra" class="finish-main-btn" style="display:none;" onclick="finishExtraPhase()">סיום הוספת תרגילים</button>
+                
+                <button id="btn-finish-extra" class="finish-main-btn" onclick="finishExtraPhase()">סיום הוספת תרגילים</button>
             </div>
 
             <div id="ui-variation" class="screen">
                 <h2 id="variation-title" class="section-title">בחר תרגיל</h2>
                 <div id="variation-options" class="vertical-stack"></div>
-                <button class="btn-text" onclick="handleBackClick()">ביטול וחזרה</button>
+                <button class="btn-text" onclick="navigate('ui-muscle-select')">חזור לבחירת שריר</button>
             </div>
 
             <div id="ui-1rm" class="screen">
@@ -93,12 +99,15 @@
                     <h2 id="ex-display-name"></h2>
                     <div id="last-set-info" class="history-pill"></div>
                 </div>
+
                 <div class="input-grid">
                     <div class="glass-card compact"><label>Weight</label><select id="weight-picker" class="ios-picker"></select></div>
                     <div class="glass-card compact"><label>Reps</label><select id="reps-picker" class="ios-picker"></select></div>
                     <div class="glass-card compact"><label>RIR</label><select id="rir-picker" class="ios-picker"></select></div>
                 </div>
-                <button id="btn-submit-set" class="btn-main primary-gradient" onclick="nextStep()">סיום סט</button>
+
+                <button id="btn-submit-set" class="btn-main primary-gradient pulse" onclick="nextStep()">סיום סט</button>
+
                 <div id="timer-area" class="timer-section">
                     <div class="timer-wrap">
                         <svg class="timer-svg" viewBox="0 0 100 100">
@@ -125,6 +134,7 @@
             <div id="ui-ask-extra" class="screen flex-center">
                 <div class="confirm-box">
                     <h2>האם להוסיף תרגילים נוספים?</h2>
+                    <p class="sub-text">ניתן לבחור תרגילים מכל קבוצות השרירים</p>
                     <button class="btn-main primary-gradient" onclick="startExtraPhase()">כן, הוסף תרגיל</button>
                     <button class="btn-text" onclick="navigate('ui-ask-arms')">לא, המשך לידיים</button>
                 </div>
