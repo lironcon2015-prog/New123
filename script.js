@@ -1,6 +1,5 @@
 /**
- * GYMPRO ELITE V10.8
- * Fixes: Back button from bonus (2 sets back issue) + Resume from interruption
+ * GYMPRO ELITE V10.8 - FULL PATCHED
  */
 
 // --- GLOBAL STATE ---
@@ -116,10 +115,7 @@ function navigate(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     
-    // Safety stop when leaving main
     if (id !== 'ui-main') stopRestTimer();
-    
-    // Prevent duplicate history entries
     if (state.historyStack[state.historyStack.length - 1] !== id) state.historyStack.push(id);
     
     document.getElementById('global-back').style.visibility = (id === 'ui-week') ? 'hidden' : 'visible';
@@ -129,40 +125,28 @@ function handleBackClick() {
     haptic('warning');
     if (state.historyStack.length <= 1) return;
 
-    // PEEK at the current screen (do not pop yet!)
     const currentScreen = state.historyStack[state.historyStack.length - 1];
 
-    // FIX #1: Undo from Bonus Screen (Back to Set Input)
+    // Case 1: Back from ui-extra (End of Exercise)
     if (currentScreen === 'ui-extra') {
-        state.historyStack.pop(); // Remove ui-extra from stack
-        
-        // Remove the last logged set
+        state.historyStack.pop(); 
         state.log.pop();
-        
-        // Go back one set (since nextStep already incremented it)
-        if (state.setIdx > 0) {
-            state.setIdx--;
-        }
-        
-        // Update lastLoggedSet to the previous entry
+        state.setIdx--;
         state.lastLoggedSet = state.log.length > 0 ? state.log[state.log.length - 1] : null;
         
-        // Manually switch screens
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById('ui-main').classList.add('active');
         
-        // Safety Check: Ensure ui-main is at the top of the stack now
         if (state.historyStack[state.historyStack.length - 1] !== 'ui-main') {
             state.historyStack.push('ui-main');
         }
         
         initPickers();
-        return; // STOP here
+        return;
     }
 
-    // LOGIC 2: Undo within Main Screen (Previous Set)
+    // Case 2: Back within ui-main (Previous Set)
     if (currentScreen === 'ui-main' && state.setIdx > 0) {
-        // We stay on ui-main, just revert data
         state.log.pop();
         state.setIdx--;
         state.lastLoggedSet = state.log.length > 0 ? state.log[state.log.length - 1] : null;
@@ -170,22 +154,17 @@ function handleBackClick() {
         return;
     }
 
-    // LOGIC 3: Back from Main Screen (Set 1) to Previous Exercise
-    if (currentScreen === 'ui-confirm' && !state.isFreestyle && !state.isExtraPhase && !state.isInterruption) {
-        if (state.exIdx > 0) {
-            state.exIdx--; 
-        }
+    // Default Back Behavior
+    state.historyStack.pop();
+    const prevScreen = state.historyStack[state.historyStack.length - 1];
+
+    // FIX: אם חוזרים למסך אישור תרגיל מקודם
+    if (prevScreen === 'ui-confirm' && !state.isFreestyle && !state.isExtraPhase && !state.isInterruption) {
+        if (state.exIdx > 0) state.exIdx--;
     }
 
-    // Default Back Behavior
-    state.historyStack.pop(); // Remove current
-    const prevScreen = state.historyStack[state.historyStack.length - 1]; // Get previous
-    
-    // Switch visual
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(prevScreen).classList.add('active');
-    
-    // Handle back button visibility
     document.getElementById('global-back').style.visibility = (prevScreen === 'ui-week') ? 'hidden' : 'visible';
 }
 
@@ -217,7 +196,6 @@ function showExerciseList(muscle) {
     options.innerHTML = "";
     document.getElementById('variation-title').innerText = `תרגילי ${muscle}`;
     
-    // Filter logic
     const filtered = exerciseDatabase.filter(ex => ex.muscles.includes(muscle) && !state.completedExInSession.includes(ex.name));
     
     filtered.forEach(ex => {
@@ -293,7 +271,6 @@ function initPickers() {
 
     document.getElementById('unilateral-note').style.display = unilateralExercises.some(u => state.currentExName.includes(u)) ? 'block' : 'none';
     
-    // Timer Handling
     const timerArea = document.getElementById('timer-area');
     if (state.setIdx > 0) { 
         timerArea.style.visibility = 'visible'; 
@@ -338,17 +315,12 @@ function resetAndStartTimer() {
     state.timerInterval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
         state.seconds = elapsed;
-
         const mins = Math.floor(state.seconds / 60).toString().padStart(2, '0');
         const secs = (state.seconds % 60).toString().padStart(2, '0');
         text.innerText = `${mins}:${secs}`;
-
         const progress = Math.min(state.seconds / target, 1);
         circle.style.strokeDashoffset = 283 - (progress * 283);
-
-        if (state.seconds === target) {
-            playBeep(2);
-        }
+        if (state.seconds === target) playBeep(2);
     }, 100); 
 }
 
@@ -375,8 +347,6 @@ function handleExtra(isBonus) {
         navigate('ui-main'); 
     } else {
         state.completedExInSession.push(state.currentExName);
-        
-        // Flow Control
         if (state.isInterruption) {
             document.getElementById('btn-resume-flow').style.display = 'flex';
             document.getElementById('btn-finish-extra').style.display = 'none';
@@ -395,15 +365,16 @@ function handleExtra(isBonus) {
 }
 
 function checkFlow() {
-    if (state.exIdx < workouts[state.type].length) {
-        showConfirmScreen();
-    } else {
-        navigate('ui-ask-extra');
-    }
+    if (state.exIdx < workouts[state.type].length) showConfirmScreen();
+    else navigate('ui-ask-extra');
 }
 
 // --- INTERRUPTION LOGIC ---
 function interruptWorkout() {
+    // FIX: Increment main index because current exercise is done
+    if (!state.isFreestyle && !state.isExtraPhase && state.type !== 'Freestyle') {
+        state.exIdx++;
+    }
     state.isInterruption = true;
     document.getElementById('btn-resume-flow').style.display = 'flex';
     document.getElementById('btn-finish-extra').style.display = 'none';
@@ -411,20 +382,13 @@ function interruptWorkout() {
 }
 
 function resumeWorkout() {
-    // FIX #2: Clear interruption flag and hide resume button
     state.isInterruption = false;
-    document.getElementById('btn-resume-flow').style.display = 'none';
-    
-    // Continue to the NEXT exercise in the workout flow (not the current one)
     if (!state.isArmPhase && !state.isExtraPhase && state.exIdx < workouts[state.type].length) {
-        showConfirmScreen();
-    } else {
-        navigate('ui-ask-extra');
-    }
+         showConfirmScreen();
+    } else navigate('ui-ask-extra');
 }
 
 // --- EXTRA PHASE LOGIC ---
-
 function startExtraPhase() {
     state.isExtraPhase = true;
     document.getElementById('btn-resume-flow').style.display = 'none';
@@ -432,12 +396,9 @@ function startExtraPhase() {
     navigate('ui-muscle-select');
 }
 
-function finishExtraPhase() {
-    navigate('ui-ask-arms');
-}
+function finishExtraPhase() { navigate('ui-ask-arms'); }
 
 // --- ARMS & FINISH ---
-
 function startArmWorkout() { state.isArmPhase = true; state.armGroup = 'biceps'; showArmSelection(); }
 
 function showArmSelection() {
@@ -467,10 +428,8 @@ function finish() {
     haptic('success');
     state.workoutDurationMins = Math.floor((Date.now() - state.workoutStartTime) / 60000);
     navigate('ui-summary');
-    
     const workoutDisplayName = workoutNames[state.type] || state.type;
     let summaryText = `GYMPRO ELITE SUMMARY\n${workoutDisplayName} | Week: ${state.week} | Duration: ${state.workoutDurationMins}m\n\n`;
-    
     let grouped = {};
     state.log.forEach(e => {
         if(!grouped[e.exName]) grouped[e.exName] = { sets: [], vol: 0 };
@@ -479,10 +438,7 @@ function finish() {
             grouped[e.exName].vol += (e.w * e.r);
         }
     });
-    
-    for (let ex in grouped) { 
-        summaryText += `${ex} (Vol: ${grouped[ex].vol}kg):\n${grouped[ex].sets.join('\n')}\n\n`; 
-    }
+    for (let ex in grouped) { summaryText += `${ex} (Vol: ${grouped[ex].vol}kg):\n${grouped[ex].sets.join('\n')}\n\n`; }
     document.getElementById('summary-area').innerText = summaryText.trim();
 }
 
