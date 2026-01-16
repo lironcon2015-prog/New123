@@ -1,6 +1,6 @@
 /**
  * GYMPRO ELITE V10.8
- * Fixes: Robust Back Button Logic (No Double Jump), CSS Text Alignment
+ * Fixes: Back button from bonus (2 sets back issue) + Resume from interruption
  */
 
 // --- GLOBAL STATE ---
@@ -132,13 +132,19 @@ function handleBackClick() {
     // PEEK at the current screen (do not pop yet!)
     const currentScreen = state.historyStack[state.historyStack.length - 1];
 
-    // LOGIC 1: Undo from Bonus Screen (Back to Set Input)
+    // FIX #1: Undo from Bonus Screen (Back to Set Input)
     if (currentScreen === 'ui-extra') {
         state.historyStack.pop(); // Remove ui-extra from stack
         
-        // Remove the log entry and go back a set
+        // Remove the last logged set
         state.log.pop();
-        state.setIdx--;
+        
+        // Go back one set (since nextStep already incremented it)
+        if (state.setIdx > 0) {
+            state.setIdx--;
+        }
+        
+        // Update lastLoggedSet to the previous entry
         state.lastLoggedSet = state.log.length > 0 ? state.log[state.log.length - 1] : null;
         
         // Manually switch screens
@@ -151,7 +157,7 @@ function handleBackClick() {
         }
         
         initPickers();
-        return; // CRITICAL FIX: Stop here to prevent double-pop
+        return; // STOP here
     }
 
     // LOGIC 2: Undo within Main Screen (Previous Set)
@@ -405,9 +411,11 @@ function interruptWorkout() {
 }
 
 function resumeWorkout() {
+    // FIX #2: Clear interruption flag and hide resume button
     state.isInterruption = false;
     document.getElementById('btn-resume-flow').style.display = 'none';
     
+    // Continue to the NEXT exercise in the workout flow (not the current one)
     if (!state.isArmPhase && !state.isExtraPhase && state.exIdx < workouts[state.type].length) {
         showConfirmScreen();
     } else {
