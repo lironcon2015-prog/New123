@@ -1,5 +1,5 @@
 /**
- * GYMPRO ELITE V10.9 - SMART MEMORY & FLEXIBLE FLOW
+ * GYMPRO ELITE V10.9.1 - FIXED RM RANGES
  */
 
 // --- GLOBAL STATE ---
@@ -13,7 +13,6 @@ let state = {
     completedExInSession: [],
     workoutStartTime: null, workoutDurationMins: 0,
     lastLoggedSet: null,
-    // New State Variables for Flexible Arms
     firstArmGroup: null, 
     secondArmGroup: null
 };
@@ -21,7 +20,7 @@ let state = {
 let audioContext;
 let wakeLock = null;
 
-// --- LOCAL STORAGE MANAGER (New Feature) ---
+// --- LOCAL STORAGE MANAGER ---
 const StorageManager = {
     KEY_WEIGHTS: 'gympro_weights',
     KEY_RM: 'gympro_rm',
@@ -36,7 +35,6 @@ const StorageManager = {
         localStorage.setItem(key, JSON.stringify(data));
     },
 
-    // Smart Weight Logic
     getLastWeight(exName) {
         const data = this.getData(this.KEY_WEIGHTS);
         return data[exName] || null;
@@ -48,7 +46,6 @@ const StorageManager = {
         this.saveData(this.KEY_WEIGHTS, data);
     },
 
-    // Smart RM Logic
     getLastRM(exName) {
         const data = this.getData(this.KEY_RM);
         return data[exName] || null;
@@ -60,7 +57,6 @@ const StorageManager = {
         this.saveData(this.KEY_RM, data);
     },
 
-    // Archive Logic
     saveToArchive(workoutObj) {
         let history = JSON.parse(localStorage.getItem(this.KEY_ARCHIVE)) || [];
         history.unshift(workoutObj);
@@ -78,16 +74,19 @@ const StorageManager = {
     }
 };
 
-// --- DATABASE ---
+// --- DATABASE (Updated RM Ranges) ---
 const unilateralExercises = ["Dumbbell Peck Fly", "Lateral Raises", "Single Leg Curl", "Dumbbell Bicep Curls", "Cable Fly", "Concentration Curls"];
 
 const exerciseDatabase = [
-    { name: "Overhead Press (Main)", muscles: ["כתפיים"], isCalc: true, baseRM: 77.5, rmRange: [65, 90], manualRange: {base: 50, min: 40, max: 80, step: 2.5} },
+    // FIXED: Overhead Press RM Range 50-100
+    { name: "Overhead Press (Main)", muscles: ["כתפיים"], isCalc: true, baseRM: 60, rmRange: [50, 100], manualRange: {base: 50, min: 40, max: 80, step: 2.5} },
     { name: "Lateral Raises", muscles: ["כתפיים"], sets: [{w: 12.5, r: 13}, {w: 12.5, r: 13}, {w: 12.5, r: 11}], step: 0.5 },
     { name: "Weighted Pull Ups", muscles: ["גב"], sets: [{w: 0, r: 8}, {w: 0, r: 8}, {w: 0, r: 8}], step: 5, minW: 0, maxW: 40, isBW: true },
     { name: "Face Pulls", muscles: ["כתפיים"], sets: [{w: 40, r: 13}, {w: 40, r: 13}, {w: 40, r: 15}], step: 2.5 },
     { name: "Barbell Shrugs", muscles: ["כתפיים"], sets: [{w: 140, r: 11}, {w: 140, r: 11}, {w: 140, r: 11}], step: 5 },
-    { name: "Bench Press (Main)", muscles: ["חזה"], isCalc: true, baseRM: 122.5, rmRange: [110, 160], manualRange: {base: 85, min: 60, max: 140, step: 2.5} },
+    
+    // FIXED: Bench Press RM Range 80-150
+    { name: "Bench Press (Main)", muscles: ["חזה"], isCalc: true, baseRM: 100, rmRange: [80, 150], manualRange: {base: 85, min: 60, max: 140, step: 2.5} },
     { name: "Incline Bench Press", muscles: ["חזה"], sets: [{w: 65, r: 9}, {w: 65, r: 9}, {w: 65, r: 9}], step: 2.5 },
     { name: "Dumbbell Peck Fly", muscles: ["חזה"], sets: [{w: 14, r: 11}, {w: 14, r: 11}, {w: 14, r: 11}], step: 2 },
     { name: "Machine Peck Fly", muscles: ["חזה"], sets: [{w: 45, r: 11}, {w: 45, r: 11}, {w: 45, r: 11}], step: 1 },
@@ -224,7 +223,6 @@ function handleBackClick() {
         return;
     }
 
-    // New: Handle back from archive
     if (currentScreen === 'ui-archive') {
         state.historyStack.pop();
         navigate('ui-week');
@@ -355,22 +353,24 @@ function confirmExercise(doEx) {
     else startRecording();
 }
 
+// --- FIXED: RM SELECTION LOGIC ---
 function setupCalculatedEx() {
     document.getElementById('rm-title').innerText = `${state.currentExName} 1RM`;
     
-    // SMART MEMORY: Load last RM if exists
+    // Get last RM from memory for auto-selection
     const lastRM = StorageManager.getLastRM(state.currentExName);
-    const baseRMToUse = lastRM ? lastRM : state.currentEx.baseRM;
+    const defaultRM = lastRM ? lastRM : state.currentEx.baseRM;
 
-    const p = document.getElementById('rm-picker'); p.innerHTML = "";
+    // Use FIXED range from database
+    const minRM = state.currentEx.rmRange[0];
+    const maxRM = state.currentEx.rmRange[1];
+
+    const p = document.getElementById('rm-picker'); 
+    p.innerHTML = "";
     
-    // Create range around the base/last RM
-    const startRange = Math.max(20, Math.floor(baseRMToUse - 30));
-    const endRange = Math.ceil(baseRMToUse + 40);
-
-    for(let i = startRange; i <= endRange; i += 2.5) {
+    for(let i = minRM; i <= maxRM; i += 2.5) {
         let o = new Option(i + " kg", i); 
-        if(i === baseRMToUse) o.selected = true; 
+        if(i === defaultRM) o.selected = true; 
         p.add(o);
     }
     navigate('ui-1rm');
@@ -379,7 +379,6 @@ function setupCalculatedEx() {
 function save1RM() {
     state.rm = parseFloat(document.getElementById('rm-picker').value);
     
-    // SMART MEMORY: Save new RM
     StorageManager.saveRM(state.currentExName, state.rm);
 
     const p = { 1: [0.65, 0.75, 0.85, 0.75, 0.65], 2: [0.70, 0.80, 0.90, 0.80, 0.70, 0.70], 3: [0.75, 0.85, 0.95, 0.85, 0.75, 0.75] };
@@ -418,7 +417,6 @@ function initPickers() {
     // SMART MEMORY: Load last weight logic
     const savedWeight = StorageManager.getLastWeight(state.currentExName);
     
-    // Logic: If it's the first set, try to use saved weight. If not, use last set's weight or target.
     let defaultW;
     if (state.setIdx === 0 && savedWeight) {
         defaultW = savedWeight;
@@ -481,7 +479,6 @@ function nextStep() {
     const wVal = parseFloat(document.getElementById('weight-picker').value);
     const entry = { exName: state.currentExName, w: wVal, r: parseInt(document.getElementById('reps-picker').value), rir: document.getElementById('rir-picker').value };
     
-    // SMART MEMORY: Save weight used
     StorageManager.saveWeight(state.currentExName, wVal);
 
     state.log.push(entry); state.lastLoggedSet = entry;
@@ -540,16 +537,13 @@ function startExtraPhase() {
 
 function finishExtraPhase() { navigate('ui-ask-arms'); }
 
-// --- MODIFIED: FLEXIBLE ARMS FLOW ---
 function startArmWorkout() { 
     state.isArmPhase = true; 
     
-    // Instead of auto-selecting biceps, we ask user
     document.getElementById('arm-selection-title').innerText = "מה להתחיל?";
     const opts = document.getElementById('arm-options');
     opts.innerHTML = "";
     
-    // Choice A: Biceps
     const btnBi = document.createElement('button');
     btnBi.className = "menu-card";
     btnBi.innerHTML = `<span>יד קדמית (Biceps)</span><div class="arrow">➔</div>`;
@@ -560,7 +554,6 @@ function startArmWorkout() {
         showArmSelection();
     };
     
-    // Choice B: Triceps
     const btnTri = document.createElement('button');
     btnTri.className = "menu-card";
     btnTri.innerHTML = `<span>יד אחורית (Triceps)</span><div class="arrow">➔</div>`;
@@ -574,9 +567,7 @@ function startArmWorkout() {
     opts.appendChild(btnBi);
     opts.appendChild(btnTri);
     
-    // Hide skip button during this selection
     document.getElementById('btn-skip-arm-group').style.display = 'none';
-    
     navigate('ui-arm-selection');
 }
 
@@ -584,7 +575,6 @@ function showArmSelection() {
     const list = armExercises[state.armGroup];
     const remaining = list.filter(ex => !state.completedExInSession.includes(ex.name));
     
-    // If no exercises left in current group, switch to next group or finish
     if (remaining.length === 0) {
         if (state.armGroup === state.firstArmGroup) {
             state.armGroup = state.secondArmGroup;
@@ -595,7 +585,6 @@ function showArmSelection() {
         return;
     }
 
-    // Determine titles and labels based on current group
     const isBiceps = state.armGroup === 'biceps';
     document.getElementById('arm-selection-title').innerText = isBiceps ? "בחר בייספס" : "בחר טרייספס";
     
@@ -628,7 +617,6 @@ function showArmSelection() {
     navigate('ui-arm-selection');
 }
 
-// --- FINISH & ARCHIVE ---
 function finish() {
     haptic('success');
     state.workoutDurationMins = Math.floor((Date.now() - state.workoutStartTime) / 60000);
@@ -648,7 +636,6 @@ function finish() {
     for (let ex in grouped) { summaryText += `${ex} (Vol: ${grouped[ex].vol}kg):\n${grouped[ex].sets.join('\n')}\n\n`; }
     document.getElementById('summary-area').innerText = summaryText.trim();
     
-    // AUTO SAVE TO ARCHIVE
     const archiveObj = {
         id: Date.now(),
         date: dateStr,
@@ -670,21 +657,18 @@ function copyResult() {
     }
 }
 
-// --- ARCHIVE UI INJECTION (AUTO RUN) ---
 (function injectArchiveUI() {
-    // 1. Add Archive Button to Main Screen
     const weekScreen = document.getElementById('ui-week');
     if (weekScreen && !document.getElementById('btn-open-archive')) {
         const btn = document.createElement('button');
         btn.id = 'btn-open-archive';
-        btn.className = "action-card secondary"; // Reusing existing classes
+        btn.className = "action-card secondary";
         btn.style.marginTop = "20px";
         btn.innerHTML = `<div class="card-icon">📜</div><div class="card-text">ארכיון אימונים</div>`;
         btn.onclick = openArchive;
         weekScreen.appendChild(btn);
     }
 
-    // 2. Inject Archive Screen HTML
     if (!document.getElementById('ui-archive')) {
         const archiveScreen = document.createElement('div');
         archiveScreen.id = 'ui-archive';
@@ -721,7 +705,7 @@ function openArchive() {
                 } else {
                     if(confirm("למחוק אימון זה מהארכיון?")) {
                         StorageManager.deleteFromArchive(item.timestamp);
-                        openArchive(); // Refresh
+                        openArchive();
                     }
                 }
             };
