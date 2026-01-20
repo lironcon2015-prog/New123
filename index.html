@@ -2,165 +2,148 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>GymPro Elite 10.8</title>
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GymPro Tracker</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="glass-overlay"></div>
-    <div class="app-container">
-        <header class="app-header">
-            <button id="global-back" class="back-btn" onclick="handleBackClick()">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            </button>
-            <div class="brand-logo">GYMPRO <span>ELITE</span></div>
-            <div class="version-tag">V 10.8</div>
-        </header>
 
-        <main class="content-area">
-            
-            <div id="ui-week" class="screen active">
-                <div class="hero-section"><h1>ברוך הבא,<span>מוכן לשבור שיא?</span></h1></div>
-                
-                <button onclick="initAudio()" id="audio-init-btn" class="action-card primary-gradient">
-                    <div class="card-icon">⚡</div>
-                    <div class="card-text">לחץ להפעלת מנוע סאונד</div>
-                </button>
-
-                <div class="section-label">בחר תוכנית שבועית</div>
-                <div class="grid-menu">
-                    <button class="menu-card" onclick="selectWeek(1)"><span>שבוע 1</span><div class="arrow">➔</div></button>
-                    <button class="menu-card" onclick="selectWeek(2)"><span>שבוע 2</span><div class="arrow">➔</div></button>
-                    <button class="menu-card" onclick="selectWeek(3)"><span>שבוע 3</span><div class="arrow">➔</div></button>
-                </div>
-            </div>
-
-            <div id="ui-workout-type" class="screen">
-                <div class="hero-section"><h2>בחר מסלול</h2></div>
-                <div class="vertical-stack">
-                    <button class="menu-card tall" onclick="selectWorkout('A')"><h3>אימון A</h3><p>כתפיים - חזה - גב</p></button>
-                    <button class="menu-card tall" onclick="selectWorkout('B')"><h3>אימון B</h3><p>רגליים - גב</p></button>
-                    <button class="menu-card tall" onclick="selectWorkout('C')"><h3>אימון C</h3><p>חזה - כתפיים</p></button>
-                    <button class="menu-card tall freestyle-card" onclick="startFreestyle()"><h3>Freestyle</h3><p>בחירה חופשית</p></button>
-                </div>
-            </div>
-
-            <div id="ui-muscle-select" class="screen">
-                <h2 class="section-title">בחר שריר</h2>
-                
-                <button id="btn-resume-flow" class="action-card success-gradient" style="display:none; margin-bottom: 20px;" onclick="resumeWorkout()">
-                    <div class="card-text">חזור למסלול המקורי</div>
-                    <div class="card-icon">↻</div>
-                </button>
-
-                <div class="grid-menu">
-                    <button class="menu-card" onclick="showExerciseList('כתפיים')">כתפיים</button>
-                    <button class="menu-card" onclick="showExerciseList('רגליים')">רגליים</button>
-                    <button class="menu-card" onclick="showExerciseList('חזה')">חזה</button>
-                    <button class="menu-card" onclick="showExerciseList('גב')">גב</button>
-                </div>
-                
-                <button id="btn-finish-extra" class="finish-main-btn" onclick="finishExtraPhase()">סיום הוספת תרגילים</button>
-            </div>
-
-            <div id="ui-variation" class="screen">
-                <h2 id="variation-title" class="section-title">בחר תרגיל</h2>
-                <div id="variation-options" class="vertical-stack"></div>
-                <button class="btn-text" onclick="navigate('ui-muscle-select')">חזור לבחירת שריר</button>
-            </div>
-
-            <div id="ui-1rm" class="screen">
-                <div class="hero-section"><h2 id="rm-title">1RM</h2></div>
-                <div class="glass-card">
-                    <label>משקל מקסימלי (RM)</label>
-                    <select id="rm-picker" class="ios-picker"></select>
-                </div>
-                <button class="btn-main primary-gradient" onclick="save1RM()">צור אימון</button>
-            </div>
-
-            <div id="ui-confirm" class="screen flex-center">
-                <div class="confirm-box">
-                    <p>התרגיל הבא:</p>
-                    <h2 id="confirm-ex-name"></h2>
-                    <button class="btn-main primary-gradient" onclick="confirmExercise(true)">התחל</button>
-                    <button class="btn-text" onclick="confirmExercise(false)">דלג</button>
-                </div>
-            </div>
-
-            <div id="ui-main" class="screen">
-                <div class="exercise-header">
-                    <div class="badge-row">
-                        <span id="set-counter" class="ios-badge">SET 1/3</span>
-                        <div id="unilateral-note" class="uni-badge">UNILATERAL</div>
-                    </div>
-                    <h2 id="ex-display-name"></h2>
-                    <div id="last-set-info" class="history-pill"></div>
-                </div>
-
-                <div class="input-grid">
-                    <div class="glass-card compact"><label>Weight</label><select id="weight-picker" class="ios-picker"></select></div>
-                    <div class="glass-card compact"><label>Reps</label><select id="reps-picker" class="ios-picker"></select></div>
-                    <div class="glass-card compact"><label>RIR</label><select id="rir-picker" class="ios-picker"></select></div>
-                </div>
-
-                <button id="btn-submit-set" class="btn-main primary-gradient pulse" onclick="nextStep()">סיום סט</button>
-
-                <div id="timer-area" class="timer-section">
-                    <div class="timer-wrap">
-                        <svg class="timer-svg" viewBox="0 0 100 100">
-                            <circle class="timer-bg" cx="50" cy="50" r="45"></circle>
-                            <circle id="timer-progress" class="timer-bar" cx="50" cy="50" r="45"></circle>
-                        </svg>
-                        <div id="rest-timer" class="timer-text">00:00</div>
-                    </div>
-                    <button class="btn-finish-ex" onclick="handleExtra(false)">דלג לתרגיל הבא</button>
-                </div>
-            </div>
-
-            <div id="ui-extra" class="screen flex-center">
-                <div class="glass-card bonus-card">
-                    <h3>התרגיל הושלם!</h3>
-                    <div class="vertical-stack">
-                        <button class="btn-main success-gradient" onclick="handleExtra(true)">+ סט בונוס</button>
-                        <button class="btn-main secondary" onclick="interruptWorkout()">➕ הוסף תרגיל ביניים</button>
-                        <button class="btn-main primary-gradient" onclick="handleExtra(false)">המשך</button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="ui-ask-extra" class="screen flex-center">
-                <div class="confirm-box">
-                    <h2>האם להוסיף תרגילים נוספים?</h2>
-                    <p class="sub-text">ניתן לבחור תרגילים מכל קבוצות השרירים</p>
-                    <button class="btn-main primary-gradient" onclick="startExtraPhase()">כן, הוסף תרגיל</button>
-                    <button class="btn-text" onclick="navigate('ui-ask-arms')">לא, המשך לידיים</button>
-                </div>
-            </div>
-
-            <div id="ui-ask-arms" class="screen flex-center">
-                <div class="confirm-box">
-                    <h2>האם להוסיף ידיים?</h2>
-                    <button class="btn-main primary-gradient" onclick="startArmWorkout()">כן</button>
-                    <button class="btn-text" onclick="finish()">לא, סיים אימון</button>
-                </div>
-            </div>
-
-            <div id="ui-arm-selection" class="screen">
-                <h2 id="arm-selection-title" class="section-title">בחר תרגיל ידיים</h2>
-                <div id="arm-options" class="vertical-stack"></div>
-                <button id="btn-skip-arm-group" class="btn-text"></button>
-            </div>
-
-            <div id="ui-summary" class="screen">
-                <div class="hero-section"><h2>סיכום אימון</h2></div>
-                <div id="summary-area" class="summary-card"></div>
-                <button class="btn-main primary-gradient" onclick="copyResult()">העתק וסגור</button>
-            </div>
-        </main>
+    <div id="ui-week" class="screen active">
+        <h1>GymPro Tracker</h1>
+        <div class="week-selector">
+            <button class="btn btn-outline" onclick="selectWeek(1)">שבוע 1</button>
+            <button class="btn btn-outline" onclick="selectWeek(2)">שבוע 2</button>
+            <button class="btn btn-outline" onclick="selectWeek(3)">שבוע 3</button>
+            <button class="btn btn-outline" onclick="selectWeek(4)">שבוע 4</button>
+        </div>
+        
+        <div class="archive-access">
+            <button class="btn btn-secondary" onclick="openHistory()">📜 ארכיון אימונים</button>
+        </div>
     </div>
+
+    <div id="ui-workout" class="screen">
+        <div class="header-nav">
+            <button class="btn-icon" onclick="goBack()">➜</button>
+            <h2 id="week-title">שבוע X</h2>
+        </div>
+        <div class="workout-list">
+            <button class="btn btn-workout" onclick="selectWorkout('A')">אימון A (חזה/גב)</button>
+            <button class="btn btn-workout" onclick="selectWorkout('B')">אימון B (רגליים)</button>
+            <button class="btn btn-workout" onclick="selectWorkout('C')">אימון C (כתפיים)</button>
+            <button class="btn btn-workout" onclick="selectWorkout('arms')">אימון ידיים</button>
+        </div>
+    </div>
+
+    <div id="ui-arms-select" class="screen">
+        <div class="header-nav">
+            <button class="btn-icon" onclick="goBack()">➜</button>
+            <h2>סדר אימון ידיים</h2>
+        </div>
+        <div class="center-content">
+            <p>מה תרצה להתחיל?</p>
+            <button class="btn btn-main" onclick="startArms('biceps')">יד קדמית (Biceps)</button>
+            <div style="height: 20px;"></div>
+            <button class="btn btn-main" onclick="startArms('triceps')">יד אחורית (Triceps)</button>
+        </div>
+    </div>
+
+    <div id="ui-1rm" class="screen">
+        <div class="header-nav">
+            <button class="btn-icon" onclick="goBack()">➜</button>
+            <h2 id="rm-title">קביעת משקל</h2>
+        </div>
+        <div class="rm-container">
+            <p id="rm-exercise-name" class="highlight-text"></p>
+            <p class="sub-text">הכנס משקל ל-RM<span id="rm-target"></span>:</p>
+            
+            <div class="picker-container">
+                <button class="picker-btn" onclick="adjustRM(-2.5)">-</button>
+                <div id="rm-value-display" class="picker-value">0</div>
+                <button class="picker-btn" onclick="adjustRM(2.5)">+</button>
+            </div>
+            <div class="quick-select">
+                <button class="tag" onclick="setSpecificRM(60)">60</button>
+                <button class="tag" onclick="setSpecificRM(80)">80</button>
+                <button class="tag" onclick="setSpecificRM(100)">100</button>
+            </div>
+
+            <button class="btn btn-main start-btn" onclick="confirmRM()">צור אימון</button>
+        </div>
+    </div>
+
+    <div id="ui-active" class="screen">
+        <div class="header-nav">
+            <button class="btn-icon" onclick="handleActiveBack()">➜</button>
+            <div class="progress-bar"><div id="progress-fill"></div></div>
+        </div>
+        
+        <div class="exercise-card">
+            <h2 id="ex-name">שם התרגיל</h2>
+            <div class="set-info">
+                <span>סט <span id="set-num">1</span> מתוך <span id="total-sets">3</span></span>
+                <span class="rep-target" id="rep-target"></span>
+            </div>
+            
+            <div class="picker-container">
+                <button class="picker-btn" onclick="adjustWeight(-1.25)">-</button>
+                <div id="weight-display" class="picker-value">0</div>
+                <button class="picker-btn" onclick="adjustWeight(1.25)">+</button>
+            </div>
+            <p class="kg-label">ק"ג</p>
+
+            <button class="btn btn-main" onclick="nextSet()">סיום סט</button>
+        </div>
+
+        <div class="interruption-area">
+            <button class="btn-text" onclick="triggerInterruption()">+ תרגיל ביניים</button>
+        </div>
+    </div>
+
+    <div id="ui-variation" class="screen">
+        <div class="header-nav">
+            <button class="btn-icon" onclick="goBack()">➜</button>
+            <h2>בחירת תרגיל</h2>
+        </div>
+        <div id="variation-list" class="workout-list">
+            </div>
+    </div>
+
+    <div id="ui-interrupt" class="screen">
+         <div class="header-nav">
+            <button class="btn-icon" onclick="closeInterruption()">X</button>
+            <h2>תרגיל ביניים</h2>
+        </div>
+        <div id="interrupt-list" class="workout-list scrollable">
+            </div>
+    </div>
+
+    <div id="ui-finish" class="screen">
+        <h1>האימון הושלם! 🎉</h1>
+        <div id="summary-text" class="summary-box"></div>
+        <button class="btn btn-main" onclick="finishProcess()">העתק וסיים</button>
+    </div>
+
+    <div id="ui-history" class="screen">
+        <div class="header-nav">
+            <button class="btn-icon" onclick="goBackToHome()">➜</button>
+            <h2>ארכיון אימונים</h2>
+        </div>
+        <div id="history-list" class="history-container">
+            </div>
+        <div id="history-detail-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3 id="modal-date"></h3>
+                <div id="modal-body" class="summary-box"></div>
+                <div class="modal-actions">
+                    <button class="btn btn-main" onclick="copyHistoryItem()">📋 העתק סיכום</button>
+                    <button class="btn btn-danger" onclick="deleteHistoryItem()">🗑️ מחק מהארכיון</button>
+                    <button class="btn btn-outline" onclick="closeModal()">סגור</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>
