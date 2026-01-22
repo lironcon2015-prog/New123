@@ -1,5 +1,5 @@
 /**
- * GYMPRO ELITE V10.9.1 - FIXED RM RANGES
+ * GYMPRO ELITE V11.1.0 - BACKUP & WARMUP
  */
 
 // --- GLOBAL STATE ---
@@ -19,6 +19,7 @@ let state = {
 
 let audioContext;
 let wakeLock = null;
+let currentArchiveItem = null;
 
 // --- LOCAL STORAGE MANAGER ---
 const StorageManager = {
@@ -71,21 +72,38 @@ const StorageManager = {
         let history = this.getArchive();
         history = history.filter(h => h.timestamp !== timestamp);
         localStorage.setItem(this.KEY_ARCHIVE, JSON.stringify(history));
+    },
+
+    // NEW: Export all data
+    getAllData() {
+        return {
+            weights: this.getData(this.KEY_WEIGHTS),
+            rms: this.getData(this.KEY_RM),
+            archive: this.getArchive()
+        };
+    },
+
+    // NEW: Import all data
+    restoreData(dataObj) {
+        if(dataObj.weights) this.saveData(this.KEY_WEIGHTS, dataObj.weights);
+        if(dataObj.rms) this.saveData(this.KEY_RM, dataObj.rms);
+        if(dataObj.archive) localStorage.setItem(this.KEY_ARCHIVE, JSON.stringify(dataObj.archive));
     }
 };
 
-// --- DATABASE (Updated RM Ranges) ---
+// --- DATABASE ---
 const unilateralExercises = ["Dumbbell Peck Fly", "Lateral Raises", "Single Leg Curl", "Dumbbell Bicep Curls", "Cable Fly", "Concentration Curls"];
+const heavyCompounds = ["Overhead Press (Main)", "Bench Press (Main)", "Squat", "Deadlift"];
 
 const exerciseDatabase = [
-    // FIXED: Overhead Press RM Range 50-100
+    // Overhead Press RM Range 50-100
     { name: "Overhead Press (Main)", muscles: ["כתפיים"], isCalc: true, baseRM: 60, rmRange: [50, 100], manualRange: {base: 50, min: 40, max: 80, step: 2.5} },
     { name: "Lateral Raises", muscles: ["כתפיים"], sets: [{w: 12.5, r: 13}, {w: 12.5, r: 13}, {w: 12.5, r: 11}], step: 0.5 },
     { name: "Weighted Pull Ups", muscles: ["גב"], sets: [{w: 0, r: 8}, {w: 0, r: 8}, {w: 0, r: 8}], step: 5, minW: 0, maxW: 40, isBW: true },
     { name: "Face Pulls", muscles: ["כתפיים"], sets: [{w: 40, r: 13}, {w: 40, r: 13}, {w: 40, r: 15}], step: 2.5 },
     { name: "Barbell Shrugs", muscles: ["כתפיים"], sets: [{w: 140, r: 11}, {w: 140, r: 11}, {w: 140, r: 11}], step: 5 },
     
-    // FIXED: Bench Press RM Range 80-150
+    // Bench Press RM Range 80-150
     { name: "Bench Press (Main)", muscles: ["חזה"], isCalc: true, baseRM: 100, rmRange: [80, 150], manualRange: {base: 85, min: 60, max: 140, step: 2.5} },
     { name: "Incline Bench Press", muscles: ["חזה"], sets: [{w: 65, r: 9}, {w: 65, r: 9}, {w: 65, r: 9}], step: 2.5 },
     { name: "Dumbbell Peck Fly", muscles: ["חזה"], sets: [{w: 14, r: 11}, {w: 14, r: 11}, {w: 14, r: 11}], step: 2 },
@@ -201,7 +219,6 @@ function handleBackClick() {
     if (currentScreen === 'ui-extra') {
         state.historyStack.pop(); 
         state.log.pop();
-        state.setIdx--;
         state.lastLoggedSet = state.log.length > 0 ? state.log[state.log.length - 1] : null;
         
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -226,6 +243,12 @@ function handleBackClick() {
     if (currentScreen === 'ui-archive') {
         state.historyStack.pop();
         navigate('ui-week');
+        return;
+    }
+
+    if (currentScreen === 'ui-archive-detail') {
+        state.historyStack.pop();
+        navigate('ui-archive');
         return;
     }
 
@@ -271,6 +294,18 @@ function showExerciseList(muscle) {
     options.innerHTML = "";
     document.getElementById('variation-title').innerText = `תרגילי ${muscle}`;
     
+    if (state.isFreestyle) {
+        const backBtn = document.createElement('button');
+        backBtn.className = "btn-text";
+        backBtn.style.color = "var(--accent)";
+        backBtn.style.textAlign = "right";
+        backBtn.style.marginBottom = "10px";
+        backBtn.style.padding = "5px";
+        backBtn.innerHTML = "🡠 חזור לבחירת קבוצת שריר";
+        backBtn.onclick = () => handleBackClick();
+        options.appendChild(backBtn);
+    }
+
     const filtered = exerciseDatabase.filter(ex => ex.muscles.includes(muscle) && !state.completedExInSession.includes(ex.name));
     
     filtered.forEach(ex => {
@@ -353,15 +388,12 @@ function confirmExercise(doEx) {
     else startRecording();
 }
 
-// --- FIXED: RM SELECTION LOGIC ---
 function setupCalculatedEx() {
     document.getElementById('rm-title').innerText = `${state.currentExName} 1RM`;
     
-    // Get last RM from memory for auto-selection
     const lastRM = StorageManager.getLastRM(state.currentExName);
     const defaultRM = lastRM ? lastRM : state.currentEx.baseRM;
 
-    // Use FIXED range from database
     const minRM = state.currentEx.rmRange[0];
     const maxRM = state.currentEx.rmRange[1];
 
@@ -378,12 +410,28 @@ function setupCalculatedEx() {
 
 function save1RM() {
     state.rm = parseFloat(document.getElementById('rm-picker').value);
-    
     StorageManager.saveRM(state.currentExName, state.rm);
 
-    const p = { 1: [0.65, 0.75, 0.85, 0.75, 0.65], 2: [0.70, 0.80, 0.90, 0.80, 0.70, 0.70], 3: [0.75, 0.85, 0.95, 0.85, 0.75, 0.75] };
-    const reps = state.week === 1 ? [5, 5, 5, 8, 10] : (state.week === 2 ? [3, 3, 3, 8, 10, 10] : [5, 3, 1, 8, 10, 10]);
-    state.currentEx.sets = p[state.week].map((pct, i) => ({ w: Math.round((state.rm * pct) / 2.5) * 2.5, r: reps[i] || 10 }));
+    let percentages = [];
+    let reps = [];
+
+    // Logic per week
+    if (state.week === 1) {
+        percentages = [0.65, 0.75, 0.85, 0.75, 0.65];
+        reps = [5, 5, 5, 8, 10];
+    } else if (state.week === 2) {
+        percentages = [0.70, 0.80, 0.90, 0.80, 0.70, 0.70];
+        reps = [3, 3, 3, 8, 10, 10];
+    } else if (state.week === 3) {
+        percentages = [0.75, 0.85, 0.95, 0.85, 0.75, 0.75];
+        reps = [5, 3, 1, 8, 10, 10];
+    }
+
+    state.currentEx.sets = percentages.map((pct, i) => ({
+        w: Math.round((state.rm * pct) / 2.5) * 2.5,
+        r: reps[i]
+    }));
+
     startRecording();
 }
 
@@ -394,6 +442,8 @@ function initPickers() {
     document.getElementById('ex-display-name').innerText = state.currentExName;
     document.getElementById('set-counter').innerText = `SET ${state.setIdx + 1}/${state.currentEx.sets.length}`;
     
+    document.getElementById('set-notes').value = '';
+
     const hist = document.getElementById('last-set-info');
     if (state.lastLoggedSet) {
         hist.innerText = `סט אחרון: ${state.lastLoggedSet.w}kg x ${state.lastLoggedSet.r} (RIR ${state.lastLoggedSet.rir})`;
@@ -402,6 +452,14 @@ function initPickers() {
 
     document.getElementById('unilateral-note').style.display = unilateralExercises.some(u => state.currentExName.includes(u)) ? 'block' : 'none';
     
+    // Warmup Button Display Logic
+    const btnWarmup = document.getElementById('btn-warmup');
+    if (state.setIdx === 0 && heavyCompounds.includes(state.currentExName)) {
+        btnWarmup.style.display = 'block';
+    } else {
+        btnWarmup.style.display = 'none';
+    }
+
     const timerArea = document.getElementById('timer-area');
     if (state.setIdx > 0) { 
         timerArea.style.visibility = 'visible'; 
@@ -414,16 +472,28 @@ function initPickers() {
     const wPick = document.getElementById('weight-picker'); wPick.innerHTML = "";
     const step = state.currentEx.step || 2.5;
     
-    // SMART MEMORY: Load last weight logic
     const savedWeight = StorageManager.getLastWeight(state.currentExName);
     
     let defaultW;
-    if (state.setIdx === 0 && savedWeight) {
-        defaultW = savedWeight;
-    } else if (state.lastLoggedSet) {
-        defaultW = state.lastLoggedSet.w;
+    let currentR;
+
+    if (state.currentEx.isCalc && target) {
+        defaultW = target.w;
+        currentR = target.r;
     } else {
-        defaultW = target ? target.w : 0;
+        if (state.lastLoggedSet) {
+            defaultW = state.lastLoggedSet.w;
+        } else if (state.setIdx === 0 && savedWeight) {
+            defaultW = savedWeight;
+        } else {
+            defaultW = target ? target.w : 0;
+        }
+
+        if (state.lastLoggedSet) {
+            currentR = state.lastLoggedSet.r;
+        } else {
+            currentR = target ? target.r : 8;
+        }
     }
 
     const minW = Math.max(0, defaultW - 40);
@@ -434,13 +504,52 @@ function initPickers() {
     }
     
     const rPick = document.getElementById('reps-picker'); rPick.innerHTML = "";
-    const currentR = target ? target.r : (state.lastLoggedSet ? state.lastLoggedSet.r : 8);
-    for(let i = 1; i <= 30; i++) { let o = new Option(i, i); if(i === currentR) o.selected = true; rPick.add(o); }
+    for(let i = 1; i <= 30; i++) { 
+        let o = new Option(i, i); 
+        if(i === currentR) o.selected = true; 
+        rPick.add(o); 
+    }
     
     const rirPick = document.getElementById('rir-picker'); rirPick.innerHTML = "";
     [0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5].forEach(v => {
         let o = new Option(v === 0 ? "Fail" : v, v); if(v === 2) o.selected = true; rirPick.add(o);
     });
+}
+
+// --- WARMUP LOGIC ---
+function calcWarmup() {
+    const targetW = parseFloat(document.getElementById('weight-picker').value);
+    const list = document.getElementById('warmup-list');
+    list.innerHTML = "";
+
+    const percentages = [0, 0.4, 0.6, 0.8]; // 0 means empty bar (20kg)
+    
+    percentages.forEach((pct, idx) => {
+        let w;
+        let reps;
+        if(idx === 0) { w = 20; reps = 10; }
+        else {
+            w = Math.round((targetW * pct) / 2.5) * 2.5;
+            if (w < 20) w = 20;
+            if (idx === 1) reps = 5;
+            if (idx === 2) reps = 3;
+            if (idx === 3) reps = 2;
+        }
+
+        // Don't show warmup sets heavier than target
+        if (w >= targetW) return;
+
+        const row = document.createElement('div');
+        row.className = "warmup-row";
+        row.innerHTML = `<span>סט ${idx + 1}</span><span>${w}kg x ${reps}</span>`;
+        list.appendChild(row);
+    });
+
+    document.getElementById('warmup-modal').style.display = 'flex';
+}
+
+function closeWarmup() {
+    document.getElementById('warmup-modal').style.display = 'none';
 }
 
 function resetAndStartTimer() {
@@ -477,7 +586,15 @@ function stopRestTimer() {
 function nextStep() {
     haptic('light');
     const wVal = parseFloat(document.getElementById('weight-picker').value);
-    const entry = { exName: state.currentExName, w: wVal, r: parseInt(document.getElementById('reps-picker').value), rir: document.getElementById('rir-picker').value };
+    const noteVal = document.getElementById('set-notes').value.trim();
+    
+    const entry = { 
+        exName: state.currentExName, 
+        w: wVal, 
+        r: parseInt(document.getElementById('reps-picker').value), 
+        rir: document.getElementById('rir-picker').value,
+        note: noteVal 
+    };
     
     StorageManager.saveWeight(state.currentExName, wVal);
 
@@ -629,7 +746,9 @@ function finish() {
     state.log.forEach(e => {
         if(!grouped[e.exName]) grouped[e.exName] = { sets: [], vol: 0 };
         if(!e.skip) {
-            grouped[e.exName].sets.push(`${e.w}kg x ${e.r} (RIR ${e.rir})`);
+            let setStr = `${e.w}kg x ${e.r} (RIR ${e.rir})`;
+            if (e.note) setStr += ` | Note: ${e.note}`;
+            grouped[e.exName].sets.push(setStr);
             grouped[e.exName].vol += (e.w * e.r);
         }
     });
@@ -657,29 +776,7 @@ function copyResult() {
     }
 }
 
-(function injectArchiveUI() {
-    const weekScreen = document.getElementById('ui-week');
-    if (weekScreen && !document.getElementById('btn-open-archive')) {
-        const btn = document.createElement('button');
-        btn.id = 'btn-open-archive';
-        btn.className = "action-card secondary";
-        btn.style.marginTop = "20px";
-        btn.innerHTML = `<div class="card-icon">📜</div><div class="card-text">ארכיון אימונים</div>`;
-        btn.onclick = openArchive;
-        weekScreen.appendChild(btn);
-    }
-
-    if (!document.getElementById('ui-archive')) {
-        const archiveScreen = document.createElement('div');
-        archiveScreen.id = 'ui-archive';
-        archiveScreen.className = 'screen';
-        archiveScreen.innerHTML = `
-            <div class="hero-section"><h2>ארכיון אימונים</h2></div>
-            <div id="archive-list" class="vertical-stack"></div>
-        `;
-        document.querySelector('.content-area').appendChild(archiveScreen);
-    }
-})();
+// --- ARCHIVE LOGIC ---
 
 function openArchive() {
     const list = document.getElementById('archive-list');
@@ -699,18 +796,68 @@ function openArchive() {
                 </div>
                 <p>${item.type}</p>
             `;
-            card.onclick = () => {
-                if(confirm("להעתיק סיכום זה?\n(לחץ ביטול למחיקה)")) {
-                    navigator.clipboard.writeText(item.summary).then(() => alert("הועתק!"));
-                } else {
-                    if(confirm("למחוק אימון זה מהארכיון?")) {
-                        StorageManager.deleteFromArchive(item.timestamp);
-                        openArchive();
-                    }
-                }
-            };
+            card.onclick = () => showArchiveDetail(item);
             list.appendChild(card);
         });
     }
     navigate('ui-archive');
+}
+
+function showArchiveDetail(item) {
+    currentArchiveItem = item;
+    document.getElementById('archive-detail-content').innerText = item.summary;
+    
+    const copyBtn = document.getElementById('btn-archive-copy');
+    copyBtn.onclick = () => {
+        navigator.clipboard.writeText(item.summary).then(() => alert("הועתק!"));
+    };
+
+    const delBtn = document.getElementById('btn-archive-delete');
+    delBtn.onclick = () => {
+        if(confirm("למחוק אימון זה מהארכיון?")) {
+            StorageManager.deleteFromArchive(item.timestamp);
+            openArchive(); 
+        }
+    };
+
+    navigate('ui-archive-detail');
+}
+
+// --- DATA EXPORT/IMPORT ---
+function exportData() {
+    const data = StorageManager.getAllData();
+    const jsonString = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonString], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gympro_backup_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+function triggerImport() {
+    document.getElementById('import-file').click();
+}
+
+function importData(input) {
+    const file = input.files[0];
+    if(!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            if(confirm("האם לדרוס את הנתונים הקיימים ולשחזר מהגיבוי?")) {
+                StorageManager.restoreData(data);
+                alert("הנתונים שוחזרו בהצלחה! האפליקציה תרענן את עצמה.");
+                location.reload();
+            }
+        } catch(err) {
+            alert("שגיאה בטעינת הקובץ. וודא שזהו קובץ גיבוי תקין.");
+        }
+    };
+    reader.readAsText(file);
 }
