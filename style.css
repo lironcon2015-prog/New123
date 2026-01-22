@@ -91,6 +91,16 @@ body {
     width: 100%; outline: none; text-align: center; appearance: none;
 }
 
+/* Minimal Input Style for Notes */
+.minimal-input {
+    background: transparent; border: none; border-bottom: 1px solid var(--border);
+    color: var(--text); font-size: 0.95em; width: 100%; padding: 12px 5px;
+    margin-bottom: 20px; text-align: center; font-family: inherit;
+    transition: border-color 0.3s;
+}
+.minimal-input:focus { outline: none; border-bottom-color: var(--accent); }
+.minimal-input::placeholder { color: var(--text-dim); }
+
 .btn-main {
     padding: 18px; border-radius: var(--ios-radius); border: none;
     font-weight: 700; color: white; width: 100%; font-size: 1.1em;
@@ -125,9 +135,16 @@ body {
     margin-top: 5px; margin-bottom: 20px; 
     display: none; text-align: center; 
 }
-.badge-row { display: flex; gap: 8px; margin-bottom: 5px; }
+.badge-row { display: flex; gap: 8px; margin-bottom: 5px; align-items: center; }
 .ios-badge { background: var(--accent); padding: 4px 8px; border-radius: 6px; font-size: 0.7em; font-weight: 800; }
 .uni-badge { background: #ff9f0a; color: black; padding: 4px 8px; border-radius: 6px; font-size: 0.7em; font-weight: 800; display: none; }
+.warmup-badge { 
+    background: #ff3b30; color: white; padding: 4px 10px; border: none;
+    border-radius: 6px; font-size: 0.7em; font-weight: 800; 
+    display: none; cursor: pointer; animation: pulseRed 2s infinite;
+}
+@keyframes pulseRed { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
 .summary-card {
     background: #111; padding: 20px; border-radius: var(--ios-radius);
     font-family: 'Menlo', monospace; white-space: pre-wrap; font-size: 0.85em;
@@ -135,3 +152,22 @@ body {
 }
 .finish-main-btn { background: #3a3a3c; color: white; padding: 15px; border-radius: var(--ios-radius); border: none; width: 100%; margin-top: 20px; font-weight: 600; }
 .bonus-card { width: 100%; text-align: center; }
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85); z-index: 1000;
+    display: none; justify-content: center; align-items: center;
+    backdrop-filter: blur(5px);
+}
+.modal-content {
+    background: var(--card-bg); border: 1px solid var(--border);
+    padding: 25px; border-radius: var(--ios-radius); width: 85%; max-width: 320px;
+    text-align: center;
+}
+.warmup-row {
+    display: flex; justify-content: space-between; padding: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.95em;
+}
+.warmup-row:last-child { border-bottom: none; }
