@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>GymPro Elite 10.9.1</title>
+    <title>GymPro Elite 11.1.0</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="stylesheet" href="style.css">
@@ -11,13 +11,23 @@
 </head>
 <body>
     <div class="glass-overlay"></div>
+    
+    <!-- Warmup Modal -->
+    <div id="warmup-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3>🔥 חימום מומלץ</h3>
+            <div id="warmup-list" class="vertical-stack" style="margin: 20px 0;"></div>
+            <button class="btn-main primary-gradient" onclick="closeWarmup()">הבנתי, סגור</button>
+        </div>
+    </div>
+
     <div class="app-container">
         <header class="app-header">
             <button id="global-back" class="back-btn" onclick="handleBackClick()">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             </button>
             <div class="brand-logo">GYMPRO <span>ELITE</span></div>
-            <div class="version-tag">V 10.9.1</div>
+            <div class="version-tag">V 11.1.0</div>
         </header>
 
         <main class="content-area">
@@ -36,6 +46,11 @@
                     <button class="menu-card" onclick="selectWeek(2)"><span>שבוע 2</span><div class="arrow">➔</div></button>
                     <button class="menu-card" onclick="selectWeek(3)"><span>שבוע 3</span><div class="arrow">➔</div></button>
                 </div>
+
+                <button class="action-card secondary" style="margin-top: 20px;" onclick="openArchive()">
+                    <div class="card-icon">📜</div>
+                    <div class="card-text">ארכיון וגיבוי</div>
+                </button>
             </div>
 
             <div id="ui-workout-type" class="screen">
@@ -96,6 +111,7 @@
                 <div class="exercise-header">
                     <div class="badge-row">
                         <span id="set-counter" class="ios-badge">SET 1/3</span>
+                        <button id="btn-warmup" class="warmup-badge" onclick="calcWarmup()">🔥 חימום</button>
                         <div id="unilateral-note" class="uni-badge">UNILATERAL</div>
                     </div>
                     <h2 id="ex-display-name"></h2>
@@ -107,6 +123,8 @@
                     <div class="glass-card compact"><label>Reps</label><select id="reps-picker" class="ios-picker"></select></div>
                     <div class="glass-card compact"><label>RIR</label><select id="rir-picker" class="ios-picker"></select></div>
                 </div>
+
+                <input type="text" id="set-notes" class="minimal-input" placeholder="הערות לסט (אופציונלי)">
 
                 <button id="btn-submit-set" class="btn-main primary-gradient pulse" onclick="nextStep()">סיום סט</button>
 
@@ -160,6 +178,35 @@
                 <div id="summary-area" class="summary-card"></div>
                 <button class="btn-main primary-gradient" onclick="copyResult()">העתק וסגור</button>
             </div>
+
+            <!-- ארכיון וגיבוי -->
+            <div id="ui-archive" class="screen">
+                <div class="hero-section"><h2>ארכיון וגיבוי</h2></div>
+                
+                <div class="input-grid" style="margin-bottom: 20px;">
+                    <button class="glass-card compact" onclick="exportData()" style="width:100%; border:1px solid var(--accent); color:var(--accent);">
+                        <label style="color:white; font-size:1.5em; margin-bottom:5px;">📤</label>
+                        ייצוא נתונים
+                    </button>
+                    <button class="glass-card compact" onclick="triggerImport()" style="width:100%; border:1px solid #32D74B; color:#32D74B;">
+                        <label style="color:white; font-size:1.5em; margin-bottom:5px;">📥</label>
+                        ייבוא נתונים
+                    </button>
+                </div>
+                <input type="file" id="import-file" style="display: none;" onchange="importData(this)">
+
+                <div id="archive-list" class="vertical-stack"></div>
+            </div>
+
+            <div id="ui-archive-detail" class="screen">
+                <div class="hero-section"><h2>פרטי אימון</h2></div>
+                <div id="archive-detail-content" class="summary-card"></div>
+                <div class="vertical-stack" style="margin-top: 20px;">
+                    <button class="btn-main primary-gradient" id="btn-archive-copy">העתק סיכום</button>
+                    <button class="btn-text" id="btn-archive-delete" style="color: #ff453a;">מחק אימון מהארכיון</button>
+                </div>
+            </div>
+
         </main>
     </div>
     <script src="script.js"></script>
