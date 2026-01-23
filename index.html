@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>GymPro Elite 11.1.0</title>
+    <title>GymPro Elite 11.3.0</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="stylesheet" href="style.css">
@@ -17,8 +17,33 @@
         <div class="modal-content">
             <h3>🔥 חימום מומלץ</h3>
             <div id="warmup-list" class="vertical-stack" style="margin: 20px 0;"></div>
-            <button class="btn-main primary-gradient" onclick="closeWarmup()">הבנתי, סגור</button>
+            <button class="btn-main primary-gradient" onclick="markWarmupDone()">סיימתי חימום, סגור</button>
+            <button class="btn-text" onclick="closeWarmup()">סגור ללא רישום</button>
         </div>
+    </div>
+
+    <!-- Edit Set Modal (NEW) -->
+    <div id="edit-set-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3>עריכת סט</h3>
+            <div class="input-grid" style="margin-bottom: 15px;">
+                <div class="glass-card compact"><label>Weight</label><input type="number" id="edit-weight" class="minimal-input" style="margin:0;"></div>
+                <div class="glass-card compact"><label>Reps</label><input type="number" id="edit-reps" class="minimal-input" style="margin:0;"></div>
+                <div class="glass-card compact"><label>RIR</label><input type="number" id="edit-rir" class="minimal-input" style="margin:0;"></div>
+            </div>
+            <input type="text" id="edit-note" class="minimal-input" placeholder="הערה...">
+            
+            <button class="btn-main primary-gradient" onclick="saveSetEdit()">שמור שינויים</button>
+            <button id="btn-delete-last-set" class="btn-text" style="color: #ff453a; display: none;" onclick="deleteLastSet()">מחק סט אחרון (Undo)</button>
+            <button class="btn-text" onclick="closeEditModal()">ביטול</button>
+        </div>
+    </div>
+
+    <!-- Bottom Sheet (Drawer) -->
+    <div id="sheet-overlay" class="bottom-sheet-overlay" onclick="closeDayDrawer()"></div>
+    <div id="sheet-modal" class="bottom-sheet">
+        <div class="sheet-handle"></div>
+        <div id="sheet-content" class="sheet-content"></div>
     </div>
 
     <div class="app-container">
@@ -27,7 +52,7 @@
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             </button>
             <div class="brand-logo">GYMPRO <span>ELITE</span></div>
-            <div class="version-tag">V 11.1.0</div>
+            <div class="version-tag">V 11.3.0</div>
         </header>
 
         <main class="content-area">
@@ -86,6 +111,14 @@
                 <div id="variation-options" class="vertical-stack"></div>
                 <button class="btn-text" onclick="handleBackClick()">חזור</button>
             </div>
+            
+            <!-- SWAP SCREEN -->
+            <div id="ui-swap-list" class="screen">
+                <h2 class="section-title">שנה סדר תרגילים</h2>
+                <p class="sub-text">בחר תרגיל מהרשימה כדי לקפוץ אליו כעת:</p>
+                <div id="swap-options" class="vertical-stack"></div>
+                <button class="btn-text" onclick="handleBackClick()">ביטול</button>
+            </div>
 
             <div id="ui-1rm" class="screen">
                 <div class="hero-section"><h2 id="rm-title">1RM</h2></div>
@@ -96,25 +129,46 @@
                 <button class="btn-main primary-gradient" onclick="save1RM()">צור אימון</button>
             </div>
 
+            <!-- CONFIRM SCREEN -->
             <div id="ui-confirm" class="screen flex-center">
                 <div class="confirm-box">
                     <p>התרגיל הבא:</p>
                     <h2 id="confirm-ex-name"></h2>
-                    <button class="btn-main primary-gradient" onclick="confirmExercise(true)">התחל</button>
-                    <button class="btn-text" onclick="confirmExercise(false)">דלג</button>
                     
-                    <button id="btn-interruption" class="btn-text" style="color: var(--accent); margin-top: 20px;" onclick="interruptWorkout()">➕ הוסף תרגיל ביניים</button>
+                    <button class="btn-main primary-gradient" onclick="confirmExercise(true)">התחל אימון</button>
+                    
+                    <!-- CONTROL GRID -->
+                    <div class="action-grid">
+                        <button class="control-btn" onclick="confirmExercise(false)">
+                            <div class="icon">⏭️</div>
+                            <span>דלג</span>
+                        </button>
+                        
+                        <button id="btn-swap-confirm" class="control-btn accent-border" onclick="openSwapMenu()">
+                            <div class="icon">⇄</div>
+                            <span>החלף</span>
+                        </button>
+                        
+                        <button id="btn-interruption" class="control-btn" onclick="interruptWorkout()">
+                            <div class="icon">➕</div>
+                            <span>הוסף</span>
+                        </button>
+                    </div>
+
                 </div>
             </div>
 
             <div id="ui-main" class="screen">
                 <div class="exercise-header">
-                    <div class="badge-row">
+                    <!-- Session Log Button -->
+                    <button onclick="openSessionLog()" style="position: absolute; left: 0; background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); padding: 5px 10px; font-size: 1.2em; cursor: pointer;">📋</button>
+                    
+                    <div class="badge-row" style="margin-top: 5px;">
                         <span id="set-counter" class="ios-badge">SET 1/3</span>
                         <button id="btn-warmup" class="warmup-badge" onclick="calcWarmup()">🔥 חימום</button>
                         <div id="unilateral-note" class="uni-badge">UNILATERAL</div>
                     </div>
-                    <h2 id="ex-display-name"></h2>
+                    <h2 id="ex-display-name" style="margin-top: 15px;"></h2>
                     <div id="last-set-info" class="history-pill"></div>
                 </div>
 
@@ -175,11 +229,14 @@
 
             <div id="ui-summary" class="screen">
                 <div class="hero-section"><h2>סיכום אימון</h2></div>
+                
+                <!-- New Note Input -->
+                <input type="text" id="summary-note" class="minimal-input" placeholder="הערות כלליות לאימון (אופציונלי)" style="margin-bottom: 20px;">
+                
                 <div id="summary-area" class="summary-card"></div>
                 <button class="btn-main primary-gradient" onclick="copyResult()">העתק וסגור</button>
             </div>
 
-            <!-- ארכיון וגיבוי -->
             <div id="ui-archive" class="screen">
                 <div class="hero-section"><h2>ארכיון וגיבוי</h2></div>
                 
@@ -193,9 +250,43 @@
                         ייבוא נתונים
                     </button>
                 </div>
-                <input type="file" id="import-file" style="display: none;" onchange="importData(this)">
 
-                <div id="archive-list" class="vertical-stack"></div>
+                <!-- View Toggle -->
+                <div class="segmented-control">
+                    <button id="btn-view-list" class="segment-btn active" onclick="switchArchiveView('list')">רשימה</button>
+                    <button id="btn-view-calendar" class="segment-btn" onclick="switchArchiveView('calendar')">לוח שנה</button>
+                </div>
+
+                <!-- Calendar View Container -->
+                <div id="calendar-view" style="display: none;">
+                    <div class="calendar-wrapper">
+                        <div class="calendar-header">
+                            <button class="month-nav-btn" onclick="changeMonth(-1)">❮</button>
+                            <span id="current-month-display" class="current-month-display"></span>
+                            <button class="month-nav-btn" onclick="changeMonth(1)">❯</button>
+                        </div>
+                        <div class="calendar-grid">
+                            <div class="day-name">א'</div><div class="day-name">ב'</div><div class="day-name">ג'</div>
+                            <div class="day-name">ד'</div><div class="day-name">ה'</div><div class="day-name">ו'</div><div class="day-name">ש'</div>
+                        </div>
+                        <div id="calendar-days" class="calendar-grid"></div>
+                    </div>
+                </div>
+
+                <!-- List View Container -->
+                <div id="list-view-container">
+                    <div class="archive-actions" style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <button class="glass-card compact" style="width: 100%; color: var(--accent); border-color: var(--accent); font-weight:600;" onclick="copyBulkLog('all')">
+                            העתק הכל
+                        </button>
+                        <button id="btn-copy-selected" class="glass-card compact" style="width: 100%; color: var(--text-dim); border-color: var(--border); font-weight:600; opacity: 0.5;" onclick="copyBulkLog('selected')" disabled>
+                            העתק מסומנים
+                        </button>
+                    </div>
+                    <div id="archive-list" class="vertical-stack"></div>
+                </div>
+                
+                <input type="file" id="import-file" style="display: none;" onchange="importData(this)">
             </div>
 
             <div id="ui-archive-detail" class="screen">
