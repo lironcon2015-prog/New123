@@ -1,23 +1,25 @@
 /**
- * GYMSTART V1.7 (Text-Based Admin & Smart Features)
+ * GYMSTART V1.7 (Full Data Restoration)
  * Features: 
- * - Text-only Admin UI (No Emojis)
- * - 2-Row Exercise Cards (Sets & Rest)
- * - Rest Timer Control
- * - Smart Weight Prediction
+ * - Text-only Admin UI (No Emojis, Clean Layout)
+ * - 2-Row Exercise Cards (Sets & Rest Control)
+ * - Rest Timer Control (Per exercise)
+ * - Smart Weight Prediction (Based on history)
  * - Click-to-Edit Tips
+ * - Full Data: A, B, FBW routines included
  */
 
 const CONFIG = {
     KEYS: {
-        ROUTINES: 'gymstart_v1_7_routines',
-        HISTORY: 'gymstart_beta_02_history' 
+        ROUTINES: 'gymstart_v1_7_routines', // New V1.7 storage key
+        HISTORY: 'gymstart_beta_02_history' // Compatible with previous history
     },
-    VERSION: '1.7.0'
+    VERSION: '1.7.1'
 };
 
 const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה' };
 
+// FULL EXERCISE BANK
 const BANK = [
     { id: 'goblet', name: 'גובלט סקוואט', unit: 'kg', cat: 'legs' },
     { id: 'leg_press', name: 'לחיצת רגליים', unit: 'kg', cat: 'legs' },
@@ -49,6 +51,7 @@ const BANK = [
     { id: 'crunches', name: 'כפיפות בטן', unit: 'bodyweight', cat: 'core' }
 ];
 
+// FULL DEFAULT ROUTINES (A, B, FBW)
 const DEFAULT_ROUTINES_V17 = {
     'A': {
         title: 'רגליים וגב (A)',
@@ -71,6 +74,17 @@ const DEFAULT_ROUTINES_V17 = {
             { id: 'bicep_curl', name: 'יד קדמית', unit: 'kg', note: '', rest: 45, cat: 'arms', sets: 3 },
             { id: 'tricep_pull', name: 'יד אחורית', unit: 'plates', note: '', rest: 45, cat: 'arms', sets: 3 },
             { id: 'plank', name: 'פלאנק סטטי', unit: 'bodyweight', note: '', rest: 45, cat: 'core', sets: 3 }
+        ]
+    },
+    'FBW': {
+        title: 'FBW כל הגוף',
+        exercises: [
+            { id: 'goblet', name: 'גובלט סקוואט', unit: 'kg', note: 'רגליים', rest: 90, cat: 'legs', sets: 3 },
+            { id: 'rdl', name: 'דדליפט רומני', unit: 'kg', note: 'רגליים', rest: 60, cat: 'legs', sets: 3 },
+            { id: 'chest_press', name: 'לחיצת חזה', unit: 'kg', note: 'חזה', rest: 60, cat: 'chest', sets: 3 },
+            { id: 'cable_row', name: 'חתירה בכבל', unit: 'plates', note: 'גב', rest: 60, cat: 'back', sets: 3 },
+            { id: 'shoulder_press', name: 'לחיצת כתפיים', unit: 'kg', note: 'כתפיים', rest: 60, cat: 'shoulders', sets: 3 },
+            { id: 'crunches', name: 'כפיפות בטן', unit: 'bodyweight', note: 'בטן', rest: 45, cat: 'core', sets: 3 }
         ]
     }
 };
@@ -106,16 +120,19 @@ const app = {
     },
 
     loadData: function() {
+        // Load history from legacy/current key
         const h = localStorage.getItem(CONFIG.KEYS.HISTORY);
         this.state.history = h ? JSON.parse(h) : [];
         
+        // Load routines from new V1.7 key
         const r = localStorage.getItem(CONFIG.KEYS.ROUTINES);
         let loaded = r ? JSON.parse(r) : null;
 
         if (!loaded) {
+            // First time loading V1.7 -> Use new defaults
             this.state.routines = JSON.parse(JSON.stringify(DEFAULT_ROUTINES_V17));
         } else {
-            // V1.7 Migration: Ensure 'rest' exists
+            // V1.7 Migration: Ensure 'rest' exists if loaded data is partial
             for(const pid in loaded) {
                 loaded[pid].exercises.forEach(ex => {
                     if(typeof ex.rest === 'undefined') ex.rest = 60;
@@ -175,6 +192,7 @@ const app = {
 
         ids.forEach(pid => {
             const prog = this.state.routines[pid];
+            // Dynamic badge from ID first char
             const badge = pid.charAt(0).toUpperCase();
             const count = prog.exercises.length;
             
@@ -279,9 +297,9 @@ const app = {
             document.getElementById('stopwatch-container').style.display = 'none';
             document.getElementById('unit-label-card').innerText = ex.unit === 'plates' ? 'פלטות' : 'ק״ג';
             
-            // SMART WEIGHT PREDICTION
+            // SMART WEIGHT PREDICTION (New in V1.7)
             let smartWeight = ex.target?.w || 10;
-            // Scan history backwards
+            // Scan history backwards to find last weight for this Exercise ID
             for(let i=this.state.history.length-1; i>=0; i--) {
                 const sess = this.state.history[i];
                 const found = sess.data.find(e => e.id === ex.id);
@@ -434,7 +452,7 @@ const app = {
         }
         exLog.sets.push({ w, r, feel: this.state.active.feel });
 
-        // ACTIVE REST: Use the specific exercise rest time
+        // ACTIVE REST V1.7: Use specific rest
         const restTime = ex.rest || 60;
         this.startRestTimer(restTime);
 
@@ -612,7 +630,7 @@ const app = {
         window.location.reload();
     },
 
-    /* --- V1.7 ADMIN UI LOGIC --- */
+    /* --- V1.7 ADMIN UI LOGIC (Text-Based) --- */
 
     openAdminHome: function() { 
         if (this.state.active.on) {
