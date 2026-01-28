@@ -1,999 +1,1020 @@
 /**
- * GYMPRO ELITE V11.3.0
- * - NEW: Session Drawer (Live Log)
- * - NEW: Edit Set capability (Values + Notes)
- * - NEW: Undo Last Set capability (Smart Delete)
+ * GYMSTART V1.7 (Text-Based Admin & Smart Features)
+ * Features: 
+ * - Text-only Admin UI (No Emojis)
+ * - 2-Row Exercise Cards (Sets & Rest)
+ * - Rest Timer Control
+ * - Smart Weight Prediction
+ * - Click-to-Edit Tips
  */
 
-// --- GLOBAL STATE ---
-let state = {
-    week: 1, type: '', rm: 100, exIdx: 0, setIdx: 0, 
-    log: [], currentEx: null, currentExName: '',
-    historyStack: ['ui-week'],
-    timerInterval: null, seconds: 0, startTime: null,
-    isArmPhase: false, isFreestyle: false, isExtraPhase: false, isInterruption: false,
-    currentMuscle: '',
-    completedExInSession: [],
-    workoutStartTime: null, workoutDurationMins: 0,
-    lastLoggedSet: null,
-    firstArmGroup: null, 
-    secondArmGroup: null,
-    lastWorkoutDetails: {}, // To store grouped details for archive
-    // Archive State
-    archiveView: 'list', // 'list' or 'calendar'
-    calendarOffset: 0, // Months from current
-    // Edit State
-    editingIndex: -1
+const CONFIG = {
+    KEYS: {
+        ROUTINES: 'gymstart_v1_7_routines',
+        HISTORY: 'gymstart_beta_02_history' 
+    },
+    VERSION: '1.7.0'
 };
 
-let audioContext;
-let wakeLock = null;
-let currentArchiveItem = null;
-let selectedArchiveIds = new Set(); 
+const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה' };
 
-// --- LOCAL STORAGE MANAGER ---
-const StorageManager = {
-    KEY_WEIGHTS: 'gympro_weights',
-    KEY_RM: 'gympro_rm',
-    KEY_ARCHIVE: 'gympro_archive',
-
-    getData(key) {
-        try { return JSON.parse(localStorage.getItem(key)) || {}; } 
-        catch { return {}; }
-    },
-
-    saveData(key, data) {
-        localStorage.setItem(key, JSON.stringify(data));
-    },
-
-    getLastWeight(exName) {
-        const data = this.getData(this.KEY_WEIGHTS);
-        return data[exName] || null;
-    },
-
-    saveWeight(exName, weight) {
-        const data = this.getData(this.KEY_WEIGHTS);
-        data[exName] = weight;
-        this.saveData(this.KEY_WEIGHTS, data);
-    },
-
-    getLastRM(exName) {
-        const data = this.getData(this.KEY_RM);
-        return data[exName] || null;
-    },
-
-    saveRM(exName, rmVal) {
-        const data = this.getData(this.KEY_RM);
-        data[exName] = rmVal;
-        this.saveData(this.KEY_RM, data);
-    },
-
-    saveToArchive(workoutObj) {
-        let history = JSON.parse(localStorage.getItem(this.KEY_ARCHIVE)) || [];
-        history.unshift(workoutObj);
-        localStorage.setItem(this.KEY_ARCHIVE, JSON.stringify(history));
-    },
-
-    getArchive() {
-        return JSON.parse(localStorage.getItem(this.KEY_ARCHIVE)) || [];
-    },
-    
-    deleteFromArchive(timestamp) {
-        let history = this.getArchive();
-        history = history.filter(h => h.timestamp !== timestamp);
-        localStorage.setItem(this.KEY_ARCHIVE, JSON.stringify(history));
-    },
-
-    getAllData() {
-        return {
-            weights: this.getData(this.KEY_WEIGHTS),
-            rms: this.getData(this.KEY_RM),
-            archive: this.getArchive()
-        };
-    },
-
-    restoreData(dataObj) {
-        if(dataObj.weights) this.saveData(this.KEY_WEIGHTS, dataObj.weights);
-        if(dataObj.rms) this.saveData(this.KEY_RM, dataObj.rms);
-        if(dataObj.archive) localStorage.setItem(this.KEY_ARCHIVE, JSON.stringify(dataObj.archive));
-    }
-};
-
-// --- DATABASE ---
-const unilateralExercises = ["Dumbbell Peck Fly", "Lateral Raises", "Single Leg Curl", "Dumbbell Bicep Curls", "Cable Fly", "Concentration Curls"];
-const heavyCompounds = ["Overhead Press (Main)", "Bench Press (Main)", "Squat", "Deadlift"];
-
-const exerciseDatabase = [
-    { name: "Overhead Press (Main)", muscles: ["כתפיים"], isCalc: true, baseRM: 60, rmRange: [50, 100], manualRange: {base: 50, min: 40, max: 80, step: 2.5} },
-    { name: "Lateral Raises", muscles: ["כתפיים"], sets: [{w: 12.5, r: 13}, {w: 12.5, r: 13}, {w: 12.5, r: 11}], step: 0.5 },
-    { name: "Weighted Pull Ups", muscles: ["גב"], sets: [{w: 0, r: 8}, {w: 0, r: 8}, {w: 0, r: 8}], step: 5, minW: 0, maxW: 40, isBW: true },
-    { name: "Face Pulls", muscles: ["כתפיים"], sets: [{w: 40, r: 13}, {w: 40, r: 13}, {w: 40, r: 15}], step: 2.5 },
-    { name: "Barbell Shrugs", muscles: ["כתפיים"], sets: [{w: 140, r: 11}, {w: 140, r: 11}, {w: 140, r: 11}], step: 5 },
-    { name: "Bench Press (Main)", muscles: ["חזה"], isCalc: true, baseRM: 100, rmRange: [80, 150], manualRange: {base: 85, min: 60, max: 140, step: 2.5} },
-    { name: "Incline Bench Press", muscles: ["חזה"], sets: [{w: 65, r: 9}, {w: 65, r: 9}, {w: 65, r: 9}], step: 2.5 },
-    { name: "Dumbbell Peck Fly", muscles: ["חזה"], sets: [{w: 14, r: 11}, {w: 14, r: 11}, {w: 14, r: 11}], step: 2 },
-    { name: "Machine Peck Fly", muscles: ["חזה"], sets: [{w: 45, r: 11}, {w: 45, r: 11}, {w: 45, r: 11}], step: 1 },
-    { name: "Cable Fly", muscles: ["חזה"], sets: [{w: 12.5, r: 11}, {w: 12.5, r: 11}, {w: 12.5, r: 11}], step: 2.5 },
-    { name: "Leg Press", muscles: ["רגליים"], sets: [{w: 280, r: 8}, {w: 300, r: 8}, {w: 300, r: 7}], step: 5 },
-    { name: "Squat", muscles: ["רגליים"], sets: [{w: 100, r: 8}, {w: 100, r: 8}, {w: 100, r: 8}], step: 2.5, minW: 60, maxW: 180 },
-    { name: "Deadlift", muscles: ["רגליים"], sets: [{w: 100, r: 5}, {w: 100, r: 5}, {w: 100, r: 5}], step: 2.5, minW: 60, maxW: 180 },
-    { name: "Romanian Deadlift", muscles: ["רגליים"], sets: [{w: 100, r: 8}, {w: 100, r: 8}, {w: 100, r: 8}], step: 2.5, minW: 60, maxW: 180 },
-    { name: "Single Leg Curl", muscles: ["רגליים"], sets: [{w: 25, r: 8}, {w: 30, r: 6}, {w: 25, r: 8}], step: 2.5 },
-    { name: "Lying Leg Curl (Double)", muscles: ["רגליים"], sets: [{w: 50, r: 8}, {w: 60, r: 6}, {w: 50, r: 8}], step: 5 },
-    { name: "Seated Leg Curl", muscles: ["רגליים"], sets: [{w: 50, r: 10}, {w: 50, r: 10}, {w: 50, r: 10}], step: 5 }, 
-    { name: "Seated Calf Raise", muscles: ["רגליים"], sets: [{w: 70, r: 10}, {w: 70, r: 10}, {w: 70, r: 12}], step: 5 },
-    { name: "Standing Calf Raise", muscles: ["רגליים"], sets: [{w: 110, r: 10}, {w: 110, r: 10}, {w: 110, r: 12}], step: 10 },
-    { name: "Lat Pulldown", muscles: ["גב"], sets: [{w: 75, r: 10}, {w: 75, r: 10}, {w: 75, r: 11}], step: 2.5 },
-    { name: "Pull Ups", muscles: ["גב"], isBW: true, sets: [{w: 0, r: 8}, {w: 0, r: 8}, {w: 0, r: 8}] },
-    { name: "Cable Row", muscles: ["גב"], sets: [{w: 65, r: 10}, {w: 65, r: 10}, {w: 65, r: 12}], step: 2.5 },
-    { name: "Machine Row", muscles: ["גב"], sets: [{w: 50, r: 10}, {w: 50, r: 10}, {w: 50, r: 12}], step: 5 },
-    { name: "Straight Arm Pulldown", muscles: ["גב"], sets: [{w: 30, r: 10}, {w: 30, r: 12}, {w: 30, r: 12}], step: 2.5 },
-    { name: "Back Extension", muscles: ["גב"], sets: [{w: 0, r: 12}, {w: 0, r: 12}, {w: 0, r: 12}], step: 5, minW: 0, maxW: 50, isBW: true }
+const BANK = [
+    { id: 'goblet', name: 'גובלט סקוואט', unit: 'kg', cat: 'legs' },
+    { id: 'leg_press', name: 'לחיצת רגליים', unit: 'kg', cat: 'legs' },
+    { id: 'rdl', name: 'דדליפט רומני', unit: 'kg', cat: 'legs' },
+    { id: 'lunge', name: 'מכרעים (Lunges)', unit: 'kg', cat: 'legs' },
+    { id: 'hip_thrust', name: 'גשר עכוז', unit: 'kg', cat: 'legs' },
+    { id: 'leg_ext', name: 'פשיטת ברכיים', unit: 'plates', cat: 'legs' },
+    { id: 'leg_curl', name: 'כפיפת ברכיים', unit: 'plates', cat: 'legs' },
+    { id: 'calf_raise', name: 'הרמת עקבים', unit: 'kg', cat: 'legs' },
+    { id: 'chest_press', name: 'לחיצת חזה משקולות', unit: 'kg', cat: 'chest' },
+    { id: 'fly', name: 'פרפר (Fly)', unit: 'kg', cat: 'chest' },
+    { id: 'pushup', name: 'שכיבות סמיכה', unit: 'bodyweight', cat: 'chest' },
+    { id: 'incline_bench', name: 'לחיצת חזה שיפוע עליון', unit: 'kg', cat: 'chest' },
+    { id: 'lat_pull', name: 'פולי עליון', unit: 'plates', cat: 'back' },
+    { id: 'cable_row', name: 'חתירה בכבל', unit: 'plates', cat: 'back' },
+    { id: 'db_row', name: 'חתירה במשקולת', unit: 'kg', cat: 'back' },
+    { id: 'hyperext', name: 'פשיטת גו (Hyper)', unit: 'bodyweight', cat: 'back' },
+    { id: 'shoulder_press', name: 'לחיצת כתפיים', unit: 'kg', cat: 'shoulders' },
+    { id: 'lat_raise', name: 'הרחקה לצדדים', unit: 'kg', cat: 'shoulders' },
+    { id: 'face_pull', name: 'פייס-פולס', unit: 'plates', cat: 'shoulders' },
+    { id: 'bicep_curl', name: 'כפיפת מרפקים', unit: 'kg', cat: 'arms' },
+    { id: 'tricep_pull', name: 'פשיטת מרפקים', unit: 'plates', cat: 'arms' },
+    { id: 'tricep_rope', name: 'פשיטת מרפקים חבל', unit: 'plates', cat: 'arms' },
+    { id: 'hammer_curl', name: 'כפיפת פטישים', unit: 'kg', cat: 'arms' },
+    { id: 'plank', name: 'פלאנק (סטטי)', unit: 'bodyweight', cat: 'core' },
+    { id: 'side_plank', name: 'פלאנק צידי', unit: 'bodyweight', cat: 'core' },
+    { id: 'bicycle', name: 'בטן אופניים', unit: 'bodyweight', cat: 'core' },
+    { id: 'knee_raise', name: 'הרמת ברכיים', unit: 'bodyweight', cat: 'core' },
+    { id: 'crunches', name: 'כפיפות בטן', unit: 'bodyweight', cat: 'core' }
 ];
 
-const armExercises = {
-    biceps: [
-        { name: "Dumbbell Bicep Curls", sets: [{w: 12, r: 8}], step: 0.5 },
-        { name: "Barbell Bicep Curls", sets: [{w: 25, r: 8}], step: 1 },
-        { name: "Concentration Curls", sets: [{w: 10, r: 10}], step: 0.5 }
-    ],
-    triceps: [
-        { name: "Triceps Pushdown", sets: [{w: 35, r: 8}], step: 2.5 },
-        { name: "Lying Triceps Extension", sets: [{w: 25, r: 8}], step: 2.5 }
-    ]
+const DEFAULT_ROUTINES_V17 = {
+    'A': {
+        title: 'רגליים וגב (A)',
+        exercises: [
+            { id: 'goblet', name: 'גובלט סקוואט', unit: 'kg', note: 'גב זקוף', rest: 90, cat: 'legs', sets: 3 },
+            { id: 'leg_press', name: 'לחיצת רגליים', unit: 'kg', note: '', rest: 60, cat: 'legs', sets: 3 },
+            { id: 'rdl', name: 'דדליפט רומני', unit: 'kg', note: 'תנועה איטית', rest: 60, cat: 'legs', sets: 3 },
+            { id: 'lat_pull', name: 'פולי עליון', unit: 'plates', note: '', rest: 60, cat: 'back', sets: 3 },
+            { id: 'cable_row', name: 'חתירה בכבל', unit: 'plates', note: '', rest: 60, cat: 'back', sets: 3 },
+            { id: 'bicycle', name: 'בטן אופניים', unit: 'bodyweight', note: '', rest: 45, cat: 'core', sets: 3 }
+        ]
+    },
+    'B': {
+        title: 'חזה וכתפיים (B)',
+        exercises: [
+            { id: 'chest_press', name: 'לחיצת חזה', unit: 'kg', note: '', rest: 60, cat: 'chest', sets: 3 },
+            { id: 'fly', name: 'פרפר', unit: 'kg', note: '', rest: 60, cat: 'chest', sets: 3 },
+            { id: 'shoulder_press', name: 'לחיצת כתפיים', unit: 'kg', note: '', rest: 60, cat: 'shoulders', sets: 3 },
+            { id: 'lat_raise', name: 'הרחקה לצדדים', unit: 'kg', note: '', rest: 45, cat: 'shoulders', sets: 3 },
+            { id: 'bicep_curl', name: 'יד קדמית', unit: 'kg', note: '', rest: 45, cat: 'arms', sets: 3 },
+            { id: 'tricep_pull', name: 'יד אחורית', unit: 'plates', note: '', rest: 45, cat: 'arms', sets: 3 },
+            { id: 'plank', name: 'פלאנק סטטי', unit: 'bodyweight', note: '', rest: 45, cat: 'core', sets: 3 }
+        ]
+    }
 };
 
-const workouts = {
-    'A': ["Overhead Press (Main)", "Barbell Shrugs", "Lateral Raises", "Weighted Pull Ups", "Face Pulls", "Incline Bench Press"],
-    'B': ["Leg Press", "Single Leg Curl", "Lat Pulldown", "Cable Row", "Seated Calf Raise", "Straight Arm Pulldown"],
-    'C': ["Bench Press (Main)", "Incline Bench Press", "Dumbbell Peck Fly", "Lateral Raises", "Face Pulls"]
-};
-
-const variationMap = {
-    'B': { 1: ["Single Leg Curl", "Lying Leg Curl (Double)", "Seated Leg Curl"], 3: ["Cable Row", "Machine Row"], 4: ["Seated Calf Raise", "Standing Calf Raise"] },
-    'C': { 2: ["Dumbbell Peck Fly", "Machine Peck Fly", "Cable Fly"] }
-};
-
-const workoutNames = { 'A': "אימון A (כתפיים-חזה-גב)", 'B': "אימון B (רגליים-גב)", 'C': "אימון C (חזה-כתפיים)", 'Freestyle': "Freestyle" };
-
-// --- CORE SYSTEMS ---
-
-function haptic(type = 'light') {
-    if (!("vibrate" in navigator)) return;
-    try {
-        if (type === 'light') navigator.vibrate(20); 
-        else if (type === 'medium') navigator.vibrate(40);
-        else if (type === 'success') navigator.vibrate([50, 50, 50]);
-        else if (type === 'warning') navigator.vibrate([30, 30]);
-    } catch(e) {}
-}
-
-function playBeep(times = 1) {
-    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioContext.state === 'suspended') audioContext.resume();
-    for (let i = 0; i < times; i++) {
-        setTimeout(() => {
-            const o = audioContext.createOscillator();
-            const g = audioContext.createGain();
-            o.type = 'sine'; o.frequency.setValueAtTime(880, audioContext.currentTime);
-            g.gain.setValueAtTime(0.3, audioContext.currentTime);
-            g.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
-            o.connect(g); g.connect(audioContext.destination);
-            o.start(); o.stop(audioContext.currentTime + 0.4);
-        }, i * 500);
-    }
-}
-
-async function initAudio() {
-    haptic('medium');
-    playBeep(1);
-    const btn = document.getElementById('audio-init-btn');
-    btn.innerHTML = `<div class="card-icon">✅</div><div class="card-text">מצב אימון פעיל</div>`;
-    btn.style.background = "var(--success-gradient)";
-    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
-}
-
-function navigate(id) {
-    haptic('light');
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    
-    if (id !== 'ui-main') stopRestTimer();
-    if (state.historyStack[state.historyStack.length - 1] !== id) state.historyStack.push(id);
-    
-    document.getElementById('global-back').style.visibility = (id === 'ui-week') ? 'hidden' : 'visible';
-}
-
-function handleBackClick() {
-    haptic('warning');
-    if (state.historyStack.length <= 1) return;
-
-    const currentScreen = state.historyStack[state.historyStack.length - 1];
-
-    if (currentScreen === 'ui-extra') {
-        state.historyStack.pop(); 
-        state.log.pop();
-        state.lastLoggedSet = state.log.length > 0 ? state.log[state.log.length - 1] : null;
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.getElementById('ui-main').classList.add('active');
-        if (state.historyStack[state.historyStack.length - 1] !== 'ui-main') state.historyStack.push('ui-main');
-        initPickers();
-        return;
-    }
-
-    if (currentScreen === 'ui-main' && state.setIdx > 0) {
-        state.log.pop();
-        state.setIdx--;
-        state.lastLoggedSet = state.log.length > 0 ? state.log[state.log.length - 1] : null;
-        initPickers();
-        return;
-    }
-
-    if (currentScreen === 'ui-archive') { state.historyStack.pop(); navigate('ui-week'); return; }
-    if (currentScreen === 'ui-archive-detail') { state.historyStack.pop(); navigate('ui-archive'); return; }
-    if (currentScreen === 'ui-swap-list') { state.historyStack.pop(); navigate('ui-confirm'); return; }
-
-    state.historyStack.pop();
-    const prevScreen = state.historyStack[state.historyStack.length - 1];
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(prevScreen).classList.add('active');
-    document.getElementById('global-back').style.visibility = (prevScreen === 'ui-week') ? 'hidden' : 'visible';
-}
-
-// --- WORKOUT FLOW ---
-
-function selectWeek(w) { state.week = w; navigate('ui-workout-type'); }
-
-function selectWorkout(t) {
-    state.type = t; state.exIdx = 0; state.log = []; 
-    state.completedExInSession = []; state.isArmPhase = false; state.isFreestyle = false; state.isExtraPhase = false; state.isInterruption = false;
-    state.workoutStartTime = Date.now();
-    showConfirmScreen();
-}
-
-function startFreestyle() {
-    state.type = 'Freestyle'; state.log = []; state.completedExInSession = [];
-    state.isArmPhase = false; state.isFreestyle = true; state.isExtraPhase = false; state.isInterruption = false;
-    state.workoutStartTime = Date.now();
-    document.getElementById('btn-resume-flow').style.display = 'none';
-    document.getElementById('btn-finish-extra').style.display = 'none';
-    navigate('ui-muscle-select');
-}
-
-function showExerciseList(muscle) {
-    state.currentMuscle = muscle;
-    const options = document.getElementById('variation-options');
-    options.innerHTML = "";
-    document.getElementById('variation-title').innerText = `תרגילי ${muscle}`;
-    
-    if (state.isFreestyle) {
-        const backBtn = document.createElement('button');
-        backBtn.className = "btn-text";
-        backBtn.style.color = "var(--accent)";
-        backBtn.style.textAlign = "right";
-        backBtn.style.marginBottom = "10px";
-        backBtn.style.padding = "5px";
-        backBtn.innerHTML = "🡠 חזור לבחירת קבוצת שריר";
-        backBtn.onclick = () => navigate('ui-muscle-select'); 
-        options.appendChild(backBtn);
-    }
-
-    const filtered = exerciseDatabase.filter(ex => ex.muscles.includes(muscle) && !state.completedExInSession.includes(ex.name));
-    
-    filtered.forEach(ex => {
-        const btn = document.createElement('button');
-        btn.className = "menu-card";
-        btn.innerHTML = `<span>${ex.name}</span><div class="arrow">➔</div>`;
-        btn.onclick = () => {
-            const dbRef = exerciseDatabase.find(d => d.name === ex.name);
-            state.currentEx = JSON.parse(JSON.stringify(dbRef));
-            state.currentExName = ex.name;
-            if (state.currentEx.isCalc) {
-                state.currentEx.sets = Array(3).fill({w: state.currentEx.manualRange.base, r: 8});
-                state.currentEx.step = state.currentEx.manualRange.step;
-            }
-            startRecording();
-        };
-        options.appendChild(btn);
-    });
-    navigate('ui-variation');
-}
-
-function showConfirmScreen(forceExName = null) {
-    if (forceExName) {
-        const exData = exerciseDatabase.find(e => e.name === forceExName);
-        state.currentEx = JSON.parse(JSON.stringify(exData));
-        state.currentExName = exData.name;
-        document.getElementById('confirm-ex-name').innerText = exData.name;
-        const intBtn = document.getElementById('btn-interruption');
-        if (intBtn) intBtn.style.display = (state.exIdx > 0) ? 'block' : 'none';
-        document.getElementById('btn-swap-confirm').style.display = 'none';
-        navigate('ui-confirm');
-        return;
-    }
-
-    if (variationMap[state.type] && variationMap[state.type][state.exIdx]) {
-        showVariationSelect();
-    } else {
-        const exName = workouts[state.type][state.exIdx];
-        const exData = exerciseDatabase.find(e => e.name === exName);
-        state.currentEx = JSON.parse(JSON.stringify(exData));
-        state.currentExName = exData.name;
-        document.getElementById('confirm-ex-name').innerText = exData.name;
-        const intBtn = document.getElementById('btn-interruption');
-        if (intBtn) intBtn.style.display = (state.exIdx > 0) ? 'block' : 'none';
-        const swapBtn = document.getElementById('btn-swap-confirm');
-        if (!state.isFreestyle && !state.isExtraPhase && !state.isInterruption && !state.isArmPhase) {
-            swapBtn.style.display = 'flex';
-        } else {
-            swapBtn.style.display = 'none';
-        }
-        navigate('ui-confirm');
-    }
-}
-
-function showVariationSelect() {
-    const options = document.getElementById('variation-options');
-    options.innerHTML = "";
-    document.getElementById('variation-title').innerText = "בחר וריאציה";
-    const possibleVariations = variationMap[state.type][state.exIdx];
-    const available = possibleVariations.filter(name => !state.completedExInSession.includes(name));
-    available.forEach(name => {
-        const btn = document.createElement('button');
-        btn.className = "menu-card";
-        btn.innerHTML = `<span>${name}</span><div class="arrow">➔</div>`;
-        btn.onclick = () => showConfirmScreen(name);
-        options.appendChild(btn);
-    });
-    navigate('ui-variation');
-}
-
-function confirmExercise(doEx) {
-    if (!doEx) { state.log.push({ skip: true, exName: state.currentExName }); state.completedExInSession.push(state.currentExName); checkFlow(); return; }
-    if (state.currentEx.isCalc) setupCalculatedEx(); else startRecording();
-}
-
-function setupCalculatedEx() {
-    document.getElementById('rm-title').innerText = `${state.currentExName} 1RM`;
-    const lastRM = StorageManager.getLastRM(state.currentExName);
-    const defaultRM = lastRM ? lastRM : state.currentEx.baseRM;
-    const minRM = state.currentEx.rmRange[0];
-    const maxRM = state.currentEx.rmRange[1];
-    const p = document.getElementById('rm-picker'); p.innerHTML = "";
-    for(let i = minRM; i <= maxRM; i += 2.5) {
-        let o = new Option(i + " kg", i); if(i === defaultRM) o.selected = true; p.add(o);
-    }
-    navigate('ui-1rm');
-}
-
-function save1RM() {
-    state.rm = parseFloat(document.getElementById('rm-picker').value);
-    StorageManager.saveRM(state.currentExName, state.rm);
-    let percentages = []; let reps = [];
-    if (state.week === 1) { percentages = [0.65, 0.75, 0.85, 0.75, 0.65]; reps = [5, 5, 5, 8, 10]; } 
-    else if (state.week === 2) { percentages = [0.70, 0.80, 0.90, 0.80, 0.70, 0.70]; reps = [3, 3, 3, 8, 10, 10]; } 
-    else if (state.week === 3) { percentages = [0.75, 0.85, 0.95, 0.85, 0.75, 0.75]; reps = [5, 3, 1, 8, 10, 10]; }
-    state.currentEx.sets = percentages.map((pct, i) => ({ w: Math.round((state.rm * pct) / 2.5) * 2.5, r: reps[i] }));
-    startRecording();
-}
-
-function startRecording() { state.setIdx = 0; state.lastLoggedSet = null; navigate('ui-main'); initPickers(); }
-
-function initPickers() {
-    const target = state.currentEx.sets[state.setIdx];
-    document.getElementById('ex-display-name').innerText = state.currentExName;
-    document.getElementById('set-counter').innerText = `SET ${state.setIdx + 1}/${state.currentEx.sets.length}`;
-    document.getElementById('set-notes').value = '';
-    const hist = document.getElementById('last-set-info');
-    if (state.lastLoggedSet) {
-        hist.innerText = `סט אחרון: ${state.lastLoggedSet.w}kg x ${state.lastLoggedSet.r} (RIR ${state.lastLoggedSet.rir})`;
-        hist.style.display = 'block';
-    } else hist.style.display = 'none';
-    document.getElementById('unilateral-note').style.display = unilateralExercises.some(u => state.currentExName.includes(u)) ? 'block' : 'none';
-    const btnWarmup = document.getElementById('btn-warmup');
-    btnWarmup.style.display = (state.setIdx === 0 && heavyCompounds.includes(state.currentExName)) ? 'block' : 'none';
-    const timerArea = document.getElementById('timer-area');
-    if (state.setIdx > 0) { timerArea.style.visibility = 'visible'; resetAndStartTimer(); } 
-    else { timerArea.style.visibility = 'hidden'; stopRestTimer(); }
-    const wPick = document.getElementById('weight-picker'); wPick.innerHTML = "";
-    const step = state.currentEx.step || 2.5;
-    const savedWeight = StorageManager.getLastWeight(state.currentExName);
-    let defaultW; let currentR;
-    if (state.currentEx.isCalc && target) { defaultW = target.w; currentR = target.r; } 
-    else {
-        defaultW = state.lastLoggedSet ? state.lastLoggedSet.w : (state.setIdx === 0 && savedWeight ? savedWeight : (target ? target.w : 0));
-        currentR = state.lastLoggedSet ? state.lastLoggedSet.r : (target ? target.r : 8);
-    }
-    const minW = Math.max(0, defaultW - 40); const maxW = defaultW + 50;
-    for(let i = minW; i <= maxW; i = parseFloat((i + step).toFixed(2))) {
-        let o = new Option(i + " kg", i); if(i === defaultW) o.selected = true; wPick.add(o);
-    }
-    const rPick = document.getElementById('reps-picker'); rPick.innerHTML = "";
-    for(let i = 1; i <= 30; i++) { let o = new Option(i, i); if(i === currentR) o.selected = true; rPick.add(o); }
-    const rirPick = document.getElementById('rir-picker'); rirPick.innerHTML = "";
-    [0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5].forEach(v => {
-        let o = new Option(v === 0 ? "Fail" : v, v); if(v === 2) o.selected = true; rirPick.add(o);
-    });
-}
-
-function calcWarmup() {
-    const targetW = parseFloat(document.getElementById('weight-picker').value);
-    const list = document.getElementById('warmup-list'); list.innerHTML = "";
-    const percentages = [0, 0.4, 0.6, 0.8];
-    percentages.forEach((pct, idx) => {
-        let w; let reps;
-        if(idx === 0) { w = 20; reps = 10; }
-        else {
-            w = Math.round((targetW * pct) / 2.5) * 2.5;
-            if (w < 20) w = 20;
-            reps = idx === 1 ? 5 : (idx === 2 ? 3 : 2);
-        }
-        if (w >= targetW) return;
-        const row = document.createElement('div'); row.className = "warmup-row";
-        row.innerHTML = `<span>סט ${idx + 1}</span><span>${w}kg x ${reps}</span>`;
-        list.appendChild(row);
-    });
-    document.getElementById('warmup-modal').style.display = 'flex';
-}
-
-function closeWarmup() { document.getElementById('warmup-modal').style.display = 'none'; }
-function markWarmupDone() { state.log.push({ exName: state.currentExName, isWarmup: true }); closeWarmup(); }
-
-function openSwapMenu() {
-    const swapList = document.getElementById('swap-options'); swapList.innerHTML = "";
-    const workoutList = workouts[state.type]; if (!workoutList) return;
-    const remaining = workoutList.filter(ex => !state.completedExInSession.includes(ex) && ex !== state.currentExName);
-    if (remaining.length === 0) { swapList.innerHTML = "<p style='text-align:center; color:gray;'>אין תרגילים נוספים להחלפה</p>"; }
-    remaining.forEach(exName => {
-        const btn = document.createElement('button'); btn.className = "menu-card"; btn.innerHTML = `<span>${exName}</span><div class="arrow">➔</div>`;
-        btn.onclick = () => { state.exIdx = workouts[state.type].indexOf(exName); showConfirmScreen(); };
-        swapList.appendChild(btn);
-    });
-    navigate('ui-swap-list');
-}
-
-function resetAndStartTimer() {
-    stopRestTimer(); state.seconds = 0; state.startTime = Date.now();
-    const target = (state.exIdx === 0 && !state.isArmPhase && !state.isFreestyle && !state.isExtraPhase && !state.isInterruption) ? 120 : 90;
-    const circle = document.getElementById('timer-progress'); const text = document.getElementById('rest-timer');
-    text.innerText = "00:00"; circle.style.strokeDashoffset = 283;
-    state.timerInterval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-        state.seconds = elapsed;
-        const mins = Math.floor(state.seconds / 60).toString().padStart(2, '0');
-        const secs = (state.seconds % 60).toString().padStart(2, '0');
-        text.innerText = `${mins}:${secs}`;
-        const progress = Math.min(state.seconds / target, 1);
-        circle.style.strokeDashoffset = 283 - (progress * 283);
-        if (state.seconds === target) playBeep(2);
-    }, 100); 
-}
-
-function stopRestTimer() { if (state.timerInterval) { clearInterval(state.timerInterval); state.timerInterval = null; } }
-
-function nextStep() {
-    haptic('light');
-    const wVal = parseFloat(document.getElementById('weight-picker').value);
-    const noteVal = document.getElementById('set-notes').value.trim();
-    const entry = { exName: state.currentExName, w: wVal, r: parseInt(document.getElementById('reps-picker').value), rir: document.getElementById('rir-picker').value, note: noteVal };
-    StorageManager.saveWeight(state.currentExName, wVal);
-    state.log.push(entry); state.lastLoggedSet = entry;
-    if (state.setIdx < state.currentEx.sets.length - 1) { state.setIdx++; initPickers(); } 
-    else { haptic('medium'); navigate('ui-extra'); }
-}
-
-function handleExtra(isBonus) {
-    if(isBonus) { state.setIdx++; state.currentEx.sets.push({...state.currentEx.sets[state.setIdx-1]}); initPickers(); navigate('ui-main'); } 
-    else {
-        // commit exercise: prune stack to keep history clean
-        state.historyStack = state.historyStack.filter(s => s !== 'ui-main' && s !== 'ui-extra');
-        
-        if (!state.completedExInSession.includes(state.currentExName)) state.completedExInSession.push(state.currentExName);
-        
-        if (state.isInterruption) { state.isInterruption = false; navigate('ui-confirm'); } 
-        else if (state.isExtraPhase) { navigate('ui-ask-extra'); } 
-        else if (state.isArmPhase) { showArmSelection(); } 
-        else if (state.isFreestyle) { showExerciseList(state.currentMuscle); } 
-        else { checkFlow(); }
-    }
-}
-
-function checkFlow() {
-    // UPDATED LOGIC TO HANDLE VARIATIONS CORRECTLY
-    const workoutList = workouts[state.type];
-    let foundNext = false;
-
-    for (let i = 0; i < workoutList.length; i++) {
-        const defaultName = workoutList[i];
-        let isDone = state.completedExInSession.includes(defaultName);
-
-        // If default isn't done, check if any variation of this slot is done
-        if (!isDone && variationMap[state.type] && variationMap[state.type][i]) {
-            const variations = variationMap[state.type][i];
-            if (variations.some(v => state.completedExInSession.includes(v))) {
-                isDone = true;
-            }
-        }
-
-        if (!isDone) {
-            state.exIdx = i;
-            showConfirmScreen();
-            foundNext = true;
-            break;
-        }
-    }
-
-    if (!foundNext) {
-        navigate('ui-ask-extra');
-    }
-}
-
-function interruptWorkout() {
-    state.isInterruption = true;
-    document.getElementById('btn-resume-flow').style.display = 'flex';
-    document.getElementById('btn-finish-extra').style.display = 'none';
-    navigate('ui-muscle-select');
-}
-
-function resumeWorkout() { state.isInterruption = false; navigate('ui-confirm'); }
-function startExtraPhase() { state.isExtraPhase = true; document.getElementById('btn-resume-flow').style.display = 'none'; document.getElementById('btn-finish-extra').style.display = 'block'; navigate('ui-muscle-select'); }
-function finishExtraPhase() { navigate('ui-ask-arms'); }
-
-function startArmWorkout() { 
-    state.isArmPhase = true; 
-    document.getElementById('arm-selection-title').innerText = "מה להתחיל?";
-    const opts = document.getElementById('arm-options'); opts.innerHTML = "";
-    const btnBi = document.createElement('button'); btnBi.className = "menu-card"; btnBi.innerHTML = `<span>יד קדמית (Biceps)</span><div class="arrow">➔</div>`;
-    btnBi.onclick = () => { state.armGroup = 'biceps'; state.firstArmGroup = 'biceps'; state.secondArmGroup = 'triceps'; showArmSelection(); };
-    const btnTri = document.createElement('button'); btnTri.className = "menu-card"; btnTri.innerHTML = `<span>יד אחורית (Triceps)</span><div class="arrow">➔</div>`;
-    btnTri.onclick = () => { state.armGroup = 'triceps'; state.firstArmGroup = 'triceps'; state.secondArmGroup = 'biceps'; showArmSelection(); };
-    opts.appendChild(btnBi); opts.appendChild(btnTri);
-    document.getElementById('btn-skip-arm-group').style.display = 'none';
-    navigate('ui-arm-selection');
-}
-
-function showArmSelection() {
-    const list = armExercises[state.armGroup];
-    const remaining = list.filter(ex => !state.completedExInSession.includes(ex.name));
-    if (remaining.length === 0) {
-        if (state.armGroup === state.firstArmGroup) { state.armGroup = state.secondArmGroup; showArmSelection(); } 
-        else { finish(); }
-        return;
-    }
-    const isBiceps = state.armGroup === 'biceps';
-    document.getElementById('arm-selection-title').innerText = isBiceps ? "בחר בייספס" : "בחר טרייספס";
-    const opts = document.getElementById('arm-options'); opts.innerHTML = "";
-    remaining.forEach(ex => {
-        const btn = document.createElement('button'); btn.className = "menu-card"; btn.innerText = ex.name;
-        btn.onclick = () => { state.currentEx = JSON.parse(JSON.stringify(ex)); state.currentExName = ex.name; state.currentEx.sets = [ex.sets[0], ex.sets[0], ex.sets[0]]; startRecording(); };
-        opts.appendChild(btn);
-    });
-    const skipBtn = document.getElementById('btn-skip-arm-group'); skipBtn.style.display = 'block';
-    if (state.armGroup === state.firstArmGroup) {
-        skipBtn.innerText = isBiceps ? "דלג לטרייספס" : "דלג לבייספס";
-        skipBtn.onclick = () => { state.armGroup = state.secondArmGroup; showArmSelection(); };
-    } else {
-        skipBtn.innerText = "סיים אימון"; skipBtn.onclick = () => finish();
-    }
-    navigate('ui-arm-selection');
-}
-
-function finish() {
-    haptic('success');
-    state.workoutDurationMins = Math.floor((Date.now() - state.workoutStartTime) / 60000);
-    navigate('ui-summary');
-    
-    // Clear note input for fresh entry
-    document.getElementById('summary-note').value = "";
-    
-    const workoutDisplayName = workoutNames[state.type] || state.type;
-    const dateStr = new Date().toLocaleDateString('he-IL');
-    let summaryText = `GYMPRO ELITE SUMMARY\n${workoutDisplayName} | ${dateStr} | ${state.workoutDurationMins}m\n\n`;
-    let grouped = {};
-    
-    state.log.forEach(e => {
-        if (!grouped[e.exName]) grouped[e.exName] = { sets: [], vol: 0, hasWarmup: false };
-        if (e.isWarmup) grouped[e.exName].hasWarmup = true;
-        else if (!e.skip) {
-            let setStr = `${e.w}kg x ${e.r} (RIR ${e.rir})`;
-            if (e.note) setStr += ` | Note: ${e.note}`;
-            grouped[e.exName].sets.push(setStr); grouped[e.exName].vol += (e.w * e.r);
-        }
-    });
-
-    for (let ex in grouped) { 
-        summaryText += `${ex} (Vol: ${grouped[ex].vol}kg):\n`;
-        if (grouped[ex].hasWarmup) summaryText += `🔥 Warmup Completed\n`;
-        summaryText += `${grouped[ex].sets.join('\n')}\n\n`; 
-    }
-    
-    document.getElementById('summary-area').innerText = summaryText.trim();
-    
-    // Store details for save later
-    state.lastWorkoutDetails = grouped;
-}
-
-function copyResult() {
-    // 1. Get base text
-    let text = document.getElementById('summary-area').innerText;
-    
-    // 2. Get optional note
-    const userNote = document.getElementById('summary-note').value.trim();
-    if (userNote) {
-        text += `\n\n📝 הערות כלליות: ${userNote}`;
-    }
-
-    // 3. Prepare Archive Object
-    const workoutDisplayName = workoutNames[state.type] || state.type;
-    const dateStr = new Date().toLocaleDateString('he-IL');
-    
-    const archiveObj = { 
-        id: Date.now(), 
-        date: dateStr, 
-        timestamp: Date.now(), 
-        type: workoutDisplayName, 
-        duration: state.workoutDurationMins, 
-        summary: text, 
-        details: state.lastWorkoutDetails,
-        generalNote: userNote // Save note specifically as well
-    };
-
-    // 4. Save to Archive
-    StorageManager.saveToArchive(archiveObj);
-
-    // 5. Copy & Close
-    if (navigator.clipboard) { 
-        navigator.clipboard.writeText(text).then(() => { 
-            haptic('light'); 
-            alert("הסיכום (כולל הערות) הועתק ונשמר בארכיון!"); 
-            location.reload(); 
-        }); 
-    } else { 
-        const el = document.createElement("textarea"); 
-        el.value = text; 
-        document.body.appendChild(el); 
-        el.select(); 
-        document.execCommand('copy'); 
-        document.body.removeChild(el); 
-        alert("הסיכום (כולל הערות) הועתק ונשמר בארכיון!"); 
-        location.reload(); 
-    }
-}
-
-// --- ARCHIVE LOGIC & CALENDAR ---
-
-function switchArchiveView(view) {
-    state.archiveView = view;
-    document.getElementById('btn-view-list').className = `segment-btn ${view === 'list' ? 'active' : ''}`;
-    document.getElementById('btn-view-calendar').className = `segment-btn ${view === 'calendar' ? 'active' : ''}`;
-    openArchive();
-}
-
-function openArchive() {
-    if (state.archiveView === 'list') {
-        document.getElementById('list-view-container').style.display = 'block';
-        document.getElementById('calendar-view').style.display = 'none';
-        renderArchiveList();
-    } else {
-        document.getElementById('list-view-container').style.display = 'none';
-        document.getElementById('calendar-view').style.display = 'block';
-        state.calendarOffset = 0;
-        renderCalendar();
-    }
-    navigate('ui-archive');
-}
-
-// --- LIST VIEW LOGIC ---
-function renderArchiveList() {
-    const list = document.getElementById('archive-list'); list.innerHTML = "";
-    selectedArchiveIds.clear(); updateCopySelectedBtn();
-    const history = StorageManager.getArchive();
-    if (history.length === 0) { list.innerHTML = `<div style="text-align:center; color:gray; margin-top:20px;">אין אימונים שמורים</div>`; } 
-    else {
-        history.forEach(item => {
-            const card = document.createElement('div'); card.className = "menu-card"; card.style.cursor = "default";
-            card.innerHTML = `<div class="archive-card-row"><input type="checkbox" class="archive-checkbox" data-id="${item.timestamp}"><div class="archive-info"><div style="display:flex; justify-content:space-between; width:100%;"><h3 style="margin:0;">${item.date}</h3><span style="font-size:0.8em; color:#8E8E93">${item.duration} דק'</span></div><p style="margin:0; color:#8E8E93; font-size:0.85em;">${item.type}</p></div><div class="arrow">➔</div></div>`;
-            const checkbox = card.querySelector('.archive-checkbox');
-            checkbox.addEventListener('change', (e) => toggleArchiveSelection(parseInt(e.target.dataset.id)));
-            checkbox.addEventListener('click', (e) => e.stopPropagation());
-            card.addEventListener('click', (e) => { if (e.target !== checkbox) showArchiveDetail(item); });
-            list.appendChild(card);
-        });
-    }
-}
-
-function toggleArchiveSelection(id) { if (selectedArchiveIds.has(id)) selectedArchiveIds.delete(id); else selectedArchiveIds.add(id); updateCopySelectedBtn(); }
-
-function updateCopySelectedBtn() {
-    const btn = document.getElementById('btn-copy-selected');
-    if (selectedArchiveIds.size > 0) { btn.disabled = false; btn.style.opacity = "1"; btn.style.borderColor = "var(--accent)"; btn.style.color = "var(--accent)"; } 
-    else { btn.disabled = true; btn.style.opacity = "0.5"; btn.style.borderColor = "var(--border)"; btn.style.color = "var(--text-dim)"; }
-}
-
-function copyBulkLog(mode) {
-    const history = StorageManager.getArchive();
-    let itemsToCopy = mode === 'all' ? history : history.filter(item => selectedArchiveIds.has(item.timestamp));
-    if (itemsToCopy.length === 0) { alert("לא נבחרו אימונים להעתקה"); return; }
-    const bulkText = itemsToCopy.map(item => item.summary).join("\n\n========================================\n\n");
-    if (navigator.clipboard) { navigator.clipboard.writeText(bulkText).then(() => { haptic('success'); alert(`הועתקו ${itemsToCopy.length} אימונים בהצלחה!`); }); } 
-    else { const el = document.createElement("textarea"); el.value = bulkText; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el); alert(`הועתקו ${itemsToCopy.length} אימונים בהצלחה!`); }
-}
-
-// --- CALENDAR VIEW LOGIC ---
-function changeMonth(delta) {
-    state.calendarOffset += delta;
-    renderCalendar();
-}
-
-function renderCalendar() {
-    const grid = document.getElementById('calendar-days');
-    grid.innerHTML = "";
-    
-    // Calculate dates
-    const now = new Date();
-    const targetDate = new Date(now.getFullYear(), now.getMonth() + state.calendarOffset, 1);
-    const year = targetDate.getFullYear();
-    const month = targetDate.getMonth();
-    
-    // Set Header
-    const monthNames = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
-    document.getElementById('current-month-display').innerText = `${monthNames[month]} ${year}`;
-    
-    // Grid logic
-    const firstDayIndex = targetDate.getDay(); // 0 is Sunday
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
-    // Retrieve data
-    const history = StorageManager.getArchive();
-    const monthWorkouts = history.filter(item => {
-        const d = new Date(item.timestamp);
-        return d.getMonth() === month && d.getFullYear() === year;
-    });
-
-    // Render Empty Cells
-    for(let i = 0; i < firstDayIndex; i++) {
-        const cell = document.createElement('div');
-        cell.className = "calendar-cell empty";
-        grid.appendChild(cell);
-    }
-
-    // Render Days
-    const today = new Date();
-    for(let day = 1; day <= daysInMonth; day++) {
-        const cell = document.createElement('div');
-        cell.className = "calendar-cell";
-        cell.innerHTML = `<span>${day}</span>`;
-        
-        // Highlight today
-        if(state.calendarOffset === 0 && day === today.getDate()) {
-            cell.classList.add('today');
-        }
-
-        // Find workouts for this day
-        const dailyWorkouts = monthWorkouts.filter(item => new Date(item.timestamp).getDate() === day);
-        if(dailyWorkouts.length > 0) {
-            const dotsContainer = document.createElement('div');
-            dotsContainer.className = "dots-container";
-            dailyWorkouts.forEach(wo => {
-                const dot = document.createElement('div');
-                let dotClass = 'type-free';
-                if(wo.type.includes('A')) dotClass = 'type-a';
-                else if(wo.type.includes('B')) dotClass = 'type-b';
-                else if(wo.type.includes('C')) dotClass = 'type-c';
-                dot.className = `dot ${dotClass}`;
-                dotsContainer.appendChild(dot);
-            });
-            cell.appendChild(dotsContainer);
-            cell.onclick = () => openDayDrawer(dailyWorkouts, day, monthNames[month]);
-        }
-        grid.appendChild(cell);
-    }
-}
-
-// --- BOTTOM SHEET DRAWER ---
-function openDayDrawer(workouts, day, monthName) {
-    const drawer = document.getElementById('sheet-modal');
-    const overlay = document.getElementById('sheet-overlay');
-    const content = document.getElementById('sheet-content');
-    
-    let html = `<h3>${day} ב${monthName}</h3>`;
-    if(workouts.length === 0) {
-        html += `<p>אין אימונים ביום זה</p>`;
-    } else {
-        html += `<p>נמצאו ${workouts.length} אימונים:</p>`;
-        workouts.forEach(wo => {
-            let dotColor = '#BF5AF2';
-            if(wo.type.includes('A')) dotColor = '#0A84FF';
-            else if(wo.type.includes('B')) dotColor = '#32D74B';
-            else if(wo.type.includes('C')) dotColor = '#FF9F0A';
-            
-            html += `
-            <div class="mini-workout-item" onclick='openArchiveFromDrawer(${JSON.stringify(wo).replace(/'/g, "&#39;")})'>
-                <div class="mini-dot" style="background:${dotColor}"></div>
-                <div style="flex-grow:1;">
-                    <div style="font-weight:600; font-size:0.95em;">${wo.type}</div>
-                    <div style="font-size:0.8em; color:#8E8E93;">${wo.duration} דק' • ${new Date(wo.timestamp).toLocaleTimeString('he-IL', {hour:'2-digit', minute:'2-digit'})}</div>
-                </div>
-                <div class="arrow">➔</div>
-            </div>`;
-        });
-    }
-    
-    content.innerHTML = html;
-    overlay.style.display = 'block';
-    drawer.classList.add('open');
-    haptic('light');
-}
-
-function closeDayDrawer() {
-    const drawer = document.getElementById('sheet-modal');
-    const overlay = document.getElementById('sheet-overlay');
-    drawer.classList.remove('open');
-    setTimeout(() => { overlay.style.display = 'none'; }, 300);
-}
-
-function openArchiveFromDrawer(itemData) {
-    closeDayDrawer();
-    // Re-finding item by timestamp is safer.
-    const realItem = StorageManager.getArchive().find(i => i.timestamp === itemData.timestamp);
-    if(realItem) showArchiveDetail(realItem);
-}
-
-function showArchiveDetail(item) {
-    currentArchiveItem = item; document.getElementById('archive-detail-content').innerText = item.summary;
-    document.getElementById('btn-archive-copy').onclick = () => navigator.clipboard.writeText(item.summary).then(() => alert("הועתק!"));
-    document.getElementById('btn-archive-delete').onclick = () => { if(confirm("למחוק אימון זה מהארכיון?")) { StorageManager.deleteFromArchive(item.timestamp); openArchive(); } };
-    navigate('ui-archive-detail');
-}
-
-function exportData() {
-    const data = StorageManager.getAllData();
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: "application/json"})); a.download = `gympro_backup_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-}
-
-function triggerImport() { document.getElementById('import-file').click(); }
-function importData(input) {
-    const file = input.files[0]; if(!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
+const app = {
+    state: {
+        routines: {},
+        history: [],
+        currentProgId: null,
+        active: {
+            on: false,
+            exIdx: 0, setIdx: 1, totalSets: 3,
+            log: [], startTime: 0,
+            timerInterval: null, restInterval: null, 
+            feel: 'good', isStopwatch: false, stopwatchVal: 0,
+            inputW: 10, inputR: 12
+        },
+        admin: { viewProgId: null, editTipEx: null },
+        historySelection: [],
+        viewHistoryIdx: null
+    },
+
+    init: function() {
         try {
-            const data = JSON.parse(e.target.result);
-            if(confirm("האם לדרוס את הנתונים הקיימים ולשחזר מהגיבוי?")) { StorageManager.restoreData(data); alert("הנתונים שוחזרו בהצלחה! האפליקציה תרענן את עצמה."); location.reload(); }
-        } catch(err) { alert("שגיאה בטעינת הקובץ. וודא שזהו קובץ גיבוי תקין."); }
-    };
-    reader.readAsText(file);
-}
+            this.loadData();
+            this.renderHome();
+            this.renderProgramSelect(); 
+            this.nav('screen-home'); 
+        } catch (e) {
+            console.error(e);
+            alert("שגיאה בטעינת נתונים.");
+        }
+    },
 
-// --- NEW SESSION DRAWER LOGIC ---
+    loadData: function() {
+        const h = localStorage.getItem(CONFIG.KEYS.HISTORY);
+        this.state.history = h ? JSON.parse(h) : [];
+        
+        const r = localStorage.getItem(CONFIG.KEYS.ROUTINES);
+        let loaded = r ? JSON.parse(r) : null;
 
-function openSessionLog() {
-    const drawer = document.getElementById('sheet-modal');
-    const overlay = document.getElementById('sheet-overlay');
-    const content = document.getElementById('sheet-content');
+        if (!loaded) {
+            this.state.routines = JSON.parse(JSON.stringify(DEFAULT_ROUTINES_V17));
+        } else {
+            // V1.7 Migration: Ensure 'rest' exists
+            for(const pid in loaded) {
+                loaded[pid].exercises.forEach(ex => {
+                    if(typeof ex.rest === 'undefined') ex.rest = 60;
+                });
+            }
+            this.state.routines = loaded;
+        }
+    },
 
-    let html = `<h3>יומן אימון נוכחי</h3>`;
-    
-    if (state.log.length === 0) {
-        html += `<p style="text-align:center; margin-top:20px;">טרם בוצעו סטים באימון זה</p>`;
-    } else {
-        html += `<div class="vertical-stack">`;
-        state.log.forEach((entry, index) => {
-            const isSkip = entry.skip;
-            const isWarmup = entry.isWarmup;
-            let displayTitle = entry.exName;
-            let details = "";
-            let dotColor = "var(--text-dim)";
+    saveData: function() {
+        localStorage.setItem(CONFIG.KEYS.ROUTINES, JSON.stringify(this.state.routines));
+        localStorage.setItem(CONFIG.KEYS.HISTORY, JSON.stringify(this.state.history));
+    },
 
-            if (isSkip) {
-                details = "דילוג על תרגיל";
-            } else if (isWarmup) {
-                details = "סט חימום";
-                dotColor = "#ff3b30";
-            } else {
-                details = `${entry.w}kg x ${entry.r} (RIR ${entry.rir})`;
-                if (entry.note) details += ` | 📝`;
-                dotColor = "var(--accent)";
+    nav: function(screenId) {
+        document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+        document.getElementById(screenId).classList.add('active');
+        
+        const backBtn = document.getElementById('nav-back');
+        const adminBtn = document.getElementById('btn-admin-home');
+
+        if (screenId === 'screen-home') {
+            backBtn.style.visibility = 'hidden';
+            if(adminBtn) adminBtn.style.display = 'flex';
+            this.stopAllTimers();
+            this.state.active.on = false;
+        } else {
+            backBtn.style.visibility = 'visible';
+            if(adminBtn) adminBtn.style.display = 'none';
+        }
+    },
+
+    goBack: function() {
+        const activeScreen = document.querySelector('.screen.active').id;
+        if (activeScreen === 'screen-active') {
+            if (confirm("לצאת מהאימון?")) {
+                this.stopAllTimers();
+                this.state.active.on = false;
+                this.nav('screen-overview');
+            }
+        } else if (activeScreen === 'screen-overview') {
+             this.nav('screen-program-select');
+        } else {
+            this.nav('screen-home');
+        }
+    },
+
+    renderProgramSelect: function() {
+        const container = document.getElementById('prog-list-container');
+        container.innerHTML = '';
+        const ids = Object.keys(this.state.routines);
+        
+        if(ids.length === 0) {
+            container.innerHTML = '<div style="text-align:center; color:#666;">אין תוכניות זמינות.</div>';
+            return;
+        }
+
+        ids.forEach(pid => {
+            const prog = this.state.routines[pid];
+            const badge = pid.charAt(0).toUpperCase();
+            const count = prog.exercises.length;
+            
+            let desc = `${count} תרגילים`;
+            if (count > 0) {
+                const firstEx = prog.exercises[0].name;
+                desc += ` • מתחיל ב: ${firstEx}`;
             }
 
-            html += `
-            <div class="mini-workout-item" onclick="openEditSet(${index})">
-                <div class="mini-dot" style="background:${dotColor}"></div>
-                <div style="flex-grow:1;">
-                    <div style="font-weight:600; font-size:0.9em;">${index + 1}. ${displayTitle}</div>
-                    <div style="font-size:0.85em; color:#8E8E93;">${details}</div>
+            container.innerHTML += `
+                <div class="oled-card prog-card" onclick="app.selectProgram('${pid}')">
+                    <div class="prog-icon">${badge}</div>
+                    <div class="prog-content">
+                        <div class="prog-title">${prog.title}</div>
+                        <div class="prog-desc">${desc}</div>
+                    </div>
                 </div>
-                <div class="arrow">✎</div>
+            `;
+        });
+    },
+
+    selectProgram: function(progId) {
+        this.state.currentProgId = progId;
+        this.renderOverview();
+        this.nav('screen-overview');
+    },
+
+    renderOverview: function() {
+        const prog = this.state.routines[this.state.currentProgId];
+        const list = document.getElementById('overview-list');
+        document.getElementById('overview-title').innerText = `סקירה: ${prog.title}`;
+        list.innerHTML = '';
+        prog.exercises.forEach((ex, i) => {
+            list.innerHTML += `<div class="list-item">
+                <span>${i+1}. ${ex.name}</span>
+                <span style="color:var(--primary); font-size:0.9rem">${ex.sets} סטים</span>
             </div>`;
         });
-        html += `</div>`;
-    }
+    },
 
-    content.innerHTML = html;
-    overlay.style.display = 'block';
-    drawer.classList.add('open');
-    haptic('light');
-}
-
-function openEditSet(index) {
-    const entry = state.log[index];
-    if (entry.skip || entry.isWarmup) {
-        alert("לא ניתן לערוך דילוגים או סטים של חימום כרגע.");
-        return;
-    }
-
-    state.editingIndex = index;
-    document.getElementById('edit-weight').value = entry.w;
-    document.getElementById('edit-reps').value = entry.r;
-    document.getElementById('edit-rir').value = entry.rir;
-    document.getElementById('edit-note').value = entry.note || "";
-
-    // Show delete only if it's the very last set
-    const btnDelete = document.getElementById('btn-delete-last-set');
-    if (index === state.log.length - 1) {
-        btnDelete.style.display = 'block';
-    } else {
-        btnDelete.style.display = 'none';
-    }
-
-    // Hide drawer, show modal
-    closeDayDrawer(); // repurposing the close function for the sheet
-    document.getElementById('edit-set-modal').style.display = 'flex';
-}
-
-function closeEditModal() {
-    document.getElementById('edit-set-modal').style.display = 'none';
-    state.editingIndex = -1;
-}
-
-function saveSetEdit() {
-    if (state.editingIndex === -1) return;
-    
-    const w = parseFloat(document.getElementById('edit-weight').value);
-    const r = parseInt(document.getElementById('edit-reps').value);
-    const rir = document.getElementById('edit-rir').value;
-    const note = document.getElementById('edit-note').value;
-
-    if (isNaN(w) || isNaN(r)) {
-        alert("נא להזין ערכים תקינים");
-        return;
-    }
-
-    // Update Log
-    state.log[state.editingIndex].w = w;
-    state.log[state.editingIndex].r = r;
-    state.log[state.editingIndex].rir = rir;
-    state.log[state.editingIndex].note = note;
-
-    // Update Last Logged Set if we edited the last one
-    if (state.editingIndex === state.log.length - 1) {
-        state.lastLoggedSet = state.log[state.editingIndex];
-        // Refresh UI info pill
-        const hist = document.getElementById('last-set-info');
-        hist.innerText = `סט אחרון: ${state.lastLoggedSet.w}kg x ${state.lastLoggedSet.r} (RIR ${state.lastLoggedSet.rir})`;
-    }
-
-    closeEditModal();
-    haptic('success');
-    openSessionLog(); // Re-open the drawer to show changes
-}
-
-function deleteLastSet() {
-    if (confirm("האם למחוק את הסט האחרון? פעולה זו תחזיר אותך צעד אחד אחורה.")) {
-        state.log.pop();
-        state.lastLoggedSet = state.log.length > 0 ? state.log[state.log.length - 1] : null;
-        
-        // Decrement set index only if we are effectively undoing a set of the current exercise
-        // Logic: If we are in ui-main, simply decrement setIdx.
-        // NOTE: This assumes we haven't moved to the next exercise yet (which happens in ui-extra).
-        // Since the button is in ui-main, we are "between sets" or "finished set".
-        
-        if (state.setIdx > 0) {
-            state.setIdx--;
+    renderHome: function() {
+        const lastEl = document.getElementById('last-workout-display');
+        if (this.state.history.length > 0) {
+            const last = this.state.history[this.state.history.length - 1];
+            const displayName = last.programTitle || last.program; 
+            lastEl.innerText = `${last.date} (${displayName})`;
+        } else {
+            lastEl.innerText = "טרם בוצע";
         }
+    },
+
+    /* --- WORKOUT LOGIC --- */
+    startWorkout: function() {
+        if (!this.state.routines[this.state.currentProgId] || 
+            this.state.routines[this.state.currentProgId].exercises.length === 0) {
+            alert("התוכנית ריקה"); return;
+        }
+
+        this.state.active = {
+            on: true,
+            exIdx: 0, setIdx: 1, totalSets: 3,
+            log: [], startTime: Date.now(),
+            timerInterval: null, restInterval: null, 
+            feel: 'good', isStopwatch: false, stopwatchVal: 0,
+            inputW: 10, inputR: 12
+        };
+        this.loadActiveExercise();
+        this.nav('screen-active');
+    },
+
+    loadActiveExercise: function() {
+        const prog = this.state.routines[this.state.currentProgId];
+        const ex = prog.exercises[this.state.active.exIdx];
         
-        closeEditModal();
-        haptic('warning');
-        initPickers(); // Refresh the main screen UI
-        // We do NOT re-open the log drawer, we let the user see the main screen updated.
+        this.state.active.totalSets = ex.sets || 3;
+
+        document.getElementById('ex-name').innerText = ex.name;
+        document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
+        
+        const noteEl = document.getElementById('coach-note');
+        if (ex.note) {
+            noteEl.innerText = "💡 " + ex.note;
+            noteEl.style.display = 'block';
+        } else noteEl.style.display = 'none';
+
+        this.renderStatsStrip(ex.id, ex.unit);
+
+        const isTime = (ex.unit === 'bodyweight' && (ex.id.includes('plank') || ex.id === 'wall_sit'));
+        this.state.active.isStopwatch = isTime;
+
+        if (isTime) {
+            document.getElementById('cards-container').style.display = 'none';
+            document.getElementById('stopwatch-container').style.display = 'flex';
+            this.state.active.stopwatchVal = 0;
+            this.stopStopwatch();
+            document.getElementById('sw-display').innerText = "00:00";
+            document.getElementById('btn-sw-toggle').classList.remove('running');
+            document.getElementById('btn-sw-toggle').innerText = "▶";
+            document.getElementById('rest-timer-area').style.display = 'none';
+        } else {
+            document.getElementById('cards-container').style.display = 'flex';
+            document.getElementById('stopwatch-container').style.display = 'none';
+            document.getElementById('unit-label-card').innerText = ex.unit === 'plates' ? 'פלטות' : 'ק״ג';
+            
+            // SMART WEIGHT PREDICTION
+            let smartWeight = ex.target?.w || 10;
+            // Scan history backwards
+            for(let i=this.state.history.length-1; i>=0; i--) {
+                const sess = this.state.history[i];
+                const found = sess.data.find(e => e.id === ex.id);
+                if(found && found.sets.length > 0) {
+                    smartWeight = found.sets[found.sets.length-1].w;
+                    break;
+                }
+            }
+            this.state.active.inputW = smartWeight;
+            this.state.active.inputR = ex.target?.r || 12;
+            this.populateSelects(ex);
+        }
+
+        this.state.active.feel = 'good';
+        this.updateFeelUI();
+        document.getElementById('decision-buttons').style.display = 'none';
+        document.getElementById('next-ex-preview').style.display = 'none';
+        document.getElementById('btn-finish').style.display = 'flex';
+        document.getElementById('rest-timer-area').style.display = 'none';
+    },
+
+    renderStatsStrip: function(exId, unit) {
+        const strip = document.getElementById('last-stat-strip');
+        
+        let lastLog = null;
+        for(let i=this.state.history.length-1; i>=0; i--) {
+            const sess = this.state.history[i];
+            const found = sess.data.find(e => e.id === exId);
+            if(found && found.sets.length > 0) { 
+                lastLog = found.sets[found.sets.length-1]; 
+                break; 
+            }
+        }
+
+        if (!lastLog) {
+            strip.innerText = "אין הישג קודם";
+            return;
+        }
+
+        const isBody = (unit === 'bodyweight');
+        const wStr = isBody ? 'גוף' : `${lastLog.w}`;
+        const rStr = (this.state.active.isStopwatch) ? `${lastLog.r}שנ׳` : `${lastLog.r}חז׳`;
+        const feelTxt = FEEL_MAP_TEXT[lastLog.feel] || '-';
+
+        strip.innerHTML = `
+            <span>${wStr}</span> <span style="color:#444">|</span>
+            <span>${rStr}</span> <span style="color:#444">|</span>
+            <span>${feelTxt}</span>
+        `;
+    },
+
+    populateSelects: function(ex) {
+        const selW = document.getElementById('select-weight');
+        const selR = document.getElementById('select-reps');
+        const isLegs = ex.cat === 'legs';
+
+        let wOpts = [];
+        if (ex.unit === 'bodyweight') wOpts = [0];
+        else if (ex.unit === 'plates') for(let i=1; i<=20; i++) wOpts.push(i);
+        else {
+            for(let i=1; i<=10; i++) wOpts.push(i);
+            const max = isLegs ? 80 : 40;
+            for(let i=12.5; i<=max; i+=2.5) wOpts.push(i);
+        }
+
+        selW.innerHTML = '';
+        wOpts.forEach(val => {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.text = val;
+            selW.appendChild(opt);
+        });
+        selW.value = this.state.active.inputW;
+        if(!selW.value && wOpts.length > 0) selW.value = wOpts[0]; 
+        selW.onchange = (e) => this.state.active.inputW = Number(e.target.value);
+
+        let rOpts = [];
+        const maxReps = ex.cat === 'core' ? 50 : 25;
+        for(let i=1; i<=maxReps; i++) rOpts.push(i);
+
+        selR.innerHTML = '';
+        rOpts.forEach(val => {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.text = val;
+            selR.appendChild(opt);
+        });
+        selR.value = this.state.active.inputR;
+        selR.onchange = (e) => this.state.active.inputR = Number(e.target.value);
+    },
+
+    toggleStopwatch: function() {
+        const btn = document.getElementById('btn-sw-toggle');
+        if (this.state.active.timerInterval) {
+            clearInterval(this.state.active.timerInterval);
+            this.state.active.timerInterval = null;
+            btn.classList.remove('running');
+            btn.innerText = "▶";
+        } else {
+            this.stopRestTimer();
+            const start = Date.now() - (this.state.active.stopwatchVal * 1000);
+            btn.classList.add('running');
+            btn.innerText = "⏹";
+            this.state.active.timerInterval = setInterval(() => {
+                const diff = Math.floor((Date.now() - start) / 1000);
+                this.state.active.stopwatchVal = diff;
+                let m = Math.floor(diff / 60);
+                let s = diff % 60;
+                document.getElementById('sw-display').innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`;
+            }, 100);
+        }
+    },
+
+    stopStopwatch: function() {
+        if(this.state.active.timerInterval) clearInterval(this.state.active.timerInterval);
+        this.state.active.timerInterval = null;
+    },
+
+    selectFeel: function(f) {
+        this.state.active.feel = f;
+        this.updateFeelUI();
+    },
+
+    updateFeelUI: function() {
+        const map = { 'easy': 'קל', 'good': 'בינוני (טוב)', 'hard': 'קשה' };
+        document.querySelectorAll('.feel-btn').forEach(b => b.classList.remove('selected'));
+        document.querySelector(`.feel-btn.${this.state.active.feel}`).classList.add('selected');
+        document.getElementById('feel-text').innerText = map[this.state.active.feel];
+    },
+
+    finishSet: function() {
+        let w, r;
+        if (this.state.active.isStopwatch) {
+            if(this.state.active.timerInterval) this.toggleStopwatch(); 
+            w = 0; 
+            r = this.state.active.stopwatchVal; 
+            if (r === 0) { alert("לא נמדד זמן"); return; }
+        } else {
+            w = this.state.active.inputW;
+            r = this.state.active.inputR;
+        }
+
+        const prog = this.state.routines[this.state.currentProgId];
+        const ex = prog.exercises[this.state.active.exIdx];
+        
+        let exLog = this.state.active.log.find(l => l.id === ex.id);
+        if(!exLog) {
+            exLog = { id: ex.id, name: ex.name, sets: [] };
+            this.state.active.log.push(exLog);
+        }
+        exLog.sets.push({ w, r, feel: this.state.active.feel });
+
+        // ACTIVE REST: Use the specific exercise rest time
+        const restTime = ex.rest || 60;
+        this.startRestTimer(restTime);
+
+        if (this.state.active.setIdx < this.state.active.totalSets) {
+            this.state.active.setIdx++;
+            document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
+            this.state.active.feel = 'good';
+            this.updateFeelUI();
+            if(this.state.active.isStopwatch) {
+                this.state.active.stopwatchVal = 0;
+                document.getElementById('sw-display').innerText = "00:00";
+            }
+        } else {
+            document.getElementById('btn-finish').style.display = 'none';
+            document.getElementById('decision-buttons').style.display = 'flex';
+            document.getElementById('rest-timer-area').style.display = 'none';
+
+            const nextEx = prog.exercises[this.state.active.exIdx + 1];
+            const nextEl = document.getElementById('next-ex-preview');
+            nextEl.innerText = nextEx ? `הבא בתור: ${nextEx.name}` : "הבא בתור: סיום אימון";
+            nextEl.style.display = 'block';
+        }
+    },
+
+    startRestTimer: function(durationSec) {
+        this.stopRestTimer();
+        const area = document.getElementById('rest-timer-area');
+        const disp = document.getElementById('rest-timer-val');
+        const ring = document.getElementById('rest-ring-prog');
+        
+        area.style.display = 'flex';
+        area.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        let sec = 0;
+        disp.innerText = "00:00";
+        const MAX_OFFSET = 408; 
+        ring.style.strokeDashoffset = MAX_OFFSET; 
+        
+        this.state.active.restInterval = setInterval(() => {
+            sec++;
+            let m = Math.floor(sec / 60);
+            let s = sec % 60;
+            disp.innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`;
+            
+            // Proportional progress based on durationSec
+            if (sec <= durationSec) {
+                const ratio = sec / durationSec;
+                const offset = MAX_OFFSET - (MAX_OFFSET * ratio);
+                ring.style.strokeDashoffset = offset;
+            } else {
+                ring.style.strokeDashoffset = 0; 
+            }
+
+            if (sec === durationSec && navigator.vibrate) navigator.vibrate([200,100,200]);
+        }, 1000);
+    },
+
+    stopRestTimer: function() {
+        if(this.state.active.restInterval) clearInterval(this.state.active.restInterval);
+        this.state.active.restInterval = null;
+        document.getElementById('rest-timer-area').style.display = 'none';
+    },
+
+    stopAllTimers: function() {
+        this.stopStopwatch();
+        this.stopRestTimer();
+    },
+
+    addSet: function() {
+        this.state.active.setIdx++;
+        document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}+`;
+        document.getElementById('decision-buttons').style.display = 'none';
+        document.getElementById('next-ex-preview').style.display = 'none';
+        document.getElementById('btn-finish').style.display = 'flex';
+        document.getElementById('rest-timer-area').style.display = 'flex';
+        document.getElementById('rest-timer-area').scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        if(this.state.active.isStopwatch) {
+            this.state.active.stopwatchVal = 0;
+            document.getElementById('sw-display').innerText = "00:00";
+        }
+    },
+
+    deleteLastSet: function() {
+        const prog = this.state.routines[this.state.currentProgId];
+        const ex = prog.exercises[this.state.active.exIdx];
+        let exLog = this.state.active.log.find(l => l.id === ex.id);
+        if(exLog && exLog.sets.length > 0) {
+            exLog.sets.pop();
+            if (this.state.active.setIdx > 1) {
+                this.state.active.setIdx--;
+                document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
+                document.getElementById('decision-buttons').style.display = 'none';
+                document.getElementById('next-ex-preview').style.display = 'none';
+                document.getElementById('btn-finish').style.display = 'flex';
+            }
+        }
+    },
+
+    skipExercise: function() {
+        this.nextExercise();
+    },
+
+    nextExercise: function() {
+        this.stopAllTimers();
+        const prog = this.state.routines[this.state.currentProgId];
+        if (this.state.active.exIdx < prog.exercises.length - 1) {
+            this.state.active.exIdx++;
+            this.state.active.setIdx = 1;
+            this.loadActiveExercise();
+        } else {
+            this.finishWorkout();
+        }
+    },
+
+    finishWorkout: function() {
+        const endTime = Date.now();
+        const durationMin = Math.round((endTime - this.state.active.startTime) / 60000);
+        const dateStr = new Date().toLocaleDateString('he-IL');
+        const progTitle = this.state.routines[this.state.currentProgId].title;
+
+        const tempItem = {
+            program: this.state.currentProgId,
+            programTitle: progTitle, 
+            date: dateStr,
+            duration: durationMin,
+            data: this.state.active.log
+        };
+
+        const meta = document.getElementById('summary-meta');
+        meta.innerText = `${dateStr} | ${durationMin} דקות`;
+        const textBox = document.getElementById('summary-text');
+        textBox.innerText = this.generateLogText(tempItem);
+        this.nav('screen-summary');
+    },
+
+    generateLogText: function(historyItem) {
+        const pName = historyItem.programTitle || historyItem.program;
+        let txt = `סיכום אימון: ${pName}\n`;
+        txt += `תאריך: ${historyItem.date} | משך: ${historyItem.duration} דק'\n\n`;
+
+        historyItem.data.forEach(ex => {
+            if(ex.sets.length > 0) {
+                txt += `✅ ${ex.name}\n`;
+                const isTime = (ex.id.includes('plank') || ex.id === 'wall_sit');
+                ex.sets.forEach((s, i) => {
+                    let valStr = isTime ? `${s.r}שנ׳` : `${s.w>0?s.w+'ק״ג ':''}${s.r}`;
+                    let feelStr = FEEL_MAP_TEXT[s.feel] || 'טוב';
+                    txt += `   סט ${i+1}: ${valStr} (${feelStr})\n`;
+                });
+                txt += "\n";
+            }
+        });
+        return txt;
+    },
+
+    copySummaryToClipboard: function() {
+        const txt = document.getElementById('summary-text').innerText;
+        this.copyText(txt);
+    },
+
+    saveAndHome: function() {
+        if (this.state.active.log.length > 0) {
+            const progTitle = this.state.routines[this.state.currentProgId].title;
+            this.state.history.push({
+                date: new Date().toLocaleDateString('he-IL'),
+                timestamp: Date.now(),
+                program: this.state.currentProgId,
+                programTitle: progTitle, 
+                data: this.state.active.log,
+                duration: Math.round((Date.now() - this.state.active.startTime) / 60000)
+            });
+            this.saveData();
+        }
+        window.location.reload();
+    },
+
+    /* --- V1.7 ADMIN UI LOGIC --- */
+
+    openAdminHome: function() { 
+        if (this.state.active.on) {
+            alert("לא ניתן להיכנס לניהול בזמן אימון פעיל."); return;
+        }
+        document.getElementById('admin-modal').style.display = 'flex';
+        document.getElementById('admin-view-home').style.display = 'flex';
+        document.getElementById('admin-view-edit').style.display = 'none';
+        this.renderAdminHome();
+    },
+
+    closeAdmin: function() { 
+        this.saveData();
+        this.renderProgramSelect(); 
+        document.getElementById('admin-modal').style.display = 'none'; 
+    },
+
+    renderAdminHome: function() {
+        const list = document.getElementById('admin-prog-list');
+        list.innerHTML = '';
+        
+        Object.keys(this.state.routines).forEach(pid => {
+            const prog = this.state.routines[pid];
+            list.innerHTML += `
+            <div class="admin-prog-card">
+                <div class="admin-prog-name">${prog.title}</div>
+                <div class="admin-prog-actions">
+                    <button class="text-action action-edit" onclick="app.openAdminEdit('${pid}')">ערוך</button>
+                    <button class="text-action action-del" onclick="app.deleteProgram('${pid}')">מחק</button>
+                </div>
+            </div>`;
+        });
+    },
+
+    createNewProgram: function() {
+        const id = 'prog_' + Date.now();
+        this.state.routines[id] = {
+            title: 'תוכנית חדשה',
+            exercises: []
+        };
+        this.saveData();
+        this.openAdminEdit(id);
+    },
+
+    deleteProgram: function(pid) {
+        if(confirm("למחוק את התוכנית כולה?")) {
+            delete this.state.routines[pid];
+            this.saveData();
+            this.renderAdminHome();
+        }
+    },
+
+    openAdminEdit: function(pid) {
+        this.state.admin.viewProgId = pid;
+        document.getElementById('admin-view-home').style.display = 'none';
+        document.getElementById('admin-view-edit').style.display = 'flex';
+        
+        document.getElementById('edit-prog-title').value = this.state.routines[pid].title;
+        this.renderAdminEditList();
+    },
+
+    updateProgramTitle: function() {
+        const val = document.getElementById('edit-prog-title').value;
+        if(val) this.state.routines[this.state.admin.viewProgId].title = val;
+    },
+
+    renderAdminEditList: function() {
+        const pid = this.state.admin.viewProgId;
+        const list = document.getElementById('admin-ex-list');
+        list.innerHTML = '';
+        
+        const exercises = this.state.routines[pid].exercises;
+        
+        exercises.forEach((ex, i) => {
+            const hasNote = ex.note && ex.note.length > 0 ? 'has-note' : '';
+            
+            list.innerHTML += `
+            <div class="admin-ex-card ${hasNote}">
+                <div class="ex-row-top">
+                     <div class="ex-top-ctrls">
+                        <button class="btn-x" onclick="app.removeEx(${i})">×</button>
+                        <button class="char-btn" onclick="app.moveEx(${i}, -1)">▲</button>
+                        <button class="char-btn" onclick="app.moveEx(${i}, 1)">▼</button>
+                     </div>
+                     <button class="ex-title-btn" onclick="app.openTipModal(${i})">
+                        <span class="tip-display-badge">טיפ</span>${ex.name}
+                     </button>
+                </div>
+                
+                <div class="ex-row-btm">
+                    <div style="flex:1">
+                        <div class="subtitle-label">סטים</div>
+                        <div class="stepper-group">
+                            <button class="step-btn" onclick="app.updateExVal(${i}, 'sets', -1)">-</button>
+                            <div class="step-val">${ex.sets}</div>
+                            <button class="step-btn" onclick="app.updateExVal(${i}, 'sets', 1)">+</button>
+                        </div>
+                    </div>
+                    <div style="flex:1">
+                        <div class="subtitle-label">מנוחה <span class="lbl-small">שנ׳</span></div>
+                         <div class="stepper-group">
+                            <button class="step-btn" onclick="app.updateExVal(${i}, 'rest', -15)">-</button>
+                            <div class="step-val">${ex.rest||60}</div>
+                            <button class="step-btn" onclick="app.updateExVal(${i}, 'rest', 15)">+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        });
+    },
+
+    updateExVal: function(idx, field, delta) {
+        const ex = this.state.routines[this.state.admin.viewProgId].exercises[idx];
+        let val = (ex[field] || (field==='sets'?3:60)) + delta;
+        if(val < 1) val = (field==='sets'?1:0);
+        ex[field] = val;
+        this.renderAdminEditList();
+    },
+
+    moveEx: function(i, dir) {
+        const arr = this.state.routines[this.state.admin.viewProgId].exercises;
+        if ((i === 0 && dir === -1) || (i === arr.length - 1 && dir === 1)) return;
+        const temp = arr[i];
+        arr[i] = arr[i + dir];
+        arr[i + dir] = temp;
+        this.renderAdminEditList();
+    },
+
+    removeEx: function(i) {
+        if(confirm("להסיר תרגיל זה?")) {
+            this.state.routines[this.state.admin.viewProgId].exercises.splice(i, 1);
+            this.renderAdminEditList();
+        }
+    },
+
+    /* --- TIP MODAL --- */
+    openTipModal: function(idx) {
+        this.state.admin.editTipEx = idx;
+        const ex = this.state.routines[this.state.admin.viewProgId].exercises[idx];
+        document.getElementById('tip-input').value = ex.note || '';
+        document.getElementById('tip-modal').style.display = 'flex';
+    },
+
+    closeTipModal: function() {
+        document.getElementById('tip-modal').style.display = 'none';
+        this.state.admin.editTipEx = null;
+    },
+
+    saveTip: function() {
+        const idx = this.state.admin.editTipEx;
+        if (idx !== null) {
+            const val = document.getElementById('tip-input').value;
+            this.state.routines[this.state.admin.viewProgId].exercises[idx].note = val;
+            this.renderAdminEditList();
+        }
+        this.closeTipModal();
+    },
+
+    /* --- BANK --- */
+    openBank: function() { 
+        document.getElementById('bank-modal').style.display = 'flex';
+        this.filterBank();
+    },
+    closeBank: function() { document.getElementById('bank-modal').style.display = 'none'; },
+    filterBank: function() {
+        const txtEl = document.getElementById('bank-search');
+        const catEl = document.getElementById('bank-cat-select');
+        const txt = txtEl.value.toLowerCase();
+        const cat = catEl.value; 
+        const list = document.getElementById('bank-list');
+        list.innerHTML = '';
+        
+        BANK.filter(e => {
+            const matchesName = e.name.toLowerCase().includes(txt);
+            const matchesCat = cat === 'all' || e.cat === cat;
+            return matchesName && matchesCat;
+        })
+        .forEach(e => {
+            // Text based bank item
+            list.innerHTML += `<div class="list-item" onclick="app.addFromBank('${e.id}')">
+                <span style="font-weight:700">${e.name}</span>
+                <span style="color:var(--primary); font-size:1.5rem">+</span>
+            </div>`;
+        });
+    },
+    addFromBank: function(id) {
+        const n = JSON.parse(JSON.stringify(BANK.find(e=>e.id===id)));
+        n.target = {w:10, r:12};
+        n.sets = 3;
+        n.rest = 60; // Default rest
+        this.state.routines[this.state.admin.viewProgId].exercises.push(n);
+        this.closeBank();
+        this.renderAdminEditList();
+    },
+
+    /* --- BACKUP & RESTORE --- */
+    exportConfig: function() {
+        const data = { type: 'config', ver: CONFIG.VERSION, date: new Date().toLocaleDateString(), routines: this.state.routines };
+        this.downloadJSON(data, `gymstart_config_v${CONFIG.VERSION}_${Date.now()}.json`);
+    },
+
+    importConfig: function(input) {
+        if(this.state.active.on) {
+            alert("לא ניתן לעדכן באמצע אימון."); input.value = ''; return;
+        }
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const json = JSON.parse(e.target.result);
+                if (json.type !== 'config') { alert("קובץ שגוי."); return; }
+                if(confirm("עדכון תוכניות יחליף את ההגדרות הקיימות. להמשיך?")) {
+                    app.state.routines = json.routines;
+                    app.saveData();
+                    app.renderProgramSelect(); 
+                    alert("התוכניות עודכנו בהצלחה!");
+                    location.reload();
+                }
+            } catch(err) { alert("קובץ לא תקין"); }
+        };
+        reader.readAsText(file);
+        input.value = '';
+    },
+
+    exportHistory: function() {
+        const data = { type: 'history', ver: CONFIG.VERSION, history: this.state.history };
+        this.downloadJSON(data, `gymstart_history_${Date.now()}.json`);
+    },
+
+    importHistory: function(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const json = JSON.parse(e.target.result);
+                let newHist = [];
+                if (Array.isArray(json)) newHist = json;
+                else if (json.type === 'history') newHist = json.history;
+                else { alert("שגיאה בקובץ היסטוריה."); return; }
+
+                if(confirm(`נמצאו ${newHist.length} רשומות. למזג?`)) {
+                    app.state.history = [...app.state.history, ...newHist];
+                    app.state.history.sort((a,b) => (a.timestamp || 0) - (b.timestamp || 0));
+                    app.saveData();
+                    app.showHistory();
+                    alert("ההיסטוריה עודכנה.");
+                }
+            } catch(err) { alert("שגיאה בקובץ"); }
+        };
+        reader.readAsText(file);
+        input.value = '';
+    },
+
+    downloadJSON: function(data, filename) {
+        const str = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+        const a = document.createElement('a');
+        a.href = str;
+        a.download = filename;
+        a.click();
+    },
+
+    factoryReset: function() {
+        if(confirm("איפוס מלא ימחק הכל. להמשיך?")) {
+            localStorage.clear();
+            location.reload();
+        }
+    },
+
+    /* --- HISTORY VIEW --- */
+    showHistory: function() {
+        this.state.historySelection = [];
+        this.updateHistoryActions(); 
+        const list = document.getElementById('history-list');
+        list.innerHTML = '';
+        [...this.state.history].reverse().forEach((h, i) => {
+            const realIdx = this.state.history.length - 1 - i;
+            const pName = h.programTitle || h.program;
+            
+            list.innerHTML += `
+                <div class="hist-item-row">
+                    <div style="display:flex; align-items:center">
+                        <input type="checkbox" class="custom-chk" onchange="app.toggleHistorySelection(${realIdx}, this)">
+                    </div>
+                    <div style="flex:1" onclick="app.showHistoryDetail(${realIdx})">
+                        <div style="display:flex; justify-content:space-between">
+                            <span style="font-weight:700; color:var(--text)">${h.date}</span>
+                            <span class="badge" style="background:#333; color:white; font-weight:400; font-size:0.75rem">${pName}</span>
+                        </div>
+                        <div style="font-size:0.85rem; color:var(--text-sec); margin-top:5px">
+                            ${h.data.length} תרגילים • ${h.duration||'?'} דק'
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        this.nav('screen-history');
+    },
+
+    toggleHistorySelection: function(idx, el) {
+        if(el.checked) this.state.historySelection.push(idx);
+        else this.state.historySelection = this.state.historySelection.filter(i => i !== idx);
+        this.updateHistoryActions();
+    },
+
+    updateHistoryActions: function() {
+        const btn = document.getElementById('btn-del-selected');
+        btn.disabled = this.state.historySelection.length === 0;
+        btn.innerText = this.state.historySelection.length > 0 ? `מחק (${this.state.historySelection.length})` : "מחק";
+    },
+
+    selectAllHistory: function() {
+        const inputs = document.querySelectorAll('.custom-chk');
+        const allSelected = this.state.historySelection.length === this.state.history.length && this.state.history.length > 0;
+        if (allSelected) {
+            this.state.historySelection = [];
+            inputs.forEach(i => i.checked = false);
+        } else {
+            this.state.historySelection = this.state.history.map((_, i) => i);
+            inputs.forEach(i => i.checked = true);
+        }
+        this.updateHistoryActions();
+    },
+
+    deleteSelectedHistory: function() {
+        if (this.state.historySelection.length === 0) return;
+        if (!confirm(`למחוק ${this.state.historySelection.length} אימונים?`)) return;
+        this.state.history = this.state.history.filter((_, index) => !this.state.historySelection.includes(index));
+        this.saveData();
+        this.showHistory();
+    },
+
+    copySelectedHistory: function() {
+        if(this.state.historySelection.length === 0) { alert("לא נבחר אימון"); return; }
+        let fullTxt = "";
+        const sortedSel = [...this.state.historySelection].sort((a,b) => a-b);
+        sortedSel.forEach((idx, i) => {
+            const h = this.state.history[idx];
+            fullTxt += this.generateLogText(h);
+            if(i < sortedSel.length - 1) fullTxt += "----------------\n\n";
+        });
+        this.copyText(fullTxt);
+    },
+
+    showHistoryDetail: function(idx) {
+        const item = this.state.history[idx];
+        this.state.viewHistoryIdx = idx;
+        const pName = item.programTitle || item.program;
+        
+        const header = document.getElementById('hist-meta-header');
+        header.innerHTML = `<h3>${pName}</h3><p>${item.date} | ${item.duration} דק'</p>`;
+
+        const content = document.getElementById('hist-detail-content');
+        let html = '';
+        item.data.forEach(ex => {
+            html += `<div style="background:var(--bg-card); padding:15px; border-radius:12px; margin-bottom:10px; border:1px solid #222;">
+                <div style="font-weight:700; color:var(--primary)">${ex.name}</div>`;
+            const isTime = (ex.id.includes('plank') || ex.id === 'wall_sit');
+            ex.sets.forEach((s, si) => {
+                let valStr = isTime ? `${s.r} שנ׳` : `${s.w > 0 ? s.w+'ק״ג ' : ''}${s.r}`;
+                let feelStr = FEEL_MAP_TEXT[s.feel] || 'טוב';
+                html += `<div style="display:flex; justify-content:space-between; font-size:0.9rem; margin-top:5px; border-bottom:1px dashed #333; padding-bottom:5px">
+                    <span>סט ${si+1} <small style="color:#777">(${feelStr})</small></span>
+                    <span>${valStr}</span>
+                </div>`;
+            });
+            html += `</div>`;
+        });
+        content.innerHTML = html;
+        document.getElementById('history-modal').style.display = 'flex';
+    },
+
+    copySingleHistory: function() {
+        const item = this.state.history[this.state.viewHistoryIdx];
+        this.copyText(this.generateLogText(item));
+    },
+
+    closeHistoryModal: function() { document.getElementById('history-modal').style.display = 'none'; },
+
+    deleteCurrentLog: function() {
+        if(confirm("למחוק את האימון?")) {
+            this.state.history.splice(this.state.viewHistoryIdx, 1);
+            this.saveData();
+            this.closeHistoryModal();
+            this.showHistory();
+        }
+    },
+
+    copyText: function(txt) {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(txt).then(() => alert("הועתק!"));
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = txt;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            alert("הועתק!");
+        }
     }
-}
+};
+
+window.addEventListener('DOMContentLoaded', () => app.init());
