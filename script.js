@@ -1,20 +1,16 @@
 /**
- * GYMSTART V1.7 (Full Data Restoration)
- * Features: 
- * - Text-only Admin UI (No Emojis, Clean Layout)
- * - 2-Row Exercise Cards (Sets & Rest Control)
- * - Rest Timer Control (Per exercise)
- * - Smart Weight Prediction (Based on history)
- * - Click-to-Edit Tips
- * - Full Data: A, B, FBW routines included
+ * GYMSTART V1.7.2
+ * - Core Fixes: Undo Last Set, Add Set Logic, Unit Conflicts.
+ * - UI Improvements: Clear Kg/Reps display.
+ * - Admin: Complete Redesign (GymPro Style) with 3 views (List, Edit, Selector).
  */
 
 const CONFIG = {
     KEYS: {
-        ROUTINES: 'gymstart_v1_7_routines', // New V1.7 storage key
-        HISTORY: 'gymstart_beta_02_history' // Compatible with previous history
+        ROUTINES: 'gymstart_v1_7_routines',
+        HISTORY: 'gymstart_beta_02_history'
     },
-    VERSION: '1.7.1'
+    VERSION: '1.7.2'
 };
 
 const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה' };
@@ -51,7 +47,7 @@ const BANK = [
     { id: 'crunches', name: 'כפיפות בטן', unit: 'bodyweight', cat: 'core' }
 ];
 
-// FULL DEFAULT ROUTINES (A, B, FBW)
+// FULL DEFAULT ROUTINES
 const DEFAULT_ROUTINES_V17 = {
     'A': {
         title: 'רגליים וגב (A)',
@@ -102,7 +98,13 @@ const app = {
             feel: 'good', isStopwatch: false, stopwatchVal: 0,
             inputW: 10, inputR: 12
         },
-        admin: { viewProgId: null, editTipEx: null },
+        // Admin State
+        admin: { 
+            viewProgId: null, 
+            editTipEx: null, 
+            selectorFilter: 'all',
+            tempExercises: [] // For editor
+        },
         historySelection: [],
         viewHistoryIdx: null
     },
@@ -120,19 +122,15 @@ const app = {
     },
 
     loadData: function() {
-        // Load history from legacy/current key
         const h = localStorage.getItem(CONFIG.KEYS.HISTORY);
         this.state.history = h ? JSON.parse(h) : [];
         
-        // Load routines from new V1.7 key
         const r = localStorage.getItem(CONFIG.KEYS.ROUTINES);
         let loaded = r ? JSON.parse(r) : null;
 
         if (!loaded) {
-            // First time loading V1.7 -> Use new defaults
             this.state.routines = JSON.parse(JSON.stringify(DEFAULT_ROUTINES_V17));
         } else {
-            // V1.7 Migration: Ensure 'rest' exists if loaded data is partial
             for(const pid in loaded) {
                 loaded[pid].exercises.forEach(ex => {
                     if(typeof ex.rest === 'undefined') ex.rest = 60;
@@ -192,7 +190,6 @@ const app = {
 
         ids.forEach(pid => {
             const prog = this.state.routines[pid];
-            // Dynamic badge from ID first char
             const badge = pid.charAt(0).toUpperCase();
             const count = prog.exercises.length;
             
@@ -297,9 +294,8 @@ const app = {
             document.getElementById('stopwatch-container').style.display = 'none';
             document.getElementById('unit-label-card').innerText = ex.unit === 'plates' ? 'פלטות' : 'ק״ג';
             
-            // SMART WEIGHT PREDICTION (New in V1.7)
+            // SMART WEIGHT
             let smartWeight = ex.target?.w || 10;
-            // Scan history backwards to find last weight for this Exercise ID
             for(let i=this.state.history.length-1; i>=0; i--) {
                 const sess = this.state.history[i];
                 const found = sess.data.find(e => e.id === ex.id);
@@ -339,16 +335,21 @@ const app = {
             return;
         }
 
-        const isBody = (unit === 'bodyweight');
-        const wStr = isBody ? 'גוף' : `${lastLog.w}`;
-        const rStr = (this.state.active.isStopwatch) ? `${lastLog.r}שנ׳` : `${lastLog.r}חז׳`;
-        const feelTxt = FEEL_MAP_TEXT[lastLog.feel] || '-';
-
-        strip.innerHTML = `
-            <span>${wStr}</span> <span style="color:#444">|</span>
-            <span>${rStr}</span> <span style="color:#444">|</span>
-            <span>${feelTxt}</span>
-        `;
+        // IMPROVED DISPLAY: "10 ק״ג | 12 חזרות"
+        const isTime = this.state.active.isStopwatch;
+        const isBody = (unit === 'bodyweight' && !isTime);
+        
+        let wStr = isBody ? 'משקל גוף' : `${lastLog.w} ק״ג`;
+        if (unit === 'plates') wStr = `${lastLog.w} פלטות`;
+        
+        let rStr = isTime ? `${lastLog.r} שניות` : `${lastLog.r} חזרות`;
+        
+        // If bodyweight time (Plank)
+        if (isTime && unit === 'bodyweight') {
+            strip.innerText = `${rStr} (אימון קודם)`;
+        } else {
+            strip.innerText = `${wStr} | ${rStr}`;
+        }
     },
 
     populateSelects: function(ex) {
@@ -372,8 +373,15 @@ const app = {
             opt.text = val;
             selW.appendChild(opt);
         });
-        selW.value = this.state.active.inputW;
-        if(!selW.value && wOpts.length > 0) selW.value = wOpts[0]; 
+
+        // SAFETY CHECK: If history weight is not in range, default to first option
+        if(wOpts.includes(this.state.active.inputW)) {
+            selW.value = this.state.active.inputW;
+        } else {
+            selW.value = wOpts[0] || 0;
+            this.state.active.inputW = Number(selW.value);
+        }
+        
         selW.onchange = (e) => this.state.active.inputW = Number(e.target.value);
 
         let rOpts = [];
@@ -452,7 +460,6 @@ const app = {
         }
         exLog.sets.push({ w, r, feel: this.state.active.feel });
 
-        // ACTIVE REST V1.7: Use specific rest
         const restTime = ex.rest || 60;
         this.startRestTimer(restTime);
 
@@ -497,7 +504,6 @@ const app = {
             let s = sec % 60;
             disp.innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`;
             
-            // Proportional progress based on durationSec
             if (sec <= durationSec) {
                 const ratio = sec / durationSec;
                 const offset = MAX_OFFSET - (MAX_OFFSET * ratio);
@@ -522,8 +528,11 @@ const app = {
     },
 
     addSet: function() {
+        // BUG FIX: Update totalSets
+        this.state.active.totalSets++;
         this.state.active.setIdx++;
-        document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}+`;
+        document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
+        
         document.getElementById('decision-buttons').style.display = 'none';
         document.getElementById('next-ex-preview').style.display = 'none';
         document.getElementById('btn-finish').style.display = 'flex';
@@ -540,8 +549,13 @@ const app = {
         const prog = this.state.routines[this.state.currentProgId];
         const ex = prog.exercises[this.state.active.exIdx];
         let exLog = this.state.active.log.find(l => l.id === ex.id);
+        
         if(exLog && exLog.sets.length > 0) {
             exLog.sets.pop();
+            
+            // BUG FIX: Stop timer and hide rest UI
+            this.stopRestTimer();
+
             if (this.state.active.setIdx > 1) {
                 this.state.active.setIdx--;
                 document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
@@ -630,16 +644,18 @@ const app = {
         window.location.reload();
     },
 
-    /* --- V1.7 ADMIN UI LOGIC (Text-Based) --- */
+    /* --- NEW ADMIN UI LOGIC (GYMPRO STYLE) --- */
 
     openAdminHome: function() { 
-        if (this.state.active.on) {
-            alert("לא ניתן להיכנס לניהול בזמן אימון פעיל."); return;
-        }
+        if (this.state.active.on) { alert("לא ניתן להיכנס לניהול בזמן אימון פעיל."); return; }
+        
         document.getElementById('admin-modal').style.display = 'flex';
+        // Reset Views
         document.getElementById('admin-view-home').style.display = 'flex';
         document.getElementById('admin-view-edit').style.display = 'none';
-        this.renderAdminHome();
+        document.getElementById('admin-view-selector').style.display = 'none';
+        
+        this.renderAdminList();
     },
 
     closeAdmin: function() { 
@@ -648,18 +664,25 @@ const app = {
         document.getElementById('admin-modal').style.display = 'none'; 
     },
 
-    renderAdminHome: function() {
+    renderAdminList: function() {
         const list = document.getElementById('admin-prog-list');
         list.innerHTML = '';
-        
-        Object.keys(this.state.routines).forEach(pid => {
+        const ids = Object.keys(this.state.routines);
+
+        if(ids.length === 0) list.innerHTML = '<div style="text-align:center; color:#666; padding:20px;">אין תוכניות</div>';
+
+        ids.forEach(pid => {
             const prog = this.state.routines[pid];
             list.innerHTML += `
-            <div class="admin-prog-card">
-                <div class="admin-prog-name">${prog.title}</div>
-                <div class="admin-prog-actions">
-                    <button class="text-action action-edit" onclick="app.openAdminEdit('${pid}')">ערוך</button>
-                    <button class="text-action action-del" onclick="app.deleteProgram('${pid}')">מחק</button>
+            <div class="manager-item">
+                <div class="manager-info">
+                    <h3>${prog.title}</h3>
+                    <p>${prog.exercises.length} תרגילים</p>
+                </div>
+                <div class="manager-actions">
+                    <button class="btn-text-action" onclick="app.duplicateProgram('${pid}')">שכפל</button>
+                    <button class="btn-text-action" onclick="app.openAdminEdit('${pid}')">ערוך</button>
+                    <button class="btn-text-action delete" onclick="app.deleteProgram('${pid}')">מחק</button>
                 </div>
             </div>`;
         });
@@ -667,163 +690,201 @@ const app = {
 
     createNewProgram: function() {
         const id = 'prog_' + Date.now();
-        this.state.routines[id] = {
-            title: 'תוכנית חדשה',
-            exercises: []
-        };
-        this.saveData();
+        this.state.routines[id] = { title: 'תוכנית חדשה', exercises: [] };
         this.openAdminEdit(id);
     },
 
+    duplicateProgram: function(pid) {
+        const newId = 'prog_' + Date.now();
+        const original = this.state.routines[pid];
+        const copy = JSON.parse(JSON.stringify(original));
+        copy.title += " (עותק)";
+        this.state.routines[newId] = copy;
+        this.renderAdminList();
+    },
+
     deleteProgram: function(pid) {
-        if(confirm("למחוק את התוכנית כולה?")) {
+        if(confirm("למחוק את התוכנית?")) {
             delete this.state.routines[pid];
-            this.saveData();
-            this.renderAdminHome();
+            this.renderAdminList();
         }
     },
 
     openAdminEdit: function(pid) {
         this.state.admin.viewProgId = pid;
+        // Copy exercises to temp array for editing safely
+        this.state.admin.tempExercises = JSON.parse(JSON.stringify(this.state.routines[pid].exercises));
+        
         document.getElementById('admin-view-home').style.display = 'none';
         document.getElementById('admin-view-edit').style.display = 'flex';
-        
         document.getElementById('edit-prog-title').value = this.state.routines[pid].title;
-        this.renderAdminEditList();
+        
+        this.renderEditorList();
+    },
+
+    saveAndCloseEditor: function() {
+        const pid = this.state.admin.viewProgId;
+        this.state.routines[pid].exercises = this.state.admin.tempExercises;
+        this.state.routines[pid].title = document.getElementById('edit-prog-title').value;
+        this.saveData();
+        this.openAdminHome();
     },
 
     updateProgramTitle: function() {
-        const val = document.getElementById('edit-prog-title').value;
-        if(val) this.state.routines[this.state.admin.viewProgId].title = val;
+        // Just UI update, actual save happens on close
     },
 
-    renderAdminEditList: function() {
-        const pid = this.state.admin.viewProgId;
+    renderEditorList: function() {
         const list = document.getElementById('admin-ex-list');
         list.innerHTML = '';
-        
-        const exercises = this.state.routines[pid].exercises;
-        
-        exercises.forEach((ex, i) => {
-            const hasNote = ex.note && ex.note.length > 0 ? 'has-note' : '';
-            
+        const exList = this.state.admin.tempExercises;
+
+        exList.forEach((ex, i) => {
+            const hasTip = ex.note ? 'has-tip' : '';
             list.innerHTML += `
-            <div class="admin-ex-card ${hasNote}">
-                <div class="ex-row-top">
-                     <div class="ex-top-ctrls">
-                        <button class="btn-x" onclick="app.removeEx(${i})">×</button>
-                        <button class="char-btn" onclick="app.moveEx(${i}, -1)">▲</button>
-                        <button class="char-btn" onclick="app.moveEx(${i}, 1)">▼</button>
-                     </div>
-                     <button class="ex-title-btn" onclick="app.openTipModal(${i})">
-                        <span class="tip-display-badge">טיפ</span>${ex.name}
-                     </button>
-                </div>
-                
-                <div class="ex-row-btm">
-                    <div style="flex:1">
-                        <div class="subtitle-label">סטים</div>
-                        <div class="stepper-group">
-                            <button class="step-btn" onclick="app.updateExVal(${i}, 'sets', -1)">-</button>
-                            <div class="step-val">${ex.sets}</div>
-                            <button class="step-btn" onclick="app.updateExVal(${i}, 'sets', 1)">+</button>
-                        </div>
+            <div class="editor-row">
+                <div class="row-top">
+                    <div class="row-title">${i+1}. ${ex.name}</div>
+                    <div class="row-ctrls">
+                        <button class="ctrl-btn" onclick="app.moveEx(${i}, -1)">▲</button>
+                        <button class="ctrl-btn" onclick="app.moveEx(${i}, 1)">▼</button>
+                        <button class="ctrl-btn del" onclick="app.removeEx(${i})">×</button>
                     </div>
-                    <div style="flex:1">
-                        <div class="subtitle-label">מנוחה <span class="lbl-small">שנ׳</span></div>
-                         <div class="stepper-group">
-                            <button class="step-btn" onclick="app.updateExVal(${i}, 'rest', -15)">-</button>
-                            <div class="step-val">${ex.rest||60}</div>
-                            <button class="step-btn" onclick="app.updateExVal(${i}, 'rest', 15)">+</button>
-                        </div>
+                </div>
+                <div class="row-btm">
+                    <button class="tip-btn ${hasTip}" onclick="app.openTipModal(${i})">💡 טיפ</button>
+                    
+                    <div class="stepper">
+                        <div class="step-label" style="padding-right:5px;">סטים</div>
+                        <button class="step-btn" onclick="app.updateTempEx(${i}, 'sets', -1)">-</button>
+                        <div class="step-val">${ex.sets}</div>
+                        <button class="step-btn" onclick="app.updateTempEx(${i}, 'sets', 1)">+</button>
+                    </div>
+                    <div class="stepper">
+                        <div class="step-label" style="padding-right:5px;">מנוחה</div>
+                        <button class="step-btn" onclick="app.updateTempEx(${i}, 'rest', -15)">-</button>
+                        <div class="step-val">${ex.rest||60}</div>
+                        <button class="step-btn" onclick="app.updateTempEx(${i}, 'rest', 15)">+</button>
                     </div>
                 </div>
             </div>`;
         });
     },
 
-    updateExVal: function(idx, field, delta) {
-        const ex = this.state.routines[this.state.admin.viewProgId].exercises[idx];
-        let val = (ex[field] || (field==='sets'?3:60)) + delta;
-        if(val < 1) val = (field==='sets'?1:0);
-        ex[field] = val;
-        this.renderAdminEditList();
+    updateTempEx: function(i, field, delta) {
+        let val = (this.state.admin.tempExercises[i][field] || 0) + delta;
+        if(field === 'sets' && val < 1) val = 1;
+        if(field === 'rest' && val < 0) val = 0;
+        this.state.admin.tempExercises[i][field] = val;
+        this.renderEditorList();
     },
 
     moveEx: function(i, dir) {
-        const arr = this.state.routines[this.state.admin.viewProgId].exercises;
+        const arr = this.state.admin.tempExercises;
         if ((i === 0 && dir === -1) || (i === arr.length - 1 && dir === 1)) return;
         const temp = arr[i];
         arr[i] = arr[i + dir];
         arr[i + dir] = temp;
-        this.renderAdminEditList();
+        this.renderEditorList();
     },
 
     removeEx: function(i) {
-        if(confirm("להסיר תרגיל זה?")) {
-            this.state.routines[this.state.admin.viewProgId].exercises.splice(i, 1);
-            this.renderAdminEditList();
-        }
+        this.state.admin.tempExercises.splice(i, 1);
+        this.renderEditorList();
     },
 
-    /* --- TIP MODAL --- */
+    /* --- SMART SELECTOR --- */
+    openAdminSelector: function() {
+        document.getElementById('admin-view-edit').style.display = 'none';
+        document.getElementById('admin-view-selector').style.display = 'flex';
+        document.getElementById('selector-search').value = '';
+        this.state.admin.selectorFilter = 'all';
+        this.updateFilterChips();
+        this.renderSelectorList();
+    },
+
+    closeSelector: function() {
+        document.getElementById('admin-view-selector').style.display = 'none';
+        document.getElementById('admin-view-edit').style.display = 'flex';
+    },
+
+    setSelectorFilter: function(cat, btn) {
+        this.state.admin.selectorFilter = cat;
+        this.updateFilterChips();
+        this.renderSelectorList();
+    },
+
+    updateFilterChips: function() {
+        document.querySelectorAll('.chip').forEach(c => {
+            if(c.innerText === this.getCatLabel(this.state.admin.selectorFilter) || 
+               (this.state.admin.selectorFilter === 'all' && c.innerText === 'הכל')) {
+                c.classList.add('active');
+            } else c.classList.remove('active');
+        });
+        // Since chip text varies, logic above is weak. Better by index or data-att, but simplified here:
+        const map = { 'all':0, 'legs':1, 'chest':2, 'back':3, 'shoulders':4, 'arms':5, 'core':6 };
+        const idx = map[this.state.admin.selectorFilter];
+        const chips = document.querySelectorAll('.chip');
+        chips.forEach((c, i) => i === idx ? c.classList.add('active') : c.classList.remove('active'));
+    },
+
+    filterSelector: function() { this.renderSelectorList(); },
+
+    renderSelectorList: function() {
+        const list = document.getElementById('selector-list');
+        list.innerHTML = '';
+        const search = document.getElementById('selector-search').value.toLowerCase();
+        const cat = this.state.admin.selectorFilter;
+
+        BANK.filter(e => {
+            const matchName = e.name.toLowerCase().includes(search);
+            const matchCat = cat === 'all' || e.cat === cat;
+            return matchName && matchCat;
+        }).forEach(e => {
+            list.innerHTML += `
+            <div class="list-item" onclick="app.addExerciseFromSelector('${e.id}')">
+                <span style="font-weight:700">${e.name}</span>
+                <span style="color:var(--primary)">+</span>
+            </div>`;
+        });
+    },
+
+    addExerciseFromSelector: function(exId) {
+        const bankEx = BANK.find(e => e.id === exId);
+        const newEx = JSON.parse(JSON.stringify(bankEx));
+        // Init Defaults
+        newEx.sets = 3; 
+        newEx.rest = 60; 
+        newEx.note = '';
+        newEx.target = {w:10, r:12};
+
+        this.state.admin.tempExercises.push(newEx);
+        this.closeSelector();
+        this.renderEditorList();
+    },
+
+    getCatLabel: function(c) {
+        // Helper if needed
+        return c; 
+    },
+
+    /* --- TIPS --- */
     openTipModal: function(idx) {
         this.state.admin.editTipEx = idx;
-        const ex = this.state.routines[this.state.admin.viewProgId].exercises[idx];
+        const ex = this.state.admin.tempExercises[idx];
         document.getElementById('tip-input').value = ex.note || '';
         document.getElementById('tip-modal').style.display = 'flex';
     },
 
-    closeTipModal: function() {
-        document.getElementById('tip-modal').style.display = 'none';
-        this.state.admin.editTipEx = null;
-    },
-
+    closeTipModal: function() { document.getElementById('tip-modal').style.display = 'none'; },
+    
     saveTip: function() {
         const idx = this.state.admin.editTipEx;
-        if (idx !== null) {
-            const val = document.getElementById('tip-input').value;
-            this.state.routines[this.state.admin.viewProgId].exercises[idx].note = val;
-            this.renderAdminEditList();
+        if(idx !== null) {
+            this.state.admin.tempExercises[idx].note = document.getElementById('tip-input').value;
+            this.renderEditorList();
         }
         this.closeTipModal();
-    },
-
-    /* --- BANK --- */
-    openBank: function() { 
-        document.getElementById('bank-modal').style.display = 'flex';
-        this.filterBank();
-    },
-    closeBank: function() { document.getElementById('bank-modal').style.display = 'none'; },
-    filterBank: function() {
-        const txtEl = document.getElementById('bank-search');
-        const catEl = document.getElementById('bank-cat-select');
-        const txt = txtEl.value.toLowerCase();
-        const cat = catEl.value; 
-        const list = document.getElementById('bank-list');
-        list.innerHTML = '';
-        
-        BANK.filter(e => {
-            const matchesName = e.name.toLowerCase().includes(txt);
-            const matchesCat = cat === 'all' || e.cat === cat;
-            return matchesName && matchesCat;
-        })
-        .forEach(e => {
-            // Text based bank item
-            list.innerHTML += `<div class="list-item" onclick="app.addFromBank('${e.id}')">
-                <span style="font-weight:700">${e.name}</span>
-                <span style="color:var(--primary); font-size:1.5rem">+</span>
-            </div>`;
-        });
-    },
-    addFromBank: function(id) {
-        const n = JSON.parse(JSON.stringify(BANK.find(e=>e.id===id)));
-        n.target = {w:10, r:12};
-        n.sets = 3;
-        n.rest = 60; // Default rest
-        this.state.routines[this.state.admin.viewProgId].exercises.push(n);
-        this.closeBank();
-        this.renderAdminEditList();
     },
 
     /* --- BACKUP & RESTORE --- */
@@ -833,11 +894,7 @@ const app = {
     },
 
     importConfig: function(input) {
-        if(this.state.active.on) {
-            alert("לא ניתן לעדכן באמצע אימון."); input.value = ''; return;
-        }
-        const file = input.files[0];
-        if (!file) return;
+        const file = input.files[0]; if (!file) return;
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
@@ -846,7 +903,6 @@ const app = {
                 if(confirm("עדכון תוכניות יחליף את ההגדרות הקיימות. להמשיך?")) {
                     app.state.routines = json.routines;
                     app.saveData();
-                    app.renderProgramSelect(); 
                     alert("התוכניות עודכנו בהצלחה!");
                     location.reload();
                 }
@@ -862,16 +918,13 @@ const app = {
     },
 
     importHistory: function(input) {
-        const file = input.files[0];
-        if (!file) return;
+        const file = input.files[0]; if (!file) return;
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
                 const json = JSON.parse(e.target.result);
-                let newHist = [];
-                if (Array.isArray(json)) newHist = json;
-                else if (json.type === 'history') newHist = json.history;
-                else { alert("שגיאה בקובץ היסטוריה."); return; }
+                let newHist = Array.isArray(json) ? json : json.history;
+                if (!newHist) throw new Error();
 
                 if(confirm(`נמצאו ${newHist.length} רשומות. למזג?`)) {
                     app.state.history = [...app.state.history, ...newHist];
@@ -889,9 +942,7 @@ const app = {
     downloadJSON: function(data, filename) {
         const str = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
         const a = document.createElement('a');
-        a.href = str;
-        a.download = filename;
-        a.click();
+        a.href = str; a.download = filename; a.click();
     },
 
     factoryReset: function() {
