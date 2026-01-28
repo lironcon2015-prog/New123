@@ -3,303 +3,299 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>GymPro Elite 11.3.0</title>
+    <title>GymStart V1.7</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="glass-overlay"></div>
-    
-    <!-- Warmup Modal -->
-    <div id="warmup-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h3>🔥 חימום מומלץ</h3>
-            <div id="warmup-list" class="vertical-stack" style="margin: 20px 0;"></div>
-            <button class="btn-main primary-gradient" onclick="markWarmupDone()">סיימתי חימום, סגור</button>
-            <button class="btn-text" onclick="closeWarmup()">סגור ללא רישום</button>
-        </div>
-    </div>
 
-    <!-- Edit Set Modal (NEW) -->
-    <div id="edit-set-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h3>עריכת סט</h3>
-            <div class="input-grid" style="margin-bottom: 15px;">
-                <div class="glass-card compact"><label>Weight</label><input type="number" id="edit-weight" class="minimal-input" style="margin:0;"></div>
-                <div class="glass-card compact"><label>Reps</label><input type="number" id="edit-reps" class="minimal-input" style="margin:0;"></div>
-                <div class="glass-card compact"><label>RIR</label><input type="number" id="edit-rir" class="minimal-input" style="margin:0;"></div>
-            </div>
-            <input type="text" id="edit-note" class="minimal-input" placeholder="הערה...">
+    <!-- Hidden File Inputs -->
+    <input type="file" id="file-import-history" hidden accept=".json" onchange="app.importHistory(this)">
+    <input type="file" id="file-import-config" hidden accept=".json" onchange="app.importConfig(this)">
+
+    <!-- 1. Admin Modal (V1.7 Hierarchical & Text-Based) -->
+    <div id="admin-modal" class="modal-wrapper">
+        <div class="oled-modal">
             
-            <button class="btn-main primary-gradient" onclick="saveSetEdit()">שמור שינויים</button>
-            <button id="btn-delete-last-set" class="btn-text" style="color: #ff453a; display: none;" onclick="deleteLastSet()">מחק סט אחרון (Undo)</button>
-            <button class="btn-text" onclick="closeEditModal()">ביטול</button>
+            <!-- VIEW 1: ADMIN HOME (Program List) -->
+            <div id="admin-view-home" class="admin-view">
+                <div class="modal-header">
+                    <h3>ניהול תוכניות</h3>
+                    <button class="text-close-btn" onclick="app.closeAdmin()">סגור ×</button>
+                </div>
+                <div id="admin-prog-list" class="scroll-list" style="max-height: 400px;"></div>
+                <div class="modal-footer" style="flex-direction: column;">
+                    <button class="btn-primary" onclick="app.createNewProgram()">+ צור תוכנית חדשה</button>
+                    <div class="backup-area" style="margin-top:15px;">
+                        <div style="display:flex; gap:10px; width:100%;">
+                            <button class="btn-tool" onclick="app.exportConfig()" style="flex:1">יצוא מוח</button>
+                            <button class="btn-tool-danger" onclick="app.factoryReset()">איפוס מלא</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW 2: PROGRAM EDITOR (Drill Down) -->
+            <div id="admin-view-edit" class="admin-view" style="display:none;">
+                <div class="modal-header" style="justify-content: flex-start; gap: 15px;">
+                    <button class="text-nav-btn" onclick="app.openAdminHome()">► חזור</button>
+                    <input type="text" id="edit-prog-title" class="oled-input-clean" placeholder="שם התוכנית" onchange="app.updateProgramTitle()">
+                </div>
+                
+                <div class="subtitle-label">רשימת תרגילים</div>
+                <div id="admin-ex-list" class="scroll-list" style="max-height: 450px;"></div>
+                
+                <div class="modal-footer" style="flex-direction: column;">
+                    <button class="btn-outline" onclick="app.openBank()">+ הוסף תרגיל מהבנק</button>
+                </div>
+            </div>
+
         </div>
     </div>
 
-    <!-- Bottom Sheet (Drawer) -->
-    <div id="sheet-overlay" class="bottom-sheet-overlay" onclick="closeDayDrawer()"></div>
-    <div id="sheet-modal" class="bottom-sheet">
-        <div class="sheet-handle"></div>
-        <div id="sheet-content" class="sheet-content"></div>
+    <!-- 2. Tip Edit Modal (Small) -->
+    <div id="tip-modal" class="modal-wrapper" style="z-index: 150;">
+        <div class="tip-modal-content">
+            <h4 style="margin:0 0 10px 0;">עריכת טיפ</h4>
+            <textarea id="tip-input" class="oled-textarea" rows="4" placeholder="כתוב הערה למתאמנת..."></textarea>
+            <div style="display:flex; justify-content: flex-end; gap:10px;">
+                <button class="text-btn" onclick="app.closeTipModal()">ביטול</button>
+                <button class="btn-primary-small" onclick="app.saveTip()">שמור</button>
+            </div>
+        </div>
     </div>
 
+    <!-- 3. Bank Modal -->
+    <div id="bank-modal" class="modal-wrapper" style="z-index: 130;">
+        <div class="oled-modal">
+            <div class="modal-header">
+                <h3>בנק תרגילים</h3>
+                <button class="text-close-btn" onclick="app.closeBank()">סגור ×</button>
+            </div>
+            <div class="bank-filters" style="display:flex; gap:10px; margin-bottom:15px; flex-shrink: 0;">
+                <select id="bank-cat-select" class="oled-input" style="width:40%" onchange="app.filterBank()">
+                    <option value="all">הכל</option>
+                    <option value="legs">רגליים</option>
+                    <option value="chest">חזה</option>
+                    <option value="back">גב</option>
+                    <option value="shoulders">כתפיים</option>
+                    <option value="arms">ידיים</option>
+                    <option value="core">בטן</option>
+                </select>
+                <input type="text" id="bank-search" class="oled-input" style="width:60%" placeholder="חפש..." onkeyup="app.filterBank()">
+            </div>
+            <div id="bank-list" class="scroll-list"></div>
+        </div>
+    </div>
+
+    <!-- 4. History Detail Modal -->
+    <div id="history-modal" class="modal-wrapper">
+        <div class="oled-modal">
+            <div class="modal-header">
+                <h3>פרטי אימון</h3>
+                <button class="text-close-btn" onclick="app.closeHistoryModal()">סגור ×</button>
+            </div>
+            <div id="hist-meta-header" class="meta-box" style="flex-shrink: 0;"></div>
+            <div id="hist-detail-content" class="scroll-list" style="margin-bottom: 20px;"></div>
+            <div class="actions-row modal-footer">
+                <button class="btn-outline" onclick="app.copySingleHistory()">העתק</button>
+                <button class="btn-danger-outline" onclick="app.deleteCurrentLog()">מחק</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
     <div class="app-container">
-        <header class="app-header">
-            <button id="global-back" class="back-btn" onclick="handleBackClick()">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            </button>
-            <div class="brand-logo">GYMPRO <span>ELITE</span></div>
-            <div class="version-tag">V 11.3.0</div>
+        
+        <!-- Navbar -->
+        <header class="navbar">
+            <div class="nav-left">
+                <!-- Gear Icon for Admin -->
+                <button id="btn-admin-home" class="icon-btn" onclick="app.openAdminHome()" style="display:none;">
+                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 5 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
+            </div>
+            <div class="logo">GYM<span class="highlight">START</span></div>
+            <div class="nav-right">
+                <button id="nav-back" class="icon-btn" onclick="app.goBack()" style="visibility: hidden;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                </button>
+            </div>
         </header>
 
-        <main class="content-area">
-            
-            <div id="ui-week" class="screen active">
-                <div class="hero-section"><h1>ברוך הבא,<span>מוכן לשבור שיא?</span></h1></div>
-                
-                <button onclick="initAudio()" id="audio-init-btn" class="action-card primary-gradient">
-                    <div class="card-icon">⚡</div>
-                    <div class="card-text">לחץ להפעלת מנוע סאונד</div>
-                </button>
+        <!-- SCREENS -->
 
-                <div class="section-label">בחר תוכנית שבועית</div>
-                <div class="grid-menu">
-                    <button class="menu-card" onclick="selectWeek(1)"><span>שבוע 1</span><div class="arrow">➔</div></button>
-                    <button class="menu-card" onclick="selectWeek(2)"><span>שבוע 2</span><div class="arrow">➔</div></button>
-                    <button class="menu-card" onclick="selectWeek(3)"><span>שבוע 3</span><div class="arrow">➔</div></button>
+        <!-- SCREEN 1: HOME -->
+        <div id="screen-home" class="screen active">
+            <div class="scroll-content">
+                <div class="hero">
+                    <h1 id="greeting">ברוכה הבאה</h1>
+                    <p>מוכנה לאימון?</p>
                 </div>
 
-                <button class="action-card secondary" style="margin-top: 20px;" onclick="openArchive()">
-                    <div class="card-icon">📜</div>
-                    <div class="card-text">ארכיון וגיבוי</div>
-                </button>
-            </div>
-
-            <div id="ui-workout-type" class="screen">
-                <div class="hero-section"><h2>בחר מסלול</h2></div>
-                <div class="vertical-stack">
-                    <button class="menu-card tall" onclick="selectWorkout('A')"><h3>אימון A</h3><p>כתפיים - חזה - גב</p></button>
-                    <button class="menu-card tall" onclick="selectWorkout('B')"><h3>אימון B</h3><p>רגליים - גב</p></button>
-                    <button class="menu-card tall" onclick="selectWorkout('C')"><h3>אימון C</h3><p>חזה - כתפיים</p></button>
-                    <button class="menu-card tall freestyle-card" onclick="startFreestyle()"><h3>Freestyle</h3><p>בחירה חופשית</p></button>
-                </div>
-            </div>
-
-            <div id="ui-muscle-select" class="screen">
-                <h2 class="section-title">בחר שריר</h2>
-                
-                <button id="btn-resume-flow" class="action-card success-gradient" style="display:none; margin-bottom: 20px;" onclick="resumeWorkout()">
-                    <div class="card-text">חזור למסלול המקורי</div>
-                    <div class="card-icon">↻</div>
-                </button>
-
-                <div class="grid-menu">
-                    <button class="menu-card" onclick="showExerciseList('כתפיים')">כתפיים</button>
-                    <button class="menu-card" onclick="showExerciseList('רגליים')">רגליים</button>
-                    <button class="menu-card" onclick="showExerciseList('חזה')">חזה</button>
-                    <button class="menu-card" onclick="showExerciseList('גב')">גב</button>
+                <div class="oled-card info-card">
+                    <div class="icon-box">📅</div>
+                    <div>
+                        <div class="label">אימון אחרון</div>
+                        <div id="last-workout-display" class="value">טוען...</div>
+                    </div>
                 </div>
                 
-                <button id="btn-finish-extra" class="finish-main-btn" onclick="finishExtraPhase()">סיום הוספת תרגילים</button>
+                <div class="version-tag">GymStart V1.7</div>
             </div>
 
-            <div id="ui-variation" class="screen">
-                <h2 id="variation-title" class="section-title">בחר תרגיל</h2>
-                <div id="variation-options" class="vertical-stack"></div>
-                <button class="btn-text" onclick="handleBackClick()">חזור</button>
+            <div class="fixed-footer">
+                <button class="btn-primary big-btn" onclick="app.nav('screen-program-select')">
+                    התחילי אימון
+                </button>
+                <div style="height: 15px;"></div>
+                <button class="btn-outline" onclick="app.showHistory()">
+                    היסטוריה
+                </button>
+                <div style="height: 25px;"></div>
+                <button class="btn-ghost" onclick="document.getElementById('file-import-config').click()">
+                    קבלת עדכון מאמן
+                </button>
             </div>
-            
-            <!-- SWAP SCREEN -->
-            <div id="ui-swap-list" class="screen">
-                <h2 class="section-title">שנה סדר תרגילים</h2>
-                <p class="sub-text">בחר תרגיל מהרשימה כדי לקפוץ אליו כעת:</p>
-                <div id="swap-options" class="vertical-stack"></div>
-                <button class="btn-text" onclick="handleBackClick()">ביטול</button>
-            </div>
+        </div>
 
-            <div id="ui-1rm" class="screen">
-                <div class="hero-section"><h2 id="rm-title">1RM</h2></div>
-                <div class="glass-card">
-                    <label>משקל מקסימלי (RM)</label>
-                    <select id="rm-picker" class="ios-picker"></select>
-                </div>
-                <button class="btn-main primary-gradient" onclick="save1RM()">צור אימון</button>
+        <!-- SCREEN 1.5: PROGRAM SELECT -->
+        <div id="screen-program-select" class="screen">
+            <div class="scroll-content">
+                <h2 class="page-title">בחרי תוכנית</h2>
+                <div id="prog-list-container" class="card-grid"></div>
             </div>
+        </div>
 
-            <!-- CONFIRM SCREEN -->
-            <div id="ui-confirm" class="screen flex-center">
-                <div class="confirm-box">
-                    <p>התרגיל הבא:</p>
-                    <h2 id="confirm-ex-name"></h2>
+        <!-- SCREEN 2: OVERVIEW -->
+        <div id="screen-overview" class="screen">
+            <div class="scroll-content">
+                <h2 class="page-title" id="overview-title">סקירה</h2>
+                <div id="overview-list" class="simple-list"></div>
+            </div>
+            <div class="fixed-footer">
+                <button class="btn-primary" onclick="app.startWorkout()">התחילי אימון ⚡</button>
+            </div>
+        </div>
+
+        <!-- SCREEN 3: ACTIVE EXERCISE -->
+        <div id="screen-active" class="screen">
+            <div class="active-container">
+                
+                <div class="active-header-section">
+                    <div id="set-badge" class="badge">סט 1</div>
+                    <h2 id="ex-name">שם התרגיל</h2>
                     
-                    <button class="btn-main primary-gradient" onclick="confirmExercise(true)">התחל אימון</button>
-                    
-                    <!-- CONTROL GRID -->
-                    <div class="action-grid">
-                        <button class="control-btn" onclick="confirmExercise(false)">
-                            <div class="icon">⏭️</div>
-                            <span>דלג</span>
+                    <div id="coach-note" class="note-pill"></div>
+                    <div id="last-stat-strip" class="stats-strip">--</div>
+                </div>
+
+                <div class="workspace">
+                    <div id="cards-container" class="inputs-row">
+                        <div class="input-card">
+                            <span class="input-label">משקל (<span id="unit-label-card">ק״ג</span>)</span>
+                            <select id="select-weight" class="native-select"></select>
+                        </div>
+                        <div class="input-card">
+                            <span class="input-label">חזרות</span>
+                            <select id="select-reps" class="native-select"></select>
+                        </div>
+                    </div>
+
+                    <div id="stopwatch-container" class="stopwatch-box" style="display: none;">
+                        <div class="sw-time" id="sw-display">00:00</div>
+                        <button id="btn-sw-toggle" class="btn-neon-play" onclick="app.toggleStopwatch()">▶</button>
+                        <div class="sw-hint">מדידת זמן לתרגיל</div>
+                    </div>
+                </div>
+
+                <div class="active-controls-area">
+                    <div class="feeling-section">
+                        <div class="feeling-row">
+                            <button class="feel-btn easy" onclick="app.selectFeel('easy')">😌</button>
+                            <button class="feel-btn good selected" onclick="app.selectFeel('good')">🙂</button>
+                            <button class="feel-btn hard" onclick="app.selectFeel('hard')">🥵</button>
+                        </div>
+                        <div class="feel-label" id="feel-text">בינוני (טוב)</div>
+                    </div>
+
+                    <div id="action-area" class="main-action-box">
+                        <button id="btn-finish" class="btn-primary" onclick="app.finishSet()">
+                            סיום סט
                         </button>
                         
-                        <button id="btn-swap-confirm" class="control-btn accent-border" onclick="openSwapMenu()">
-                            <div class="icon">⇄</div>
-                            <span>החלף</span>
-                        </button>
-                        
-                        <button id="btn-interruption" class="control-btn" onclick="interruptWorkout()">
-                            <div class="icon">➕</div>
-                            <span>הוסף</span>
-                        </button>
-                    </div>
+                        <div id="next-ex-preview" class="next-preview-text" style="display: none;"></div>
 
-                </div>
-            </div>
-
-            <div id="ui-main" class="screen">
-                <div class="exercise-header">
-                    <!-- Session Log Button -->
-                    <button onclick="openSessionLog()" style="position: absolute; left: 0; background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); padding: 5px 10px; font-size: 1.2em; cursor: pointer;">📋</button>
-                    
-                    <div class="badge-row" style="margin-top: 5px;">
-                        <span id="set-counter" class="ios-badge">SET 1/3</span>
-                        <button id="btn-warmup" class="warmup-badge" onclick="calcWarmup()">🔥 חימום</button>
-                        <div id="unilateral-note" class="uni-badge">UNILATERAL</div>
-                    </div>
-                    <h2 id="ex-display-name" style="margin-top: 15px;"></h2>
-                    <div id="last-set-info" class="history-pill"></div>
-                </div>
-
-                <div class="input-grid">
-                    <div class="glass-card compact"><label>Weight</label><select id="weight-picker" class="ios-picker"></select></div>
-                    <div class="glass-card compact"><label>Reps</label><select id="reps-picker" class="ios-picker"></select></div>
-                    <div class="glass-card compact"><label>RIR</label><select id="rir-picker" class="ios-picker"></select></div>
-                </div>
-
-                <input type="text" id="set-notes" class="minimal-input" placeholder="הערות לסט (אופציונלי)">
-
-                <button id="btn-submit-set" class="btn-main primary-gradient pulse" onclick="nextStep()">סיום סט</button>
-
-                <div id="timer-area" class="timer-section">
-                    <div class="timer-wrap">
-                        <svg class="timer-svg" viewBox="0 0 100 100">
-                            <circle class="timer-bg" cx="50" cy="50" r="45"></circle>
-                            <circle id="timer-progress" class="timer-bar" cx="50" cy="50" r="45"></circle>
-                        </svg>
-                        <div id="rest-timer" class="timer-text">00:00</div>
-                    </div>
-                    <button class="btn-finish-ex" onclick="handleExtra(false)">דלג לתרגיל הבא</button>
-                </div>
-            </div>
-
-            <div id="ui-extra" class="screen flex-center">
-                <div class="glass-card bonus-card">
-                    <h3>התרגיל הושלם!</h3>
-                    <div class="vertical-stack">
-                        <button class="btn-main success-gradient" onclick="handleExtra(true)">+ סט בונוס</button>
-                        <button class="btn-main primary-gradient" onclick="handleExtra(false)">המשך</button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="ui-ask-extra" class="screen flex-center">
-                <div class="confirm-box">
-                    <h2>האם להוסיף תרגילים נוספים?</h2>
-                    <p class="sub-text">ניתן לבחור תרגילים מכל קבוצות השרירים</p>
-                    <button class="btn-main primary-gradient" onclick="startExtraPhase()">כן, הוסף תרגיל</button>
-                    <button class="btn-text" onclick="navigate('ui-ask-arms')">לא, המשך לידיים</button>
-                </div>
-            </div>
-
-            <div id="ui-ask-arms" class="screen flex-center">
-                <div class="confirm-box">
-                    <h2>האם להוסיף ידיים?</h2>
-                    <button class="btn-main primary-gradient" onclick="startArmWorkout()">כן</button>
-                    <button class="btn-text" onclick="finish()">לא, סיים אימון</button>
-                </div>
-            </div>
-
-            <div id="ui-arm-selection" class="screen">
-                <h2 id="arm-selection-title" class="section-title">בחר תרגיל ידיים</h2>
-                <div id="arm-options" class="vertical-stack"></div>
-                <button id="btn-skip-arm-group" class="btn-text"></button>
-            </div>
-
-            <div id="ui-summary" class="screen">
-                <div class="hero-section"><h2>סיכום אימון</h2></div>
-                
-                <!-- New Note Input -->
-                <input type="text" id="summary-note" class="minimal-input" placeholder="הערות כלליות לאימון (אופציונלי)" style="margin-bottom: 20px;">
-                
-                <div id="summary-area" class="summary-card"></div>
-                <button class="btn-main primary-gradient" onclick="copyResult()">העתק וסגור</button>
-            </div>
-
-            <div id="ui-archive" class="screen">
-                <div class="hero-section"><h2>ארכיון וגיבוי</h2></div>
-                
-                <div class="input-grid" style="margin-bottom: 20px;">
-                    <button class="glass-card compact" onclick="exportData()" style="width:100%; border:1px solid var(--accent); color:var(--accent);">
-                        <label style="color:white; font-size:1.5em; margin-bottom:5px;">📤</label>
-                        ייצוא נתונים
-                    </button>
-                    <button class="glass-card compact" onclick="triggerImport()" style="width:100%; border:1px solid #32D74B; color:#32D74B;">
-                        <label style="color:white; font-size:1.5em; margin-bottom:5px;">📥</label>
-                        ייבוא נתונים
-                    </button>
-                </div>
-
-                <!-- View Toggle -->
-                <div class="segmented-control">
-                    <button id="btn-view-list" class="segment-btn active" onclick="switchArchiveView('list')">רשימה</button>
-                    <button id="btn-view-calendar" class="segment-btn" onclick="switchArchiveView('calendar')">לוח שנה</button>
-                </div>
-
-                <!-- Calendar View Container -->
-                <div id="calendar-view" style="display: none;">
-                    <div class="calendar-wrapper">
-                        <div class="calendar-header">
-                            <button class="month-nav-btn" onclick="changeMonth(-1)">❮</button>
-                            <span id="current-month-display" class="current-month-display"></span>
-                            <button class="month-nav-btn" onclick="changeMonth(1)">❯</button>
+                        <div id="decision-buttons" style="display:none; gap:10px; width:100%;">
+                            <button class="btn-outline" onclick="app.addSet()" style="flex:1">עוד סט</button>
+                            <button class="btn-primary" onclick="app.nextExercise()" style="flex:1">תרגיל הבא</button>
                         </div>
-                        <div class="calendar-grid">
-                            <div class="day-name">א'</div><div class="day-name">ב'</div><div class="day-name">ג'</div>
-                            <div class="day-name">ד'</div><div class="day-name">ה'</div><div class="day-name">ו'</div><div class="day-name">ש'</div>
+                    </div>
+
+                    <div id="rest-timer-area" class="rest-box" style="display: none;">
+                        <div class="circular-timer">
+                            <svg viewBox="0 0 150 150">
+                                <circle class="bg-ring" cx="75" cy="75" r="65"></circle>
+                                <circle id="rest-ring-prog" class="prog-ring" cx="75" cy="75" r="65"></circle>
+                            </svg>
+                            <div class="timer-text" id="rest-timer-val">00:00</div>
                         </div>
-                        <div id="calendar-days" class="calendar-grid"></div>
+                        <div class="rest-caption">זמן מנוחה</div>
                     </div>
                 </div>
 
-                <!-- List View Container -->
-                <div id="list-view-container">
-                    <div class="archive-actions" style="display: flex; gap: 10px; margin-bottom: 15px;">
-                        <button class="glass-card compact" style="width: 100%; color: var(--accent); border-color: var(--accent); font-weight:600;" onclick="copyBulkLog('all')">
-                            העתק הכל
-                        </button>
-                        <button id="btn-copy-selected" class="glass-card compact" style="width: 100%; color: var(--text-dim); border-color: var(--border); font-weight:600; opacity: 0.5;" onclick="copyBulkLog('selected')" disabled>
-                            העתק מסומנים
-                        </button>
+                <div class="sub-actions-footer">
+                    <button class="text-link" onclick="app.deleteLastSet()">בטל סט אחרון</button>
+                    <button class="text-link" onclick="app.skipExercise()">דלג תרגיל</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SCREEN 4: SUMMARY -->
+        <div id="screen-summary" class="screen">
+            <div class="scroll-content">
+                <div class="hero">
+                    <h1>כל הכבוד!</h1>
+                    <p>האימון הושלם בהצלחה</p>
+                    <div id="summary-meta" class="meta-tag"></div>
+                </div>
+                <div id="summary-text" class="summary-box"></div>
+            </div>
+            
+            <div class="fixed-footer">
+                <button class="btn-outline" onclick="app.copySummaryToClipboard()">העתק סיכום</button>
+                <div style="height:10px"></div>
+                <button class="btn-primary" onclick="app.saveAndHome()">שמור וסיים</button>
+            </div>
+        </div>
+
+        <!-- SCREEN 5: HISTORY -->
+        <div id="screen-history" class="screen">
+            <div class="scroll-content">
+                <div class="page-header">
+                    <h2 class="page-title">היסטוריה</h2>
+                    <div class="header-tools">
+                         <button class="btn-tool" onclick="app.exportHistory()">גיבוי</button>
+                         <button class="btn-tool" onclick="document.getElementById('file-import-history').click()">שחזור</button>
                     </div>
-                    <div id="archive-list" class="vertical-stack"></div>
                 </div>
                 
-                <input type="file" id="import-file" style="display: none;" onchange="importData(this)">
-            </div>
-
-            <div id="ui-archive-detail" class="screen">
-                <div class="hero-section"><h2>פרטי אימון</h2></div>
-                <div id="archive-detail-content" class="summary-card"></div>
-                <div class="vertical-stack" style="margin-top: 20px;">
-                    <button class="btn-main primary-gradient" id="btn-archive-copy">העתק סיכום</button>
-                    <button class="btn-text" id="btn-archive-delete" style="color: #ff453a;">מחק אימון מהארכיון</button>
+                <div class="bulk-tools">
+                     <button class="btn-tool-outline" onclick="app.selectAllHistory()">בחר הכל</button>
+                     <div style="display:flex; gap:10px;">
+                        <button class="btn-tool-outline" onclick="app.copySelectedHistory()">העתק</button>
+                        <button id="btn-del-selected" class="btn-tool-danger" onclick="app.deleteSelectedHistory()" disabled>מחק</button>
+                     </div>
                 </div>
-            </div>
 
-        </main>
+                <div id="history-list" class="history-list-container"></div>
+            </div>
+        </div>
+
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
