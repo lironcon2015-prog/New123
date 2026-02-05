@@ -1,109 +1,84 @@
 /**
- * GYMSTART V1.7.2
- * - Core Fixes: Undo Last Set, Add Set Logic, Unit Conflicts.
- * - UI Improvements: Clear Kg/Reps display.
- * - Admin: Complete Redesign (GymPro Style) with 3 views (List, Edit, Selector).
+ * GYMSTART V1.7.4
+ * - Dynamic Exercise Bank Manager (Add/Edit/Delete exercises)
+ * - Enhanced Weight Selector logic (based on Step, Min, Max)
+ * - Session Playlist: Dynamic swapping and adding of core exercises during workout.
+ * - Admin Chips Filter
  */
 
 const CONFIG = {
     KEYS: {
         ROUTINES: 'gymstart_v1_7_routines',
-        HISTORY: 'gymstart_beta_02_history'
+        HISTORY: 'gymstart_beta_02_history',
+        EXERCISES: 'gymstart_v1_7_exercises_bank'
     },
-    VERSION: '1.7.2'
+    VERSION: '1.7.4'
 };
 
 const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה' };
 
-// FULL EXERCISE BANK
-const BANK = [
-    { id: 'goblet', name: 'גובלט סקוואט', unit: 'kg', cat: 'legs' },
-    { id: 'leg_press', name: 'לחיצת רגליים', unit: 'kg', cat: 'legs' },
-    { id: 'rdl', name: 'דדליפט רומני', unit: 'kg', cat: 'legs' },
-    { id: 'lunge', name: 'מכרעים (Lunges)', unit: 'kg', cat: 'legs' },
-    { id: 'hip_thrust', name: 'גשר עכוז', unit: 'kg', cat: 'legs' },
-    { id: 'leg_ext', name: 'פשיטת ברכיים', unit: 'plates', cat: 'legs' },
-    { id: 'leg_curl', name: 'כפיפת ברכיים', unit: 'plates', cat: 'legs' },
-    { id: 'calf_raise', name: 'הרמת עקבים', unit: 'kg', cat: 'legs' },
-    { id: 'chest_press', name: 'לחיצת חזה משקולות', unit: 'kg', cat: 'chest' },
-    { id: 'fly', name: 'פרפר (Fly)', unit: 'kg', cat: 'chest' },
-    { id: 'pushup', name: 'שכיבות סמיכה', unit: 'bodyweight', cat: 'chest' },
-    { id: 'incline_bench', name: 'לחיצת חזה שיפוע עליון', unit: 'kg', cat: 'chest' },
-    { id: 'lat_pull', name: 'פולי עליון', unit: 'plates', cat: 'back' },
-    { id: 'cable_row', name: 'חתירה בכבל', unit: 'plates', cat: 'back' },
-    { id: 'db_row', name: 'חתירה במשקולת', unit: 'kg', cat: 'back' },
-    { id: 'hyperext', name: 'פשיטת גו (Hyper)', unit: 'bodyweight', cat: 'back' },
-    { id: 'shoulder_press', name: 'לחיצת כתפיים', unit: 'kg', cat: 'shoulders' },
-    { id: 'lat_raise', name: 'הרחקה לצדדים', unit: 'kg', cat: 'shoulders' },
-    { id: 'face_pull', name: 'פייס-פולס', unit: 'plates', cat: 'shoulders' },
-    { id: 'bicep_curl', name: 'כפיפת מרפקים', unit: 'kg', cat: 'arms' },
-    { id: 'tricep_pull', name: 'פשיטת מרפקים', unit: 'plates', cat: 'arms' },
-    { id: 'tricep_rope', name: 'פשיטת מרפקים חבל', unit: 'plates', cat: 'arms' },
-    { id: 'hammer_curl', name: 'כפיפת פטישים', unit: 'kg', cat: 'arms' },
-    { id: 'plank', name: 'פלאנק (סטטי)', unit: 'bodyweight', cat: 'core' },
-    { id: 'side_plank', name: 'פלאנק צידי', unit: 'bodyweight', cat: 'core' },
-    { id: 'bicycle', name: 'בטן אופניים', unit: 'bodyweight', cat: 'core' },
-    { id: 'knee_raise', name: 'הרמת ברכיים', unit: 'bodyweight', cat: 'core' },
-    { id: 'crunches', name: 'כפיפות בטן', unit: 'bodyweight', cat: 'core' }
+// BASE EXERCISES FOR MIGRATION ONLY (Not used directly anymore)
+const BASE_BANK_INIT = [
+    { id: 'goblet', name: 'גובלט סקוואט', cat: 'legs', settings: {unit:'kg', step:2.5, min:2.5, max:60} },
+    { id: 'leg_press', name: 'לחיצת רגליים', cat: 'legs', settings: {unit:'kg', step:5, min:20, max:200} },
+    { id: 'rdl', name: 'דדליפט רומני', cat: 'legs', settings: {unit:'kg', step:2.5, min:10, max:100} },
+    { id: 'lunge', name: 'מכרעים (Lunges)', cat: 'legs', settings: {unit:'kg', step:1, min:1, max:30} },
+    { id: 'hip_thrust', name: 'גשר עכוז', cat: 'legs', settings: {unit:'kg', step:2.5, min:10, max:120} },
+    { id: 'leg_ext', name: 'פשיטת ברכיים', cat: 'legs', settings: {unit:'plates', step:1, min:1, max:20} },
+    { id: 'leg_curl', name: 'כפיפת ברכיים', cat: 'legs', settings: {unit:'plates', step:1, min:1, max:20} },
+    { id: 'calf_raise', name: 'הרמת עקבים', cat: 'legs', settings: {unit:'kg', step:2.5, min:10, max:80} },
+    { id: 'chest_press', name: 'לחיצת חזה משקולות', cat: 'chest', settings: {unit:'kg', step:1, min:2, max:40} },
+    { id: 'fly', name: 'פרפר (Fly)', cat: 'chest', settings: {unit:'kg', step:1, min:2, max:20} },
+    { id: 'pushup', name: 'שכיבות סמיכה', cat: 'chest', settings: {unit:'bodyweight', step:0, min:0, max:0} },
+    { id: 'incline_bench', name: 'לחיצת חזה שיפוע עליון', cat: 'chest', settings: {unit:'kg', step:1, min:2, max:40} },
+    { id: 'lat_pull', name: 'פולי עליון', cat: 'back', settings: {unit:'plates', step:1, min:1, max:20} },
+    { id: 'cable_row', name: 'חתירה בכבל', cat: 'back', settings: {unit:'plates', step:1, min:1, max:20} },
+    { id: 'db_row', name: 'חתירה במשקולת', cat: 'back', settings: {unit:'kg', step:1, min:4, max:40} },
+    { id: 'hyperext', name: 'פשיטת גו (Hyper)', cat: 'back', settings: {unit:'bodyweight', step:0, min:0, max:0} },
+    { id: 'shoulder_press', name: 'לחיצת כתפיים', cat: 'shoulders', settings: {unit:'kg', step:1, min:2, max:30} },
+    { id: 'lat_raise', name: 'הרחקה לצדדים', cat: 'shoulders', settings: {unit:'kg', step:1, min:1, max:15} },
+    { id: 'face_pull', name: 'פייס-פולס', cat: 'shoulders', settings: {unit:'plates', step:1, min:1, max:20} },
+    { id: 'bicep_curl', name: 'כפיפת מרפקים', cat: 'arms', settings: {unit:'kg', step:1, min:2, max:25} },
+    { id: 'tricep_pull', name: 'פשיטת מרפקים', cat: 'arms', settings: {unit:'plates', step:1, min:1, max:20} },
+    { id: 'tricep_rope', name: 'פשיטת מרפקים חבל', cat: 'arms', settings: {unit:'plates', step:1, min:1, max:20} },
+    { id: 'hammer_curl', name: 'כפיפת פטישים', cat: 'arms', settings: {unit:'kg', step:1, min:2, max:25} },
+    { id: 'plank', name: 'פלאנק (סטטי)', cat: 'core', settings: {unit:'bodyweight', step:0, min:0, max:0} },
+    { id: 'side_plank', name: 'פלאנק צידי', cat: 'core', settings: {unit:'bodyweight', step:0, min:0, max:0} },
+    { id: 'bicycle', name: 'בטן אופניים', cat: 'core', settings: {unit:'bodyweight', step:0, min:0, max:0} },
+    { id: 'knee_raise', name: 'הרמת ברכיים', cat: 'core', settings: {unit:'bodyweight', step:0, min:0, max:0} },
+    { id: 'crunches', name: 'כפיפות בטן', cat: 'core', settings: {unit:'bodyweight', step:0, min:0, max:0} }
 ];
 
-// FULL DEFAULT ROUTINES
 const DEFAULT_ROUTINES_V17 = {
-    'A': {
-        title: 'רגליים וגב (A)',
-        exercises: [
-            { id: 'goblet', name: 'גובלט סקוואט', unit: 'kg', note: 'גב זקוף', rest: 90, cat: 'legs', sets: 3 },
-            { id: 'leg_press', name: 'לחיצת רגליים', unit: 'kg', note: '', rest: 60, cat: 'legs', sets: 3 },
-            { id: 'rdl', name: 'דדליפט רומני', unit: 'kg', note: 'תנועה איטית', rest: 60, cat: 'legs', sets: 3 },
-            { id: 'lat_pull', name: 'פולי עליון', unit: 'plates', note: '', rest: 60, cat: 'back', sets: 3 },
-            { id: 'cable_row', name: 'חתירה בכבל', unit: 'plates', note: '', rest: 60, cat: 'back', sets: 3 },
-            { id: 'bicycle', name: 'בטן אופניים', unit: 'bodyweight', note: '', rest: 45, cat: 'core', sets: 3 }
-        ]
-    },
-    'B': {
-        title: 'חזה וכתפיים (B)',
-        exercises: [
-            { id: 'chest_press', name: 'לחיצת חזה', unit: 'kg', note: '', rest: 60, cat: 'chest', sets: 3 },
-            { id: 'fly', name: 'פרפר', unit: 'kg', note: '', rest: 60, cat: 'chest', sets: 3 },
-            { id: 'shoulder_press', name: 'לחיצת כתפיים', unit: 'kg', note: '', rest: 60, cat: 'shoulders', sets: 3 },
-            { id: 'lat_raise', name: 'הרחקה לצדדים', unit: 'kg', note: '', rest: 45, cat: 'shoulders', sets: 3 },
-            { id: 'bicep_curl', name: 'יד קדמית', unit: 'kg', note: '', rest: 45, cat: 'arms', sets: 3 },
-            { id: 'tricep_pull', name: 'יד אחורית', unit: 'plates', note: '', rest: 45, cat: 'arms', sets: 3 },
-            { id: 'plank', name: 'פלאנק סטטי', unit: 'bodyweight', note: '', rest: 45, cat: 'core', sets: 3 }
-        ]
-    },
-    'FBW': {
-        title: 'FBW כל הגוף',
-        exercises: [
-            { id: 'goblet', name: 'גובלט סקוואט', unit: 'kg', note: 'רגליים', rest: 90, cat: 'legs', sets: 3 },
-            { id: 'rdl', name: 'דדליפט רומני', unit: 'kg', note: 'רגליים', rest: 60, cat: 'legs', sets: 3 },
-            { id: 'chest_press', name: 'לחיצת חזה', unit: 'kg', note: 'חזה', rest: 60, cat: 'chest', sets: 3 },
-            { id: 'cable_row', name: 'חתירה בכבל', unit: 'plates', note: 'גב', rest: 60, cat: 'back', sets: 3 },
-            { id: 'shoulder_press', name: 'לחיצת כתפיים', unit: 'kg', note: 'כתפיים', rest: 60, cat: 'shoulders', sets: 3 },
-            { id: 'crunches', name: 'כפיפות בטן', unit: 'bodyweight', note: 'בטן', rest: 45, cat: 'core', sets: 3 }
-        ]
-    }
+    'A': { title: 'רגליים וגב (A)', exercises: [ {id:'goblet', sets:3, rest:90}, {id:'leg_press', sets:3}, {id:'lat_pull', sets:3} ] },
+    'B': { title: 'חזה וכתפיים (B)', exercises: [ {id:'chest_press', sets:3}, {id:'shoulder_press', sets:3}, {id:'plank', sets:3} ] }
 };
 
 const app = {
     state: {
         routines: {},
         history: [],
+        exercises: [], // Dynamic Bank
         currentProgId: null,
         active: {
             on: false,
+            sessionExercises: [], // DYNAMIC PLAYLIST
             exIdx: 0, setIdx: 1, totalSets: 3,
             log: [], startTime: 0,
             timerInterval: null, restInterval: null, 
             feel: 'good', isStopwatch: false, stopwatchVal: 0,
             inputW: 10, inputR: 12
         },
-        // Admin State
         admin: { 
             viewProgId: null, 
             editTipEx: null, 
             selectorFilter: 'all',
-            tempExercises: [] // For editor
+            exManagerFilter: 'all',
+            tempExercises: [],
+            editingExId: null // For Bank Manager
+        },
+        userSelector: {
+            mode: null, // 'swap' or 'add'
         },
         historySelection: [],
         viewHistoryIdx: null
@@ -122,27 +97,45 @@ const app = {
     },
 
     loadData: function() {
+        // Load History
         const h = localStorage.getItem(CONFIG.KEYS.HISTORY);
         this.state.history = h ? JSON.parse(h) : [];
         
+        // Load Routines
         const r = localStorage.getItem(CONFIG.KEYS.ROUTINES);
-        let loaded = r ? JSON.parse(r) : null;
-
-        if (!loaded) {
+        let loadedRoutines = r ? JSON.parse(r) : null;
+        if (!loadedRoutines) {
             this.state.routines = JSON.parse(JSON.stringify(DEFAULT_ROUTINES_V17));
-        } else {
-            for(const pid in loaded) {
-                loaded[pid].exercises.forEach(ex => {
-                    if(typeof ex.rest === 'undefined') ex.rest = 60;
+            // Fill details from Init Bank for first load
+            for(const pid in this.state.routines) {
+                this.state.routines[pid].exercises.forEach(ex => {
+                    const bankEx = BASE_BANK_INIT.find(b => b.id === ex.id);
+                    if(bankEx) {
+                        ex.name = bankEx.name;
+                        ex.unit = bankEx.settings.unit;
+                        ex.cat = bankEx.cat;
+                    }
                 });
             }
-            this.state.routines = loaded;
+        } else {
+            this.state.routines = loadedRoutines;
+        }
+
+        // Load Exercises (Migration Logic)
+        const e = localStorage.getItem(CONFIG.KEYS.EXERCISES);
+        if(e) {
+            this.state.exercises = JSON.parse(e);
+        } else {
+            // First time migration: Use Base Bank
+            this.state.exercises = JSON.parse(JSON.stringify(BASE_BANK_INIT));
+            this.saveData();
         }
     },
 
     saveData: function() {
         localStorage.setItem(CONFIG.KEYS.ROUTINES, JSON.stringify(this.state.routines));
         localStorage.setItem(CONFIG.KEYS.HISTORY, JSON.stringify(this.state.history));
+        localStorage.setItem(CONFIG.KEYS.EXERCISES, JSON.stringify(this.state.exercises));
     },
 
     nav: function(screenId) {
@@ -177,6 +170,13 @@ const app = {
             this.nav('screen-home');
         }
     },
+
+    getExerciseDef: function(exId) {
+        return this.state.exercises.find(e => e.id === exId) || 
+               { name: 'תרגיל לא ידוע', settings: {unit:'kg', step:2.5, min:0, max:50} };
+    },
+
+    /* --- RENDERING --- */
 
     renderProgramSelect: function() {
         const container = document.getElementById('prog-list-container');
@@ -248,8 +248,12 @@ const app = {
             alert("התוכנית ריקה"); return;
         }
 
+        const prog = this.state.routines[this.state.currentProgId];
+
         this.state.active = {
             on: true,
+            // Deep copy exercises for dynamic playlist (swapping/adding support)
+            sessionExercises: JSON.parse(JSON.stringify(prog.exercises)),
             exIdx: 0, setIdx: 1, totalSets: 3,
             log: [], startTime: Date.now(),
             timerInterval: null, restInterval: null, 
@@ -261,23 +265,42 @@ const app = {
     },
 
     loadActiveExercise: function() {
-        const prog = this.state.routines[this.state.currentProgId];
-        const ex = prog.exercises[this.state.active.exIdx];
+        // USE SESSION EXERCISES NOT ROUTINE
+        const exInst = this.state.active.sessionExercises[this.state.active.exIdx];
+        const exDef = this.getExerciseDef(exInst.id);
         
-        this.state.active.totalSets = ex.sets || 3;
+        this.state.active.totalSets = exInst.sets || 3;
 
-        document.getElementById('ex-name').innerText = ex.name;
+        document.getElementById('ex-name').innerText = exInst.name;
         document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
         
+        // Video Link
+        const vidBtn = document.getElementById('ex-video-link');
+        if (exDef.videoUrl && exDef.videoUrl.length > 5) {
+            vidBtn.style.display = 'flex';
+            vidBtn.href = exDef.videoUrl;
+        } else {
+            vidBtn.style.display = 'none';
+        }
+
+        // Swap Button Logic
+        const swapBtn = document.getElementById('btn-swap-ex');
+        if (exDef.cat === 'core') {
+            swapBtn.style.display = 'inline-block';
+        } else {
+            swapBtn.style.display = 'none';
+        }
+
         const noteEl = document.getElementById('coach-note');
-        if (ex.note) {
-            noteEl.innerText = "💡 " + ex.note;
+        if (exInst.note) {
+            noteEl.innerText = "💡 " + exInst.note;
             noteEl.style.display = 'block';
         } else noteEl.style.display = 'none';
 
-        this.renderStatsStrip(ex.id, ex.unit);
+        this.renderStatsStrip(exInst.id, exDef.settings.unit);
 
-        const isTime = (ex.unit === 'bodyweight' && (ex.id.includes('plank') || ex.id === 'wall_sit'));
+        // Check type
+        const isTime = (exDef.settings.unit === 'bodyweight' && (exInst.id.includes('plank') || exInst.id.includes('static')));
         this.state.active.isStopwatch = isTime;
 
         if (isTime) {
@@ -292,21 +315,22 @@ const app = {
         } else {
             document.getElementById('cards-container').style.display = 'flex';
             document.getElementById('stopwatch-container').style.display = 'none';
-            document.getElementById('unit-label-card').innerText = ex.unit === 'plates' ? 'פלטות' : 'ק״ג';
+            document.getElementById('unit-label-card').innerText = exDef.settings.unit === 'plates' ? 'פלטות' : 'ק״ג';
             
-            // SMART WEIGHT
-            let smartWeight = ex.target?.w || 10;
+            // SMART WEIGHT PREDICTION
+            let smartWeight = exInst.target?.w || 10;
+            // Overwrite with history if exists
             for(let i=this.state.history.length-1; i>=0; i--) {
                 const sess = this.state.history[i];
-                const found = sess.data.find(e => e.id === ex.id);
+                const found = sess.data.find(e => e.id === exInst.id);
                 if(found && found.sets.length > 0) {
                     smartWeight = found.sets[found.sets.length-1].w;
                     break;
                 }
             }
             this.state.active.inputW = smartWeight;
-            this.state.active.inputR = ex.target?.r || 12;
-            this.populateSelects(ex);
+            this.state.active.inputR = exInst.target?.r || 12;
+            this.populateSelects(exDef);
         }
 
         this.state.active.feel = 'good';
@@ -335,7 +359,6 @@ const app = {
             return;
         }
 
-        // IMPROVED DISPLAY: "10 ק״ג | 12 חזרות"
         const isTime = this.state.active.isStopwatch;
         const isBody = (unit === 'bodyweight' && !isTime);
         
@@ -344,7 +367,6 @@ const app = {
         
         let rStr = isTime ? `${lastLog.r} שניות` : `${lastLog.r} חזרות`;
         
-        // If bodyweight time (Plank)
         if (isTime && unit === 'bodyweight') {
             strip.innerText = `${rStr} (אימון קודם)`;
         } else {
@@ -352,18 +374,24 @@ const app = {
         }
     },
 
-    populateSelects: function(ex) {
+    populateSelects: function(exDef) {
         const selW = document.getElementById('select-weight');
         const selR = document.getElementById('select-reps');
-        const isLegs = ex.cat === 'legs';
+        const s = exDef.settings || {unit:'kg', step:2.5, min:0, max:50};
 
         let wOpts = [];
-        if (ex.unit === 'bodyweight') wOpts = [0];
-        else if (ex.unit === 'plates') for(let i=1; i<=20; i++) wOpts.push(i);
-        else {
-            for(let i=1; i<=10; i++) wOpts.push(i);
-            const max = isLegs ? 80 : 40;
-            for(let i=12.5; i<=max; i+=2.5) wOpts.push(i);
+        if (s.unit === 'bodyweight') {
+            wOpts = [0];
+        } else {
+            const min = parseFloat(s.min);
+            const max = parseFloat(s.max);
+            const step = parseFloat(s.step) || 2.5;
+            
+            for(let v = min; v <= max; v += step) {
+                let cleanV = parseFloat(v.toFixed(1));
+                if(cleanV % 1 === 0) cleanV = parseInt(cleanV); 
+                wOpts.push(cleanV);
+            }
         }
 
         selW.innerHTML = '';
@@ -374,18 +402,20 @@ const app = {
             selW.appendChild(opt);
         });
 
-        // SAFETY CHECK: If history weight is not in range, default to first option
         if(wOpts.includes(this.state.active.inputW)) {
             selW.value = this.state.active.inputW;
         } else {
-            selW.value = wOpts[0] || 0;
-            this.state.active.inputW = Number(selW.value);
+            const closest = wOpts.reduce((prev, curr) => {
+                return (Math.abs(curr - this.state.active.inputW) < Math.abs(prev - this.state.active.inputW) ? curr : prev);
+            });
+            selW.value = closest;
+            this.state.active.inputW = closest;
         }
         
         selW.onchange = (e) => this.state.active.inputW = Number(e.target.value);
 
         let rOpts = [];
-        const maxReps = ex.cat === 'core' ? 50 : 25;
+        const maxReps = exDef.cat === 'core' ? 50 : 30;
         for(let i=1; i<=maxReps; i++) rOpts.push(i);
 
         selR.innerHTML = '';
@@ -450,17 +480,17 @@ const app = {
             r = this.state.active.inputR;
         }
 
-        const prog = this.state.routines[this.state.currentProgId];
-        const ex = prog.exercises[this.state.active.exIdx];
+        // Use sessionExercises
+        const exInst = this.state.active.sessionExercises[this.state.active.exIdx];
         
-        let exLog = this.state.active.log.find(l => l.id === ex.id);
+        let exLog = this.state.active.log.find(l => l.id === exInst.id);
         if(!exLog) {
-            exLog = { id: ex.id, name: ex.name, sets: [] };
+            exLog = { id: exInst.id, name: exInst.name, sets: [] };
             this.state.active.log.push(exLog);
         }
         exLog.sets.push({ w, r, feel: this.state.active.feel });
 
-        const restTime = ex.rest || 60;
+        const restTime = exInst.rest || 60;
         this.startRestTimer(restTime);
 
         if (this.state.active.setIdx < this.state.active.totalSets) {
@@ -477,10 +507,19 @@ const app = {
             document.getElementById('decision-buttons').style.display = 'flex';
             document.getElementById('rest-timer-area').style.display = 'none';
 
-            const nextEx = prog.exercises[this.state.active.exIdx + 1];
+            const nextEx = this.state.active.sessionExercises[this.state.active.exIdx + 1];
             const nextEl = document.getElementById('next-ex-preview');
             nextEl.innerText = nextEx ? `הבא בתור: ${nextEx.name}` : "הבא בתור: סיום אימון";
             nextEl.style.display = 'block';
+
+            // Check Add Button Logic
+            const exDef = this.getExerciseDef(exInst.id);
+            const addBtn = document.getElementById('btn-add-core');
+            if (exDef.cat === 'core') {
+                addBtn.style.display = 'block';
+            } else {
+                addBtn.style.display = 'none';
+            }
         }
     },
 
@@ -528,7 +567,6 @@ const app = {
     },
 
     addSet: function() {
-        // BUG FIX: Update totalSets
         this.state.active.totalSets++;
         this.state.active.setIdx++;
         document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
@@ -546,14 +584,11 @@ const app = {
     },
 
     deleteLastSet: function() {
-        const prog = this.state.routines[this.state.currentProgId];
-        const ex = prog.exercises[this.state.active.exIdx];
-        let exLog = this.state.active.log.find(l => l.id === ex.id);
+        const exInst = this.state.active.sessionExercises[this.state.active.exIdx];
+        let exLog = this.state.active.log.find(l => l.id === exInst.id);
         
         if(exLog && exLog.sets.length > 0) {
             exLog.sets.pop();
-            
-            // BUG FIX: Stop timer and hide rest UI
             this.stopRestTimer();
 
             if (this.state.active.setIdx > 1) {
@@ -572,8 +607,8 @@ const app = {
 
     nextExercise: function() {
         this.stopAllTimers();
-        const prog = this.state.routines[this.state.currentProgId];
-        if (this.state.active.exIdx < prog.exercises.length - 1) {
+        // Use sessionExercises
+        if (this.state.active.exIdx < this.state.active.sessionExercises.length - 1) {
             this.state.active.exIdx++;
             this.state.active.setIdx = 1;
             this.loadActiveExercise();
@@ -611,9 +646,19 @@ const app = {
         historyItem.data.forEach(ex => {
             if(ex.sets.length > 0) {
                 txt += `✅ ${ex.name}\n`;
-                const isTime = (ex.id.includes('plank') || ex.id === 'wall_sit');
+                const exDef = this.getExerciseDef(ex.id);
+                const isTime = (ex.id.includes('plank') || exDef.settings.unit === 'bodyweight' && ex.sets[0].w === 0);
+                
                 ex.sets.forEach((s, i) => {
-                    let valStr = isTime ? `${s.r}שנ׳` : `${s.w>0?s.w+'ק״ג ':''}${s.r}`;
+                    let valStr;
+                    if(isTime && s.w === 0) {
+                         valStr = `${s.r} שנ׳`;
+                    } else {
+                         valStr = `${s.w} ק״ג | ${s.r} חזרות`;
+                         if(exDef.settings.unit === 'plates') valStr = `${s.w} פלטות | ${s.r} חזרות`;
+                         if(s.w === 0) valStr = `משקל גוף | ${s.r} חזרות`;
+                    }
+                    
                     let feelStr = FEEL_MAP_TEXT[s.feel] || 'טוב';
                     txt += `   סט ${i+1}: ${valStr} (${feelStr})\n`;
                 });
@@ -644,7 +689,77 @@ const app = {
         window.location.reload();
     },
 
-    /* --- NEW ADMIN UI LOGIC (GYMPRO STYLE) --- */
+    /* --- USER SELECTOR (SWAP/ADD) --- */
+    
+    openSwapExercise: function() {
+        this.state.userSelector.mode = 'swap';
+        this.renderUserSelector('core');
+        document.getElementById('user-sel-title').innerText = "החליפי תרגיל";
+        document.getElementById('user-selector-modal').style.display = 'flex';
+    },
+
+    openAddCoreExercise: function() {
+        this.state.userSelector.mode = 'add';
+        this.renderUserSelector('core');
+        document.getElementById('user-sel-title').innerText = "הוסיפי תרגיל";
+        document.getElementById('user-selector-modal').style.display = 'flex';
+    },
+
+    closeUserSelector: function() {
+        document.getElementById('user-selector-modal').style.display = 'none';
+    },
+
+    renderUserSelector: function(cat) {
+        const list = document.getElementById('user-sel-list');
+        list.innerHTML = '';
+        
+        // Filter by category
+        let candidates = this.state.exercises.filter(e => e.cat === cat);
+
+        // If 'Add' mode, filter out exercises already done in session
+        if (this.state.userSelector.mode === 'add') {
+             const currentIds = this.state.active.sessionExercises.map(e => e.id);
+             candidates = candidates.filter(e => !currentIds.includes(e.id));
+        }
+
+        candidates.forEach(e => {
+            list.innerHTML += `
+            <div class="list-item" onclick="app.userSelectExercise('${e.id}')">
+                <span style="font-weight:700">${e.name}</span>
+                <span style="color:var(--primary)">+</span>
+            </div>`;
+        });
+    },
+
+    userSelectExercise: function(exId) {
+        const newExDef = this.getExerciseDef(exId);
+        
+        if (this.state.userSelector.mode === 'swap') {
+            // REPLACE current exercise
+            this.state.active.sessionExercises[this.state.active.exIdx] = {
+                id: exId,
+                name: newExDef.name,
+                sets: 3, // Reset to default sets
+                rest: 60
+            };
+            this.loadActiveExercise();
+        } else if (this.state.userSelector.mode === 'add') {
+            // INSERT after current exercise
+            const newExInst = {
+                id: exId,
+                name: newExDef.name,
+                sets: 3,
+                rest: 60
+            };
+            this.state.active.sessionExercises.splice(this.state.active.exIdx + 1, 0, newExInst);
+            // Move to it immediately
+            this.nextExercise();
+        }
+
+        this.closeUserSelector();
+    },
+
+    /* --- ADMIN: VIEWS & NAVIGATION --- */
 
     openAdminHome: function() { 
         if (this.state.active.on) { alert("לא ניתן להיכנס לניהול בזמן אימון פעיל."); return; }
@@ -654,6 +769,8 @@ const app = {
         document.getElementById('admin-view-home').style.display = 'flex';
         document.getElementById('admin-view-edit').style.display = 'none';
         document.getElementById('admin-view-selector').style.display = 'none';
+        document.getElementById('admin-view-ex-manager').style.display = 'none';
+        document.getElementById('admin-view-ex-edit').style.display = 'none';
         
         this.renderAdminList();
     },
@@ -673,16 +790,16 @@ const app = {
 
         ids.forEach(pid => {
             const prog = this.state.routines[pid];
+            // No "Edit" button, click card to edit.
             list.innerHTML += `
-            <div class="manager-item">
+            <div class="manager-item" onclick="app.openAdminEdit('${pid}')">
                 <div class="manager-info">
                     <h3>${prog.title}</h3>
                     <p>${prog.exercises.length} תרגילים</p>
                 </div>
                 <div class="manager-actions">
-                    <button class="btn-text-action" onclick="app.duplicateProgram('${pid}')">שכפל</button>
-                    <button class="btn-text-action" onclick="app.openAdminEdit('${pid}')">ערוך</button>
-                    <button class="btn-text-action delete" onclick="app.deleteProgram('${pid}')">מחק</button>
+                    <button class="btn-text-action" onclick="event.stopPropagation(); app.duplicateProgram('${pid}')">שכפל</button>
+                    <button class="btn-text-action delete" onclick="event.stopPropagation(); app.deleteProgram('${pid}')">מחק</button>
                 </div>
             </div>`;
         });
@@ -712,7 +829,6 @@ const app = {
 
     openAdminEdit: function(pid) {
         this.state.admin.viewProgId = pid;
-        // Copy exercises to temp array for editing safely
         this.state.admin.tempExercises = JSON.parse(JSON.stringify(this.state.routines[pid].exercises));
         
         document.getElementById('admin-view-home').style.display = 'none';
@@ -730,9 +846,7 @@ const app = {
         this.openAdminHome();
     },
 
-    updateProgramTitle: function() {
-        // Just UI update, actual save happens on close
-    },
+    updateProgramTitle: function() { },
 
     renderEditorList: function() {
         const list = document.getElementById('admin-ex-list');
@@ -793,7 +907,118 @@ const app = {
         this.renderEditorList();
     },
 
-    /* --- SMART SELECTOR --- */
+    /* --- ADMIN: EXERCISE MANAGER (NEW) --- */
+    
+    openExerciseManager: function() {
+        document.getElementById('admin-view-home').style.display = 'none';
+        document.getElementById('admin-view-ex-manager').style.display = 'flex';
+        document.getElementById('ex-mgr-search').value = '';
+        this.state.admin.exManagerFilter = 'all';
+        this.updateExManagerChips();
+        this.renderExerciseManagerList();
+    },
+
+    setExManagerFilter: function(cat, btn) {
+        this.state.admin.exManagerFilter = cat;
+        this.updateExManagerChips();
+        this.renderExerciseManagerList();
+    },
+
+    updateExManagerChips: function() {
+        const map = { 'all':0, 'legs':1, 'chest':2, 'back':3, 'shoulders':4, 'arms':5, 'core':6 };
+        const idx = map[this.state.admin.exManagerFilter];
+        const chips = document.querySelector('#admin-view-ex-manager .chip-container').querySelectorAll('.chip');
+        chips.forEach((c, i) => i === idx ? c.classList.add('active') : c.classList.remove('active'));
+    },
+
+    renderExerciseManagerList: function() {
+        const list = document.getElementById('ex-mgr-list');
+        list.innerHTML = '';
+        const term = document.getElementById('ex-mgr-search').value.toLowerCase();
+        const cat = this.state.admin.exManagerFilter;
+        
+        this.state.exercises.filter(e => {
+            const matchName = e.name.toLowerCase().includes(term);
+            const matchCat = cat === 'all' || e.cat === cat;
+            return matchName && matchCat;
+        }).forEach(e => {
+             list.innerHTML += `
+             <div class="list-item" onclick="app.editExerciseInBank('${e.id}')">
+                <div style="font-weight:700">${e.name}</div>
+                <div style="font-size:0.8rem; color:#888;">${this.getCatLabel(e.cat)}</div>
+             </div>`;
+        });
+    },
+
+    createNewExerciseInBank: function() {
+        const newId = 'custom_' + Date.now();
+        this.state.admin.editingExId = newId;
+        // Default Template
+        this.fillExerciseEditor({
+            id: newId,
+            name: 'תרגיל חדש',
+            cat: 'other',
+            videoUrl: '',
+            settings: { unit: 'kg', step: 2.5, min: 0, max: 100, isUnilateral: false }
+        });
+    },
+
+    editExerciseInBank: function(exId) {
+        this.state.admin.editingExId = exId;
+        const ex = this.state.exercises.find(e => e.id === exId);
+        this.fillExerciseEditor(ex);
+    },
+
+    fillExerciseEditor: function(ex) {
+        document.getElementById('admin-view-ex-manager').style.display = 'none';
+        document.getElementById('admin-view-ex-edit').style.display = 'flex';
+
+        document.getElementById('edit-ex-name').value = ex.name;
+        document.getElementById('edit-ex-cat').value = ex.cat;
+        document.getElementById('edit-ex-video').value = ex.videoUrl || '';
+        document.getElementById('edit-ex-unit').value = ex.settings.unit;
+        document.getElementById('edit-ex-step').value = ex.settings.step;
+        document.getElementById('edit-ex-min').value = ex.settings.min;
+        document.getElementById('edit-ex-max').value = ex.settings.max;
+        document.getElementById('edit-ex-unilateral').checked = ex.settings.isUnilateral || false;
+    },
+
+    saveExerciseToBank: function() {
+        const exId = this.state.admin.editingExId;
+        const newEx = {
+            id: exId,
+            name: document.getElementById('edit-ex-name').value,
+            cat: document.getElementById('edit-ex-cat').value,
+            videoUrl: document.getElementById('edit-ex-video').value,
+            settings: {
+                unit: document.getElementById('edit-ex-unit').value,
+                step: Number(document.getElementById('edit-ex-step').value),
+                min: Number(document.getElementById('edit-ex-min').value),
+                max: Number(document.getElementById('edit-ex-max').value),
+                isUnilateral: document.getElementById('edit-ex-unilateral').checked
+            }
+        };
+
+        const existingIdx = this.state.exercises.findIndex(e => e.id === exId);
+        if (existingIdx > -1) {
+            this.state.exercises[existingIdx] = newEx;
+        } else {
+            this.state.exercises.push(newEx);
+        }
+        
+        this.saveData();
+        // Go back to list
+        document.getElementById('admin-view-ex-edit').style.display = 'none';
+        document.getElementById('admin-view-ex-manager').style.display = 'flex';
+        this.renderExerciseManagerList();
+    },
+
+    cancelExerciseEdit: function() {
+        document.getElementById('admin-view-ex-edit').style.display = 'none';
+        document.getElementById('admin-view-ex-manager').style.display = 'flex';
+    },
+
+    /* --- SELECTOR (Uses Dynamic Bank) --- */
     openAdminSelector: function() {
         document.getElementById('admin-view-edit').style.display = 'none';
         document.getElementById('admin-view-selector').style.display = 'flex';
@@ -815,16 +1040,9 @@ const app = {
     },
 
     updateFilterChips: function() {
-        document.querySelectorAll('.chip').forEach(c => {
-            if(c.innerText === this.getCatLabel(this.state.admin.selectorFilter) || 
-               (this.state.admin.selectorFilter === 'all' && c.innerText === 'הכל')) {
-                c.classList.add('active');
-            } else c.classList.remove('active');
-        });
-        // Since chip text varies, logic above is weak. Better by index or data-att, but simplified here:
         const map = { 'all':0, 'legs':1, 'chest':2, 'back':3, 'shoulders':4, 'arms':5, 'core':6 };
         const idx = map[this.state.admin.selectorFilter];
-        const chips = document.querySelectorAll('.chip');
+        const chips = document.querySelector('#admin-view-selector .chip-container').querySelectorAll('.chip');
         chips.forEach((c, i) => i === idx ? c.classList.add('active') : c.classList.remove('active'));
     },
 
@@ -836,7 +1054,8 @@ const app = {
         const search = document.getElementById('selector-search').value.toLowerCase();
         const cat = this.state.admin.selectorFilter;
 
-        BANK.filter(e => {
+        // Use Dynamic Bank
+        this.state.exercises.filter(e => {
             const matchName = e.name.toLowerCase().includes(search);
             const matchCat = cat === 'all' || e.cat === cat;
             return matchName && matchCat;
@@ -850,13 +1069,15 @@ const app = {
     },
 
     addExerciseFromSelector: function(exId) {
-        const bankEx = BANK.find(e => e.id === exId);
-        const newEx = JSON.parse(JSON.stringify(bankEx));
-        // Init Defaults
-        newEx.sets = 3; 
-        newEx.rest = 60; 
-        newEx.note = '';
-        newEx.target = {w:10, r:12};
+        const bankEx = this.getExerciseDef(exId);
+        const newEx = {
+            id: bankEx.id,
+            name: bankEx.name,
+            sets: 3,
+            rest: 60,
+            note: '',
+            target: {w:10, r:12}
+        };
 
         this.state.admin.tempExercises.push(newEx);
         this.closeSelector();
@@ -864,8 +1085,8 @@ const app = {
     },
 
     getCatLabel: function(c) {
-        // Helper if needed
-        return c; 
+        const map = {legs:'רגליים', chest:'חזה', back:'גב', shoulders:'כתפיים', arms:'ידיים', core:'בטן', other:'אחר'};
+        return map[c] || c;
     },
 
     /* --- TIPS --- */
@@ -889,7 +1110,14 @@ const app = {
 
     /* --- BACKUP & RESTORE --- */
     exportConfig: function() {
-        const data = { type: 'config', ver: CONFIG.VERSION, date: new Date().toLocaleDateString(), routines: this.state.routines };
+        // Now includes Custom Exercises!
+        const data = { 
+            type: 'config', 
+            ver: CONFIG.VERSION, 
+            date: new Date().toLocaleDateString(), 
+            routines: this.state.routines,
+            exercises: this.state.exercises 
+        };
         this.downloadJSON(data, `gymstart_config_v${CONFIG.VERSION}_${Date.now()}.json`);
     },
 
@@ -900,10 +1128,13 @@ const app = {
             try {
                 const json = JSON.parse(e.target.result);
                 if (json.type !== 'config') { alert("קובץ שגוי."); return; }
-                if(confirm("עדכון תוכניות יחליף את ההגדרות הקיימות. להמשיך?")) {
+                if(confirm("עדכון תוכניות יחליף את ההגדרות ואת מאגר התרגילים. להמשיך?")) {
                     app.state.routines = json.routines;
+                    // Import Exercises if exist, otherwise keep current
+                    if(json.exercises) app.state.exercises = json.exercises;
+                    
                     app.saveData();
-                    alert("התוכניות עודכנו בהצלחה!");
+                    alert("ההגדרות עודכנו בהצלחה!");
                     location.reload();
                 }
             } catch(err) { alert("קובץ לא תקין"); }
@@ -1040,9 +1271,19 @@ const app = {
         item.data.forEach(ex => {
             html += `<div style="background:var(--bg-card); padding:15px; border-radius:12px; margin-bottom:10px; border:1px solid #222;">
                 <div style="font-weight:700; color:var(--primary)">${ex.name}</div>`;
-            const isTime = (ex.id.includes('plank') || ex.id === 'wall_sit');
+            const exDef = this.getExerciseDef(ex.id);
+            const isTime = (ex.id.includes('plank') || (exDef.settings.unit === 'bodyweight' && ex.sets[0].w === 0));
+            
             ex.sets.forEach((s, si) => {
-                let valStr = isTime ? `${s.r} שנ׳` : `${s.w > 0 ? s.w+'ק״ג ' : ''}${s.r}`;
+                let valStr;
+                if(isTime && s.w === 0) {
+                     valStr = `${s.r} שנ׳`;
+                } else {
+                     valStr = `${s.w} ק״ג | ${s.r} חזרות`;
+                     if(exDef.settings.unit === 'plates') valStr = `${s.w} פלטות | ${s.r} חזרות`;
+                     if(s.w === 0) valStr = `משקל גוף | ${s.r} חזרות`;
+                }
+                
                 let feelStr = FEEL_MAP_TEXT[s.feel] || 'טוב';
                 html += `<div style="display:flex; justify-content:space-between; font-size:0.9rem; margin-top:5px; border-bottom:1px dashed #333; padding-bottom:5px">
                     <span>סט ${si+1} <small style="color:#777">(${feelStr})</small></span>
