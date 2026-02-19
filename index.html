@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>GymStart V1.7.4</title>
+    <title>GymStart V1.7.6</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="stylesheet" href="style.css">
@@ -14,6 +14,21 @@
     <!-- Hidden File Inputs -->
     <input type="file" id="file-import-history" hidden accept=".json" onchange="app.importHistory(this)">
     <input type="file" id="file-import-config" hidden accept=".json" onchange="app.importConfig(this)">
+
+    <!-- RESUME WORKOUT MODAL -->
+    <div id="resume-modal" class="modal-wrapper" style="z-index: 200;">
+        <div class="oled-modal compact">
+            <div class="modal-header">
+                <h3>נמצא אימון שהופסק</h3>
+            </div>
+            <p style="color:var(--text-sec); line-height:1.5; margin-bottom:20px;">נראה שהפסקת באמצע. האם תרצי להמשיך מהנקודה שבה עצרת?</p>
+            <div class="modal-footer-column">
+                <button class="btn-primary" onclick="app.resumeSession()">המשך אימון</button>
+                <div style="height:10px"></div>
+                <button class="btn-outline" onclick="app.clearRecovery()">התחילי מחדש</button>
+            </div>
+        </div>
+    </div>
 
     <!-- USER SELECTOR MODAL (For Swap/Add) -->
     <div id="user-selector-modal" class="modal-wrapper">
@@ -38,13 +53,13 @@
                 </div>
                 
                 <div class="admin-nav-row">
-                     <button class="btn-tool-outline" onclick="app.openExerciseManager()">📚 ניהול מאגר תרגילים</button>
+                     <button class="btn-tool-outline" onclick="app.openExerciseManager()">ניהול מאגר תרגילים</button>
                 </div>
 
                 <div id="admin-prog-list" class="vertical-stack scroll-y" style="margin-top:15px;"></div>
                 
                 <div class="modal-footer-column">
-                    <button class="btn-primary" onclick="app.createNewProgram()">+ צור תוכנית חדשה</button>
+                    <button class="btn-primary" onclick="app.createNewProgram()">צור תוכנית חדשה</button>
                     
                     <div class="backup-area">
                         <label>ניהול נתונים</label>
@@ -71,7 +86,7 @@
                 <div id="admin-ex-list" class="vertical-stack scroll-y"></div>
                 
                 <div class="modal-footer-column">
-                    <button class="btn-dashed" onclick="app.openAdminSelector()">+ הוסף תרגיל</button>
+                    <button class="btn-dashed" onclick="app.openAdminSelector()">הוסף תרגיל</button>
                     <div style="display:flex; gap:10px; margin-top: 15px;">
                         <button class="btn-primary" onclick="app.saveAndCloseEditor()">שמור וסיים</button>
                         <button class="btn-outline" onclick="app.openAdminHome()">ביטול</button>
@@ -101,7 +116,7 @@
                 <div id="selector-list" class="vertical-stack scroll-y" style="margin-top:10px;"></div>
             </div>
 
-            <!-- VIEW 4: EXERCISE MANAGER (New) -->
+            <!-- VIEW 4: EXERCISE MANAGER -->
             <div id="admin-view-ex-manager" class="admin-view" style="display:none;">
                 <div class="modal-header">
                     <h3>מאגר תרגילים</h3>
@@ -110,7 +125,6 @@
                 
                 <input type="text" id="ex-mgr-search" class="search-input" placeholder="חפש במאגר..." onkeyup="app.renderExerciseManagerList()">
                 
-                <!-- Chips Filter for Manager -->
                 <div class="chip-container">
                     <button class="chip active" onclick="app.setExManagerFilter('all', this)">הכל</button>
                     <button class="chip" onclick="app.setExManagerFilter('legs', this)">רגליים</button>
@@ -123,11 +137,11 @@
 
                 <div id="ex-mgr-list" class="vertical-stack scroll-y" style="margin-top:10px;"></div>
                 <div class="modal-footer-column">
-                    <button class="btn-primary" onclick="app.createNewExerciseInBank()">+ תרגיל חדש</button>
+                    <button class="btn-primary" onclick="app.createNewExerciseInBank()">תרגיל חדש</button>
                 </div>
             </div>
 
-            <!-- VIEW 5: EXERCISE EDIT FORM (New) -->
+            <!-- VIEW 5: EXERCISE EDIT FORM -->
             <div id="admin-view-ex-edit" class="admin-view" style="display:none;">
                 <div class="modal-header">
                     <h3>עריכת תרגיל</h3>
@@ -189,7 +203,7 @@
                         </div>
                         <div style="margin-top:15px; display:flex; align-items:center; gap:10px;">
                             <input type="checkbox" id="edit-ex-unilateral" class="custom-chk">
-                            <span style="font-size:0.9rem; color:#bbb;">תרגיל צד-אחד (יד/רגל אחת)</span>
+                            <span style="font-size:0.9rem; color:#bbb;">משקל לכל צד (יד/רגל)</span>
                         </div>
                     </div>
                 </div>
@@ -268,7 +282,7 @@
                     </div>
                 </div>
                 
-                <div class="version-tag">GymStart V1.7.4</div>
+                <div class="version-tag">GymStart V1.7.6</div>
             </div>
 
             <div class="fixed-footer">
@@ -317,9 +331,6 @@
                          <a id="ex-video-link" href="#" target="_blank" class="video-icon" style="display:none;">▶</a>
                     </div>
                     
-                    <!-- Swap Button (Only for Core) -->
-                    <button id="btn-swap-ex" class="btn-text-swap" onclick="app.openSwapExercise()" style="display:none;">[החליפי תרגיל]</button>
-                    
                     <div id="coach-note" class="note-pill"></div>
                     <div id="last-stat-strip" class="stats-strip">--</div>
                 </div>
@@ -358,6 +369,10 @@
                             סיום סט
                         </button>
                         
+                        <button id="btn-swap-ex" class="btn-quiet" onclick="app.openSwapExercise()" style="display:none;">
+                            החליפי תרגיל
+                        </button>
+                        
                         <div id="next-ex-preview" class="next-preview-text" style="display: none;"></div>
 
                         <div id="decision-buttons" style="display:none; flex-direction:column; gap:10px; width:100%;">
@@ -365,7 +380,6 @@
                                 <button class="btn-outline" onclick="app.addSet()" style="flex:1">עוד סט</button>
                                 <button class="btn-primary" onclick="app.nextExercise()" style="flex:1">תרגיל הבא</button>
                             </div>
-                            <!-- Add Core Button -->
                             <button id="btn-add-core" class="btn-outline" onclick="app.openAddCoreExercise()" style="display:none; border-color:var(--primary); color:var(--primary);">
                                 + הוסיפי תרגיל בטן
                             </button>
@@ -403,9 +417,7 @@
             </div>
             
             <div class="fixed-footer">
-                <button class="btn-outline" onclick="app.copySummaryToClipboard()">העתק סיכום</button>
-                <div style="height:10px"></div>
-                <button class="btn-primary" onclick="app.saveAndHome()">שמור וסיים</button>
+                <button id="btn-final-save" class="btn-primary" onclick="app.saveAndHome()">סיימי ושמרי אימון</button>
             </div>
         </div>
 
