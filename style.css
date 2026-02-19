@@ -157,7 +157,7 @@ body, html {
 }
 .btn-ghost:active { border-color: #666; color: white; background: #111; }
 
-/* Quiet Button */
+/* New Quiet Button for Swap */
 .btn-quiet {
     background: transparent;
     border: none;
@@ -353,7 +353,7 @@ body, html {
 .backup-area label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 10px; }
 .tools-row { display: flex; gap: 10px; }
 
-/* Tip Edit Modal */
+/* Tip Edit Modal (Small) */
 .tip-modal-content {
     background: #111; border: 1px solid #333; padding: 20px; border-radius: 16px;
     width: 90%; max-width: 350px; display: flex; flex-direction: column; gap: 15px;
