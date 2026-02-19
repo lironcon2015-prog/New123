@@ -1,8 +1,7 @@
 /**
- * GYMSTART V1.7.6
- * - Fix: Completed dynamic session logic and state persistence.
- * - Logic: One-click "Finish & Save" (Auto-copy to clipboard).
- * - UI: Clean text-only Resume Workout Modal.
+ * GYMSTART V1.8.0
+ * - New Feature: Auto-resume active session on app reload/re-entry.
+ * - New Feature: Single "Copy and Save" button in the summary screen.
  */
 
 const CONFIG = {
@@ -10,9 +9,9 @@ const CONFIG = {
         ROUTINES: 'gymstart_v1_7_routines',
         HISTORY: 'gymstart_beta_02_history',
         EXERCISES: 'gymstart_v1_7_exercises_bank',
-        RECOVERY: 'gymstart_v1_7_recovery'
+        ACTIVE_SESSION: 'gymstart_v1_8_active_session' // NEW KEY FOR AUTO-RESUME
     },
-    VERSION: '1.7.6'
+    VERSION: '1.8.0'
 };
 
 const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה' };
@@ -20,14 +19,14 @@ const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה'
 const app = {
     state: {
         routines: {},
-        history: [],
-        exercises: [],
+        history:[],
+        exercises:[], 
         currentProgId: null,
         active: {
             on: false,
-            sessionExercises: [],
+            sessionExercises:[], 
             exIdx: 0, setIdx: 1, totalSets: 3,
-            log: [], startTime: 0,
+            log:[], startTime: 0,
             timerInterval: null, restInterval: null, 
             feel: 'good', isStopwatch: false, stopwatchVal: 0,
             inputW: 10, inputR: 12
@@ -37,20 +36,29 @@ const app = {
             editTipEx: null, 
             selectorFilter: 'all',
             exManagerFilter: 'all',
-            tempExercises: [],
-            editingExId: null 
+            tempExercises:[],
+            editingExId: null
         },
-        userSelector: { mode: null },
-        historySelection: [],
+        userSelector: {
+            mode: null, 
+        },
+        historySelection:[],
         viewHistoryIdx: null
     },
 
     init: function() {
         try {
             this.loadData();
-            this.renderHome();
-            this.renderProgramSelect(); 
-            this.checkRecovery();
+            
+            // Check if there is an active session running to auto-resume
+            if (this.state.active && this.state.active.on) {
+                this.loadActiveExercise();
+                this.nav('screen-active');
+            } else {
+                this.renderHome();
+                this.renderProgramSelect(); 
+                this.nav('screen-home'); 
+            }
         } catch (e) {
             console.error(e);
             alert("שגיאה בטעינת נתונים.");
@@ -58,12 +66,39 @@ const app = {
     },
 
     loadData: function() {
+        // Load History
         const h = localStorage.getItem(CONFIG.KEYS.HISTORY);
-        this.state.history = h ? JSON.parse(h) : [];
+        this.state.history = h ? JSON.parse(h) :[];
+        
+        // Load Routines
         const r = localStorage.getItem(CONFIG.KEYS.ROUTINES);
-        this.state.routines = r ? JSON.parse(r) : {};
+        let loadedRoutines = r ? JSON.parse(r) : null;
+        if (!loadedRoutines) {
+            this.state.routines = {}; 
+        } else {
+            this.state.routines = loadedRoutines;
+        }
+
+        // Load Exercises 
         const e = localStorage.getItem(CONFIG.KEYS.EXERCISES);
-        this.state.exercises = e ? JSON.parse(e) : [];
+        if(e) {
+            this.state.exercises = JSON.parse(e);
+        } else {
+            this.state.exercises =[];
+        }
+
+        // Load Active Session (Auto Resume)
+        const a = localStorage.getItem(CONFIG.KEYS.ACTIVE_SESSION);
+        if (a) {
+            try {
+                const sessionData = JSON.parse(a);
+                this.state.currentProgId = sessionData.progId;
+                this.state.active = sessionData.active;
+            } catch (err) {
+                console.error("Failed to parse active session", err);
+                localStorage.removeItem(CONFIG.KEYS.ACTIVE_SESSION);
+            }
+        }
     },
 
     saveData: function() {
@@ -72,45 +107,29 @@ const app = {
         localStorage.setItem(CONFIG.KEYS.EXERCISES, JSON.stringify(this.state.exercises));
     },
 
-    persistActiveSession: function() {
+    saveActiveState: function() {
         if (this.state.active.on) {
-            const data = {
-                active: { ...this.state.active, timerInterval: null, restInterval: null },
-                currentProgId: this.state.currentProgId
+            const activeCopy = { ...this.state.active };
+            activeCopy.timerInterval = null; // Do not serialize intervals
+            activeCopy.restInterval = null;
+            
+            const sessionData = {
+                progId: this.state.currentProgId,
+                active: activeCopy
             };
-            localStorage.setItem(CONFIG.KEYS.RECOVERY, JSON.stringify(data));
-        }
-    },
-
-    checkRecovery: function() {
-        const saved = localStorage.getItem(CONFIG.KEYS.RECOVERY);
-        if (saved) {
-            document.getElementById('resume-modal').style.display = 'flex';
+            localStorage.setItem(CONFIG.KEYS.ACTIVE_SESSION, JSON.stringify(sessionData));
         } else {
-            this.nav('screen-home');
+            localStorage.removeItem(CONFIG.KEYS.ACTIVE_SESSION);
         }
-    },
-
-    resumeSession: function() {
-        const data = JSON.parse(localStorage.getItem(CONFIG.KEYS.RECOVERY));
-        this.state.active = data.active;
-        this.state.currentProgId = data.currentProgId;
-        document.getElementById('resume-modal').style.display = 'none';
-        this.loadActiveExercise();
-        this.nav('screen-active');
-    },
-
-    clearRecovery: function() {
-        localStorage.removeItem(CONFIG.KEYS.RECOVERY);
-        document.getElementById('resume-modal').style.display = 'none';
-        this.nav('screen-home');
     },
 
     nav: function(screenId) {
         document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
         document.getElementById(screenId).classList.add('active');
+        
         const backBtn = document.getElementById('nav-back');
         const adminBtn = document.getElementById('btn-admin-home');
+
         if (screenId === 'screen-home') {
             backBtn.style.visibility = 'hidden';
             if(adminBtn) adminBtn.style.display = 'flex';
@@ -123,305 +142,392 @@ const app = {
     },
 
     goBack: function() {
-        const screen = document.querySelector('.screen.active').id;
-        if (screen === 'screen-active') {
+        const activeScreen = document.querySelector('.screen.active').id;
+        if (activeScreen === 'screen-active') {
             if (confirm("לצאת מהאימון?")) {
                 this.stopAllTimers();
                 this.state.active.on = false;
-                this.clearRecovery();
+                this.saveActiveState(); // Clears from storage
                 this.nav('screen-overview');
             }
-        } else if (screen === 'screen-overview') {
-            this.nav('screen-program-select');
+        } else if (activeScreen === 'screen-overview') {
+             this.nav('screen-program-select');
         } else {
             this.nav('screen-home');
         }
     },
 
-    getExerciseDef: function(id) {
-        return this.state.exercises.find(e => e.id === id) || { name: 'לא נמצא', settings: {unit:'kg', step:2.5, min:0, max:100} };
+    getExerciseDef: function(exId) {
+        return this.state.exercises.find(e => e.id === exId) || 
+               { name: 'תרגיל לא ידוע', settings: {unit:'kg', step:2.5, min:0, max:50} };
+    },
+
+    /* --- RENDERING --- */
+
+    renderProgramSelect: function() {
+        const container = document.getElementById('prog-list-container');
+        container.innerHTML = '';
+        const ids = Object.keys(this.state.routines);
+        
+        if(ids.length === 0) {
+            container.innerHTML = '<div style="text-align:center; color:#666;">אין תוכניות זמינות.</div>';
+            return;
+        }
+
+        ids.forEach(pid => {
+            const prog = this.state.routines;
+            const badge = pid.charAt(0).toUpperCase();
+            const count = prog.exercises.length;
+            
+            let desc = `${count} תרגילים`;
+            if (count > 0) {
+                const firstEx = prog.exercises.name;
+                desc += ` • מתחיל ב: ${firstEx}`;
+            }
+
+            container.innerHTML += `
+                <div class="oled-card prog-card" onclick="app.selectProgram('${pid}')">
+                    <div class="prog-icon">${badge}</div>
+                    <div class="prog-content">
+                        <div class="prog-title">${prog.title}</div>
+                        <div class="prog-desc">${desc}</div>
+                    </div>
+                </div>
+            `;
+        });
+    },
+
+    selectProgram: function(progId) {
+        this.state.currentProgId = progId;
+        this.renderOverview();
+        this.nav('screen-overview');
+    },
+
+    renderOverview: function() {
+        const prog = this.state.routines;
+        const list = document.getElementById('overview-list');
+        document.getElementById('overview-title').innerText = `סקירה: ${prog.title}`;
+        list.innerHTML = '';
+        prog.exercises.forEach((ex, i) => {
+            list.innerHTML += `<div class="list-item">
+                <span>${i+1}. ${ex.name}</span>
+                <span style="color:var(--primary); font-size:0.9rem">${ex.sets} סטים</span>
+            </div>`;
+        });
     },
 
     renderHome: function() {
         const lastEl = document.getElementById('last-workout-display');
         if (this.state.history.length > 0) {
-            const last = this.state.history[this.state.history.length - 1];
-            lastEl.innerText = `${last.date} (${last.programTitle || 'אימון'})`;
-        } else lastEl.innerText = "טרם בוצע";
+            const last = this.state.history;
+            const displayName = last.programTitle || last.program; 
+            lastEl.innerText = `${last.date} (${displayName})`;
+        } else {
+            lastEl.innerText = "טרם בוצע";
+        }
     },
 
-    renderProgramSelect: function() {
-        const container = document.getElementById('prog-list-container');
-        container.innerHTML = '';
-        Object.keys(this.state.routines).forEach(pid => {
-            const prog = this.state.routines[pid];
-            container.innerHTML += `
-                <div class="oled-card prog-card" onclick="app.selectProgram('${pid}')">
-                    <div class="prog-icon">${pid.charAt(0)}</div>
-                    <div class="prog-content">
-                        <div class="prog-title">${prog.title}</div>
-                        <div class="prog-desc">${prog.exercises.length} תרגילים</div>
-                    </div>
-                </div>`;
-        });
-    },
-
-    selectProgram: function(id) {
-        this.state.currentProgId = id;
-        const prog = this.state.routines[id];
-        document.getElementById('overview-title').innerText = prog.title;
-        const list = document.getElementById('overview-list');
-        list.innerHTML = prog.exercises.map((ex, i) => `<div class="list-item"><span>${i+1}. ${ex.name}</span><span>${ex.sets} סטים</span></div>`).join('');
-        this.nav('screen-overview');
-    },
-
+    /* --- WORKOUT LOGIC --- */
     startWorkout: function() {
-        const prog = this.state.routines[this.state.currentProgId];
+        if (!this.state.routines || 
+            this.state.routines.exercises.length === 0) {
+            alert("התוכנית ריקה"); return;
+        }
+
+        const prog = this.state.routines;
+
         this.state.active = {
             on: true,
             sessionExercises: JSON.parse(JSON.stringify(prog.exercises)),
             exIdx: 0, setIdx: 1, totalSets: 3,
-            log: [], startTime: Date.now(),
-            timerInterval: null, restInterval: null, feel: 'good', isStopwatch: false, stopwatchVal: 0, inputW: 10, inputR: 12
+            log:[], startTime: Date.now(),
+            timerInterval: null, restInterval: null, 
+            feel: 'good', isStopwatch: false, stopwatchVal: 0,
+            inputW: 10, inputR: 12
         };
-        this.persistActiveSession();
+        
+        this.saveActiveState();
         this.loadActiveExercise();
         this.nav('screen-active');
     },
 
     loadActiveExercise: function() {
-        const inst = this.state.active.sessionExercises[this.state.active.exIdx];
-        const def = this.getExerciseDef(inst.id);
-        this.state.active.totalSets = inst.sets || 3;
-        document.getElementById('ex-name').innerText = inst.name;
+        const exInst = this.state.active.sessionExercises;
+        const exDef = this.getExerciseDef(exInst.id);
+        
+        this.state.active.totalSets = exInst.sets || 3;
+
+        document.getElementById('ex-name').innerText = exInst.name;
         document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
         
-        const vid = document.getElementById('ex-video-link');
-        if (def.videoUrl) { vid.style.display = 'flex'; vid.href = def.videoUrl; } else vid.style.display = 'none';
-        
-        const swap = document.getElementById('btn-swap-ex');
-        swap.style.display = (def.cat === 'core' && this.state.active.setIdx === 1) ? 'block' : 'none';
+        // Video Link
+        const vidBtn = document.getElementById('ex-video-link');
+        if (exDef.videoUrl && exDef.videoUrl.length > 5) {
+            vidBtn.style.display = 'flex';
+            vidBtn.href = exDef.videoUrl;
+        } else {
+            vidBtn.style.display = 'none';
+        }
 
-        const note = document.getElementById('coach-note');
-        if (inst.note) { note.innerText = inst.note; note.style.display = 'block'; } else note.style.display = 'none';
+        // Swap Button Logic: Core exercises ONLY, and ONLY on Set 1
+        const swapBtn = document.getElementById('btn-swap-ex');
+        if (exDef.cat === 'core' && this.state.active.setIdx === 1) {
+            swapBtn.style.display = 'block';
+        } else {
+            swapBtn.style.display = 'none';
+        }
 
-        this.renderStatsStrip(inst.id, def.settings.unit);
-        this.state.active.isStopwatch = (def.settings.unit === 'bodyweight' && (inst.id.includes('plank') || inst.id.includes('static')));
+        const noteEl = document.getElementById('coach-note');
+        if (exInst.note) {
+            noteEl.innerText = "💡 " + exInst.note;
+            noteEl.style.display = 'block';
+        } else noteEl.style.display = 'none';
 
-        if (this.state.active.isStopwatch) {
+        this.renderStatsStrip(exInst.id, exDef.settings.unit);
+
+        // Check type
+        const isTime = (exDef.settings.unit === 'bodyweight' && (exInst.id.includes('plank') || exInst.id.includes('static')));
+        this.state.active.isStopwatch = isTime;
+
+        if (isTime) {
             document.getElementById('cards-container').style.display = 'none';
             document.getElementById('stopwatch-container').style.display = 'flex';
-            document.getElementById('sw-display').innerText = this.formatTime(this.state.active.stopwatchVal);
+            if (!this.state.active.stopwatchVal) {
+                this.state.active.stopwatchVal = 0;
+            }
+            this.stopStopwatch();
+            let m = Math.floor(this.state.active.stopwatchVal / 60);
+            let s = this.state.active.stopwatchVal % 60;
+            document.getElementById('sw-display').innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`;
+            document.getElementById('btn-sw-toggle').classList.remove('running');
+            document.getElementById('btn-sw-toggle').innerText = "▶";
+            document.getElementById('rest-timer-area').style.display = 'none';
         } else {
             document.getElementById('cards-container').style.display = 'flex';
             document.getElementById('stopwatch-container').style.display = 'none';
-            document.getElementById('unit-label-card').innerText = def.settings.unit === 'plates' ? 'פלטות' : 'ק״ג';
-            this.populateSelects(def, inst);
+            document.getElementById('unit-label-card').innerText = exDef.settings.unit === 'plates' ? 'פלטות' : 'ק״ג';
+            
+            // SMART WEIGHT PREDICTION
+            let smartWeight = exInst.target?.w || 10;
+            // Overwrite with history if exists
+            for(let i=this.state.history.length-1; i>=0; i--) {
+                const sess = this.state.history;
+                const found = sess.data.find(e => e.id === exInst.id);
+                if(found && found.sets.length > 0) {
+                    smartWeight = found.sets.w;
+                    break;
+                }
+            }
+            if (!this.state.active.inputW || this.state.active.setIdx === 1) {
+                this.state.active.inputW = smartWeight;
+            }
+            this.state.active.inputR = this.state.active.inputR || exInst.target?.r || 12;
+            this.populateSelects(exDef);
         }
+
         this.updateFeelUI();
-        document.getElementById('decision-buttons').style.display = 'none';
-        document.getElementById('btn-finish').style.display = 'block';
-    },
 
-    formatTime: function(s) {
-        const min = Math.floor(s/60); const sec = s%60;
-        return `${min<10?'0'+min:min}:${sec<10?'0'+sec:sec}`;
-    },
-
-    populateSelects: function(def, inst) {
-        const selW = document.getElementById('select-weight');
-        const selR = document.getElementById('select-reps');
-        selW.innerHTML = ''; selR.innerHTML = '';
-        const s = def.settings;
-        if (s.unit === 'bodyweight') {
-            selW.innerHTML = '<option value="0">משקל גוף</option>';
+        // RESUME LOGIC: Check if this exercise is already fully finished
+        let exLog = this.state.active.log.find(l => l.id === exInst.id);
+        if (exLog && exLog.sets.length >= this.state.active.totalSets) {
+            document.getElementById('decision-buttons').style.display = 'flex';
+            document.getElementById('btn-finish').style.display = 'none';
+            document.getElementById('next-ex-preview').style.display = 'block';
+            document.getElementById('rest-timer-area').style.display = 'none';
+            document.getElementById('btn-swap-ex').style.display = 'none';
+            
+            const nextEx = this.state.active.sessionExercises;
+            const nextEl = document.getElementById('next-ex-preview');
+            nextEl.innerText = nextEx ? `הבא בתור: ${nextEx.name}` : "הבא בתור: סיום אימון";
+            
+            const addBtn = document.getElementById('btn-add-core');
+            if (exDef.cat === 'core') addBtn.style.display = 'block';
+            else addBtn.style.display = 'none';
         } else {
-            for(let v = s.min; v <= s.max; v += s.step) {
-                const opt = document.createElement('option'); opt.value = v; opt.text = v;
-                selW.appendChild(opt);
+            document.getElementById('decision-buttons').style.display = 'none';
+            document.getElementById('next-ex-preview').style.display = 'none';
+            document.getElementById('btn-finish').style.display = 'flex';
+            document.getElementById('rest-timer-area').style.display = 'none';
+        }
+    },
+
+    renderStatsStrip: function(exId, unit) {
+        const strip = document.getElementById('last-stat-strip');
+        
+        let lastLog = null;
+        for(let i=this.state.history.length-1; i>=0; i--) {
+            const sess = this.state.history;
+            const found = sess.data.find(e => e.id === exId);
+            if(found && found.sets.length > 0) { 
+                lastLog = found.sets; 
+                break; 
             }
         }
-        for(let r=1; r<=50; r++) {
-            const opt = document.createElement('option'); opt.value = r; opt.text = r;
+
+        if (!lastLog) {
+            strip.innerText = "אין הישג קודם";
+            return;
+        }
+
+        const isTime = this.state.active.isStopwatch;
+        const isBody = (unit === 'bodyweight' && !isTime);
+        
+        let wStr = isBody ? 'משקל גוף' : `${lastLog.w} ק״ג`;
+        if (unit === 'plates') wStr = `${lastLog.w} פלטות`;
+        
+        let rStr = isTime ? `${lastLog.r} שניות` : `${lastLog.r} חזרות`;
+        
+        if (isTime && unit === 'bodyweight') {
+            strip.innerText = `${rStr} (אימון קודם)`;
+        } else {
+            strip.innerText = `${wStr} | ${rStr}`;
+        }
+    },
+
+    populateSelects: function(exDef) {
+        const selW = document.getElementById('select-weight');
+        const selR = document.getElementById('select-reps');
+        const s = exDef.settings || {unit:'kg', step:2.5, min:0, max:50};
+
+        let wOpts =[];
+        if (s.unit === 'bodyweight') {
+            wOpts =;
+        } else {
+            const min = parseFloat(s.min);
+            const max = parseFloat(s.max);
+            const step = parseFloat(s.step) || 2.5;
+            
+            for(let v = min; v <= max; v += step) {
+                let cleanV = parseFloat(v.toFixed(1));
+                if(cleanV % 1 === 0) cleanV = parseInt(cleanV); 
+                wOpts.push(cleanV);
+            }
+        }
+
+        selW.innerHTML = '';
+        wOpts.forEach(val => {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.text = val;
+            selW.appendChild(opt);
+        });
+
+        if(wOpts.includes(this.state.active.inputW)) {
+            selW.value = this.state.active.inputW;
+        } else {
+            const closest = wOpts.reduce((prev, curr) => {
+                return (Math.abs(curr - this.state.active.inputW) < Math.abs(prev - this.state.active.inputW) ? curr : prev);
+            });
+            selW.value = closest;
+            this.state.active.inputW = closest;
+        }
+        
+        selW.onchange = (e) => this.state.active.inputW = Number(e.target.value);
+
+        let rOpts =[];
+        const maxReps = exDef.cat === 'core' ? 50 : 30;
+        for(let i=1; i<=maxReps; i++) rOpts.push(i);
+
+        selR.innerHTML = '';
+        rOpts.forEach(val => {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.text = val;
             selR.appendChild(opt);
-        }
-        selW.value = this.state.active.inputW;
+        });
         selR.value = this.state.active.inputR;
-        selW.onchange = (e) => { this.state.active.inputW = Number(e.target.value); this.persistActiveSession(); };
-        selR.onchange = (e) => { this.state.active.inputR = Number(e.target.value); this.persistActiveSession(); };
-    },
-
-    renderStatsStrip: function(id, unit) {
-        const strip = document.getElementById('last-stat-strip');
-        let last = null;
-        for(let i=this.state.history.length-1; i>=0; i--) {
-            const found = this.state.history[i].data.find(e => e.id === id);
-            if(found && found.sets.length > 0) { last = found.sets[found.sets.length-1]; break; }
-        }
-        strip.innerText = last ? `${last.w} ק"ג | ${last.r} חזרות` : "אין היסטוריה";
-    },
-
-    selectFeel: function(f) { this.state.active.feel = f; this.updateFeelUI(); this.persistActiveSession(); },
-    updateFeelUI: function() {
-        document.querySelectorAll('.feel-btn').forEach(b => b.classList.toggle('selected', b.classList.contains(this.state.active.feel)));
-        document.getElementById('feel-text').innerText = FEEL_MAP_TEXT[this.state.active.feel];
+        selR.onchange = (e) => this.state.active.inputR = Number(e.target.value);
     },
 
     toggleStopwatch: function() {
+        const btn = document.getElementById('btn-sw-toggle');
         if (this.state.active.timerInterval) {
-            clearInterval(this.state.active.timerInterval); this.state.active.timerInterval = null;
-            document.getElementById('btn-sw-toggle').innerText = "▶";
-            document.getElementById('btn-sw-toggle').classList.remove('running');
+            clearInterval(this.state.active.timerInterval);
+            this.state.active.timerInterval = null;
+            btn.classList.remove('running');
+            btn.innerText = "▶";
         } else {
-            document.getElementById('btn-sw-toggle').innerText = "⏹";
-            document.getElementById('btn-sw-toggle').classList.add('running');
+            this.stopRestTimer();
+            const start = Date.now() - (this.state.active.stopwatchVal * 1000);
+            btn.classList.add('running');
+            btn.innerText = "⏹";
             this.state.active.timerInterval = setInterval(() => {
-                this.state.active.stopwatchVal++;
-                document.getElementById('sw-display').innerText = this.formatTime(this.state.active.stopwatchVal);
-            }, 1000);
+                const diff = Math.floor((Date.now() - start) / 1000);
+                this.state.active.stopwatchVal = diff;
+                let m = Math.floor(diff / 60);
+                let s = diff % 60;
+                document.getElementById('sw-display').innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`;
+            }, 100);
         }
+    },
+
+    stopStopwatch: function() {
+        if(this.state.active.timerInterval) clearInterval(this.state.active.timerInterval);
+        this.state.active.timerInterval = null;
+    },
+
+    selectFeel: function(f) {
+        this.state.active.feel = f;
+        this.updateFeelUI();
+    },
+
+    updateFeelUI: function() {
+        const map = { 'easy': 'קל', 'good': 'בינוני (טוב)', 'hard': 'קשה' };
+        document.querySelectorAll('.feel-btn').forEach(b => b.classList.remove('selected'));
+        document.querySelector(`.feel-btn.${this.state.active.feel}`).classList.add('selected');
+        document.getElementById('feel-text').innerText = map;
     },
 
     finishSet: function() {
-        let w = this.state.active.inputW;
-        let r = this.state.active.isStopwatch ? this.state.active.stopwatchVal : this.state.active.inputR;
-        if (this.state.active.isStopwatch && r === 0) return alert("מדדי זמן");
+        let w, r;
+        if (this.state.active.isStopwatch) {
+            if(this.state.active.timerInterval) this.toggleStopwatch(); 
+            w = 0; 
+            r = this.state.active.stopwatchVal; 
+            if (r === 0) { alert("לא נמדד זמן"); return; }
+        } else {
+            w = this.state.active.inputW;
+            r = this.state.active.inputR;
+        }
 
-        const inst = this.state.active.sessionExercises[this.state.active.exIdx];
-        let exLog = this.state.active.log.find(l => l.id === inst.id);
-        if(!exLog) { exLog = { id: inst.id, name: inst.name, sets: [] }; this.state.active.log.push(exLog); }
+        const exInst = this.state.active.sessionExercises;
+        
+        let exLog = this.state.active.log.find(l => l.id === exInst.id);
+        if(!exLog) {
+            exLog = { id: exInst.id, name: exInst.name, sets:[] };
+            this.state.active.log.push(exLog);
+        }
         exLog.sets.push({ w, r, feel: this.state.active.feel });
+
+        const restTime = exInst.rest || 60;
+        this.startRestTimer(restTime);
 
         if (this.state.active.setIdx < this.state.active.totalSets) {
             this.state.active.setIdx++;
-            this.loadActiveExercise();
-            this.startRestTimer(inst.rest || 60);
+            document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
+            
+            document.getElementById('btn-swap-ex').style.display = 'none';
+            
+            this.state.active.feel = 'good';
+            this.updateFeelUI();
+            if(this.state.active.isStopwatch) {
+                this.state.active.stopwatchVal = 0;
+                document.getElementById('sw-display').innerText = "00:00";
+            }
         } else {
+            document.getElementById('btn-swap-ex').style.display = 'none';
             document.getElementById('btn-finish').style.display = 'none';
             document.getElementById('decision-buttons').style.display = 'flex';
-            const next = this.state.active.sessionExercises[this.state.active.exIdx + 1];
-            document.getElementById('next-ex-preview').innerText = next ? `הבא: ${next.name}` : "סיום אימון";
-            document.getElementById('next-ex-preview').style.display = 'block';
-            document.getElementById('btn-add-core').style.display = (this.getExerciseDef(inst.id).cat === 'core') ? 'block' : 'none';
-        }
-        this.persistActiveSession();
-    },
+            document.getElementById('rest-timer-area').style.display = 'none';
 
-    startRestTimer: function(sec) {
-        this.stopRestTimer();
-        const area = document.getElementById('rest-timer-area');
-        const disp = document.getElementById('rest-timer-val');
-        const ring = document.getElementById('rest-ring-prog');
-        area.style.display = 'flex';
-        let count = 0;
-        this.state.active.restInterval = setInterval(() => {
-            count++;
-            disp.innerText = this.formatTime(count);
-            let offset = 408 - (408 * (count / sec));
-            ring.style.strokeDashoffset = Math.max(0, offset);
-            if(count === sec && navigator.vibrate) navigator.vibrate(200);
-        }, 1000);
-    },
+            const nextEx = this.state.active.sessionExercises;
+            const nextEl = document.getElementById('next-ex-preview');
+            nextEl.innerText = nextEx ? `הבא בתור: ${nextEx.name}` : "הבא בתור: סיום אימון";
+            nextEl.style.display = 'block';
 
-    stopRestTimer: function() { 
-        clearInterval(this.state.active.restInterval); 
-        this.state.active.restInterval = null; 
-        document.getElementById('rest-timer-area').style.display = 'none'; 
-    },
-
-    stopAllTimers: function() { this.stopRestTimer(); clearInterval(this.state.active.timerInterval); this.state.active.timerInterval = null; },
-
-    addSet: function() { this.state.active.totalSets++; this.state.active.setIdx++; this.loadActiveExercise(); this.persistActiveSession(); },
-
-    deleteLastSet: function() {
-        const inst = this.state.active.sessionExercises[this.state.active.exIdx];
-        let log = this.state.active.log.find(l => l.id === inst.id);
-        if(log && log.sets.length > 0) {
-            log.sets.pop();
-            if(this.state.active.setIdx > 1) this.state.active.setIdx--;
-            this.loadActiveExercise();
-            this.persistActiveSession();
-        }
-    },
-
-    nextExercise: function() {
-        this.stopAllTimers();
-        if (this.state.active.exIdx < this.state.active.sessionExercises.length - 1) {
-            this.state.active.exIdx++; this.state.active.setIdx = 1; this.state.active.stopwatchVal = 0;
-            this.loadActiveExercise();
-            this.persistActiveSession();
-        } else this.finishWorkout();
-    },
-
-    skipExercise: function() { this.nextExercise(); },
-
-    finishWorkout: function() {
-        const duration = Math.round((Date.now() - this.state.active.startTime) / 60000);
-        const date = new Date().toLocaleDateString('he-IL');
-        const title = this.state.routines[this.state.currentProgId].title;
-        const summaryText = this.generateLogText({ date, duration, programTitle: title, data: this.state.active.log });
-        
-        document.getElementById('summary-meta').innerText = `${date} | ${duration} דקות`;
-        document.getElementById('summary-text').innerText = summaryText;
-        this.nav('screen-summary');
-    },
-
-    generateLogText: function(item) {
-        let txt = `סיכום אימון: ${item.programTitle}\nתאריך: ${item.date} | משך: ${item.duration} דק'\n\n`;
-        item.data.forEach(ex => {
-            txt += `* ${ex.name}\n`;
-            ex.sets.forEach((s, i) => {
-                txt += `  סט ${i+1}: ${s.w > 0 ? s.w + ' ק"ג' : 'משקל גוף'} | ${s.r} ${typeof s.r === 'string' ? '' : 'חזרות'} (${FEEL_MAP_TEXT[s.feel]})\n`;
-            });
-            txt += `\n`;
-        });
-        return txt;
-    },
-
-    saveAndHome: function() {
-        const duration = Math.round((Date.now() - this.state.active.startTime) / 60000);
-        const title = this.state.routines[this.state.currentProgId].title;
-        const logEntry = {
-            date: new Date().toLocaleDateString('he-IL'),
-            timestamp: Date.now(),
-            program: this.state.currentProgId,
-            programTitle: title,
-            duration: duration,
-            data: this.state.active.log
-        };
-
-        // Auto-Copy
-        const txt = document.getElementById('summary-text').innerText;
-        navigator.clipboard.writeText(txt).then(() => {
-            const btn = document.getElementById('btn-final-save');
-            btn.innerText = "נשמר והועתק!";
-            btn.style.background = "var(--success)";
-            
-            setTimeout(() => {
-                this.state.history.push(logEntry);
-                this.saveData();
-                this.clearRecovery();
-                window.location.reload();
-            }, 1000);
-        });
-    },
-
-    /* ADMIN & SELECTORS - Simplified for brevity but functional */
-    openAdminHome: function() { document.getElementById('admin-modal').style.display = 'flex'; this.renderAdminList(); },
-    closeAdmin: function() { document.getElementById('admin-modal').style.display = 'none'; },
-    renderAdminList: function() {
-        const list = document.getElementById('admin-prog-list');
-        list.innerHTML = Object.keys(this.state.routines).map(pid => `
-            <div class="manager-item" onclick="app.openAdminEdit('${pid}')">
-                <div><strong>${this.state.routines[pid].title}</strong></div>
-                <button class="btn-tool-danger" onclick="event.stopPropagation(); app.deleteProgram('${pid}')">מחק</button>
-            </div>`).join('');
-    },
-    deleteProgram: function(pid) { if(confirm("למחוק?")) { delete this.state.routines[pid]; this.saveData(); this.renderAdminList(); } },
-    
-    // Other admin functions (edit, bank, etc.) remain as in 1.7.5 logic...
-    factoryReset: function() { if(confirm("למחוק הכל?")) { localStorage.clear(); location.reload(); } }
-};
-
-window.app = app;
-window.addEventListener('DOMContentLoaded', () => app.init());
+            const exDef = this.getExerciseDef(exInst.id);
+            const addBtn = document.getElementById('btn-add-core');
+            if (exDef.cat === 'core') {
+                addBtn.style.display = 'block';
+            } else {
+                addBtn.style.display = 'none';
