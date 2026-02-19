@@ -157,12 +157,19 @@ body, html {
 }
 .btn-ghost:active { border-color: #666; color: white; background: #111; }
 
-.btn-text-swap {
-    background: none; border: 1px solid #333; color: var(--text-sec);
-    border-radius: 8px; font-size: 0.8rem; padding: 4px 10px;
-    cursor: pointer; margin-top: 5px;
+/* New Quiet Button for Swap */
+.btn-quiet {
+    background: transparent;
+    border: none;
+    color: var(--text-sec);
+    width: 100%;
+    padding: 10px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    margin-top: 10px;
+    text-decoration: none;
 }
-.btn-text-swap:active { background: #222; color: white; }
+.btn-quiet:active { color: white; background: rgba(255,255,255,0.05); border-radius: 8px; }
 
 /* Home */
 .hero { text-align: center; margin-bottom: 25px; margin-top: 20px; }
