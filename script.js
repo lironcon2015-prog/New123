@@ -1,7 +1,8 @@
 /**
  * GYMSTART V1.8.0
- * - New Feature: Auto-resume active session on app reload/re-entry.
- * - New Feature: Single "Copy and Save" button in the summary screen.
+ * - Unified Finish Button: One click copies the summary, saves it to history, and refreshes to Home.
+ * - State Persistence (Auto-Save): The workout state is continuously saved in LocalStorage.
+ *   Closing the app or refreshing will resume the workout exactly where left off.
  */
 
 const CONFIG = {
@@ -9,24 +10,33 @@ const CONFIG = {
         ROUTINES: 'gymstart_v1_7_routines',
         HISTORY: 'gymstart_beta_02_history',
         EXERCISES: 'gymstart_v1_7_exercises_bank',
-        ACTIVE_SESSION: 'gymstart_v1_8_active_session' // NEW KEY FOR AUTO-RESUME
+        SESSION: 'gymstart_v1_8_session' // Auto-Save Session
     },
     VERSION: '1.8.0'
 };
 
 const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה' };
 
+// BASE EXERCISES FOR MIGRATION ONLY
+const BASE_BANK_INIT =;
+
+const DEFAULT_ROUTINES_V17 = {
+    'A': { title: 'רגליים וגב (A)', exercises: },
+    'B': { title: 'חזה וכתפיים (B)', exercises: }
+};
+
 const app = {
     state: {
         routines: {},
         history: [],
-        exercises:[], 
+        exercises:[],
         currentProgId: null,
         active: {
             on: false,
+            phase: 'working', // 'working', 'decision', 'summary'
             sessionExercises:[], 
             exIdx: 0, setIdx: 1, totalSets: 3,
-            log:[], startTime: 0,
+            log:[], startTime: 0, duration: 0,
             timerInterval: null, restInterval: null, 
             feel: 'good', isStopwatch: false, stopwatchVal: 0,
             inputW: 10, inputR: 12
@@ -39,9 +49,7 @@ const app = {
             tempExercises:[],
             editingExId: null
         },
-        userSelector: {
-            mode: null, 
-        },
+        userSelector: { mode: null },
         historySelection:[],
         viewHistoryIdx: null
     },
@@ -49,19 +57,33 @@ const app = {
     init: function() {
         try {
             this.loadData();
+            this.renderHome();
+            this.renderProgramSelect(); 
             
-            // Check if there is an active session running to auto-resume
-            if (this.state.active && this.state.active.on) {
-                this.loadActiveExercise();
-                this.nav('screen-active');
-            } else {
-                this.renderHome();
-                this.renderProgramSelect(); 
-                this.nav('screen-home'); 
+            // Check for Auto-Saved Session
+            const savedSession = localStorage.getItem(CONFIG.KEYS.SESSION);
+            if (savedSession) {
+                const session = JSON.parse(savedSession);
+                if (session && session.active && session.active.on) {
+                    this.state.currentProgId = session.progId;
+                    this.state.active = session.active;
+                    this.state.active.timerInterval = null;
+                    this.state.active.restInterval = null;
+                    
+                    if (this.state.active.phase === 'summary') {
+                        this.renderSummaryUI();
+                    } else {
+                        this.resumeWorkout();
+                    }
+                    return; // Skip nav to home
+                }
             }
+            
+            this.nav('screen-home'); 
         } catch (e) {
             console.error(e);
             alert("שגיאה בטעינת נתונים.");
+            this.nav('screen-home');
         }
     },
 
@@ -74,30 +96,28 @@ const app = {
         const r = localStorage.getItem(CONFIG.KEYS.ROUTINES);
         let loadedRoutines = r ? JSON.parse(r) : null;
         if (!loadedRoutines) {
-            this.state.routines = {}; 
+            this.state.routines = JSON.parse(JSON.stringify(DEFAULT_ROUTINES_V17));
+            for(const pid in this.state.routines) {
+                this.state.routines.exercises.forEach(ex => {
+                    const bankEx = BASE_BANK_INIT.find(b => b.id === ex.id);
+                    if(bankEx) {
+                        ex.name = bankEx.name;
+                        ex.unit = bankEx.settings.unit;
+                        ex.cat = bankEx.cat;
+                    }
+                });
+            }
         } else {
             this.state.routines = loadedRoutines;
         }
 
-        // Load Exercises 
+        // Load Exercises
         const e = localStorage.getItem(CONFIG.KEYS.EXERCISES);
         if(e) {
             this.state.exercises = JSON.parse(e);
         } else {
-            this.state.exercises =[];
-        }
-
-        // Load Active Session (Auto Resume)
-        const a = localStorage.getItem(CONFIG.KEYS.ACTIVE_SESSION);
-        if (a) {
-            try {
-                const sessionData = JSON.parse(a);
-                this.state.currentProgId = sessionData.progId;
-                this.state.active = sessionData.active;
-            } catch (err) {
-                console.error("Failed to parse active session", err);
-                localStorage.removeItem(CONFIG.KEYS.ACTIVE_SESSION);
-            }
+            this.state.exercises = JSON.parse(JSON.stringify(BASE_BANK_INIT));
+            this.saveData();
         }
     },
 
@@ -107,20 +127,27 @@ const app = {
         localStorage.setItem(CONFIG.KEYS.EXERCISES, JSON.stringify(this.state.exercises));
     },
 
-    saveActiveState: function() {
-        if (this.state.active.on) {
-            const activeCopy = JSON.parse(JSON.stringify(this.state.active));
-            activeCopy.timerInterval = null; 
-            activeCopy.restInterval = null;
-            
-            const sessionData = {
-                progId: this.state.currentProgId,
-                active: activeCopy
-            };
-            localStorage.setItem(CONFIG.KEYS.ACTIVE_SESSION, JSON.stringify(sessionData));
-        } else {
-            localStorage.removeItem(CONFIG.KEYS.ACTIVE_SESSION);
-        }
+    /* --- AUTO-SAVE SESSION (State Persistence) --- */
+    saveSession: function() {
+        if (!this.state.active.on) return;
+        const sessionData = {
+            progId: this.state.currentProgId,
+            active: { ...this.state.active }
+        };
+        // Avoid saving live intervals
+        delete sessionData.active.timerInterval;
+        delete sessionData.active.restInterval;
+        
+        localStorage.setItem(CONFIG.KEYS.SESSION, JSON.stringify(sessionData));
+    },
+
+    clearSession: function() {
+        localStorage.removeItem(CONFIG.KEYS.SESSION);
+    },
+
+    resumeWorkout: function() {
+        this.nav('screen-active');
+        this.loadActiveExercise(true);
     },
 
     nav: function(screenId) {
@@ -144,12 +171,17 @@ const app = {
     goBack: function() {
         const activeScreen = document.querySelector('.screen.active').id;
         if (activeScreen === 'screen-active') {
-            if (confirm("לצאת מהאימון?")) {
+            if (confirm("לצאת מהאימון? לא יישמרו נתונים להבא.")) {
                 this.stopAllTimers();
                 this.state.active.on = false;
-                this.saveActiveState(); // Clears from storage because active.on is false
+                this.clearSession();
                 this.nav('screen-overview');
             }
+        } else if (activeScreen === 'screen-summary') {
+             if (confirm("לצאת מבלי לשמור את האימון להיסטוריה?")) {
+                this.clearSession();
+                this.nav('screen-home');
+             }
         } else if (activeScreen === 'screen-overview') {
              this.nav('screen-program-select');
         } else {
@@ -163,7 +195,6 @@ const app = {
     },
 
     /* --- RENDERING --- */
-
     renderProgramSelect: function() {
         const container = document.getElementById('prog-list-container');
         container.innerHTML = '';
@@ -238,20 +269,20 @@ const app = {
 
         this.state.active = {
             on: true,
+            phase: 'working',
             sessionExercises: JSON.parse(JSON.stringify(prog.exercises)),
             exIdx: 0, setIdx: 1, totalSets: 3,
-            log:[], startTime: Date.now(),
+            log:[], startTime: Date.now(), duration: 0,
             timerInterval: null, restInterval: null, 
             feel: 'good', isStopwatch: false, stopwatchVal: 0,
             inputW: 10, inputR: 12
         };
-        
-        this.saveActiveState();
         this.loadActiveExercise();
+        this.saveSession(); // Save after initial predictions
         this.nav('screen-active');
     },
 
-    loadActiveExercise: function() {
+    loadActiveExercise: function(isRestoring = false) {
         const exInst = this.state.active.sessionExercises;
         const exDef = this.getExerciseDef(exInst.id);
         
@@ -269,7 +300,7 @@ const app = {
             vidBtn.style.display = 'none';
         }
 
-        // Swap Button Logic: Core exercises ONLY, and ONLY on Set 1
+        // Swap Button Logic
         const swapBtn = document.getElementById('btn-swap-ex');
         if (exDef.cat === 'core' && this.state.active.setIdx === 1) {
             swapBtn.style.display = 'block';
@@ -285,20 +316,21 @@ const app = {
 
         this.renderStatsStrip(exInst.id, exDef.settings.unit);
 
-        // Check type
         const isTime = (exDef.settings.unit === 'bodyweight' && (exInst.id.includes('plank') || exInst.id.includes('static')));
         this.state.active.isStopwatch = isTime;
 
         if (isTime) {
             document.getElementById('cards-container').style.display = 'none';
             document.getElementById('stopwatch-container').style.display = 'flex';
-            if (!this.state.active.stopwatchVal) {
-                this.state.active.stopwatchVal = 0;
-            }
+            
+            if (!isRestoring) this.state.active.stopwatchVal = 0;
             this.stopStopwatch();
-            let m = Math.floor(this.state.active.stopwatchVal / 60);
-            let s = this.state.active.stopwatchVal % 60;
+            
+            let diff = this.state.active.stopwatchVal || 0;
+            let m = Math.floor(diff / 60);
+            let s = diff % 60;
             document.getElementById('sw-display').innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`;
+            
             document.getElementById('btn-sw-toggle').classList.remove('running');
             document.getElementById('btn-sw-toggle').innerText = "▶";
             document.getElementById('rest-timer-area').style.display = 'none';
@@ -307,48 +339,53 @@ const app = {
             document.getElementById('stopwatch-container').style.display = 'none';
             document.getElementById('unit-label-card').innerText = exDef.settings.unit === 'plates' ? 'פלטות' : 'ק״ג';
             
-            // SMART WEIGHT PREDICTION
-            let smartWeight = exInst.target?.w || 10;
-            // Overwrite with history if exists
-            for(let i=this.state.history.length-1; i>=0; i--) {
-                const sess = this.state.history;
-                const found = sess.data.find(e => e.id === exInst.id);
-                if(found && found.sets.length > 0) {
-                    smartWeight = found.sets.w;
-                    break;
+            if (!isRestoring) {
+                // SMART WEIGHT PREDICTION
+                let smartWeight = exInst.target?.w || 10;
+                for(let i=this.state.history.length-1; i>=0; i--) {
+                    const sess = this.state.history;
+                    const found = sess.data.find(e => e.id === exInst.id);
+                    if(found && found.sets.length > 0) {
+                        smartWeight = found.sets.w;
+                        break;
+                    }
                 }
-            }
-            if (!this.state.active.inputW || this.state.active.setIdx === 1) {
                 this.state.active.inputW = smartWeight;
+                this.state.active.inputR = exInst.target?.r || 12;
             }
-            this.state.active.inputR = this.state.active.inputR || exInst.target?.r || 12;
             this.populateSelects(exDef);
         }
 
+        if (!isRestoring) {
+            this.state.active.feel = 'good';
+        }
         this.updateFeelUI();
 
-        // RESUME LOGIC: Check if this exercise is already fully finished
-        let exLog = this.state.active.log.find(l => l.id === exInst.id);
-        if (exLog && exLog.sets.length >= this.state.active.totalSets) {
-            document.getElementById('decision-buttons').style.display = 'flex';
-            document.getElementById('btn-finish').style.display = 'none';
-            document.getElementById('next-ex-preview').style.display = 'block';
-            document.getElementById('rest-timer-area').style.display = 'none';
-            document.getElementById('btn-swap-ex').style.display = 'none';
-            
-            const nextEx = this.state.active.sessionExercises;
-            const nextEl = document.getElementById('next-ex-preview');
-            nextEl.innerText = nextEx ? `הבא בתור: ${nextEx.name}` : "הבא בתור: סיום אימון";
-            
-            const addBtn = document.getElementById('btn-add-core');
-            if (exDef.cat === 'core') addBtn.style.display = 'block';
-            else addBtn.style.display = 'none';
+        if (this.state.active.phase === 'decision') {
+            this.showDecisionPhaseUI(exInst);
         } else {
             document.getElementById('decision-buttons').style.display = 'none';
             document.getElementById('next-ex-preview').style.display = 'none';
             document.getElementById('btn-finish').style.display = 'flex';
             document.getElementById('rest-timer-area').style.display = 'none';
         }
+    },
+
+    showDecisionPhaseUI: function(exInst) {
+        document.getElementById('btn-swap-ex').style.display = 'none';
+        document.getElementById('btn-finish').style.display = 'none';
+        document.getElementById('decision-buttons').style.display = 'flex';
+        document.getElementById('rest-timer-area').style.display = 'none';
+
+        const nextEx = this.state.active.sessionExercises;
+        const nextEl = document.getElementById('next-ex-preview');
+        nextEl.innerText = nextEx ? `הבא בתור: ${nextEx.name}` : "הבא בתור: סיום אימון";
+        nextEl.style.display = 'block';
+
+        const exDef = this.getExerciseDef(exInst.id);
+        const addBtn = document.getElementById('btn-add-core');
+        if (exDef.cat === 'core') addBtn.style.display = 'block';
+        else addBtn.style.display = 'none';
     },
 
     renderStatsStrip: function(exId, unit) {
@@ -422,7 +459,10 @@ const app = {
             this.state.active.inputW = closest;
         }
         
-        selW.onchange = (e) => this.state.active.inputW = Number(e.target.value);
+        selW.onchange = (e) => { 
+            this.state.active.inputW = Number(e.target.value); 
+            if(this.state.active.on) this.saveSession();
+        };
 
         let rOpts =[];
         const maxReps = exDef.cat === 'core' ? 50 : 30;
@@ -436,7 +476,10 @@ const app = {
             selR.appendChild(opt);
         });
         selR.value = this.state.active.inputR;
-        selR.onchange = (e) => this.state.active.inputR = Number(e.target.value);
+        selR.onchange = (e) => { 
+            this.state.active.inputR = Number(e.target.value); 
+            if(this.state.active.on) this.saveSession();
+        };
     },
 
     toggleStopwatch: function() {
@@ -469,6 +512,7 @@ const app = {
     selectFeel: function(f) {
         this.state.active.feel = f;
         this.updateFeelUI();
+        if(this.state.active.on) this.saveSession();
     },
 
     updateFeelUI: function() {
@@ -504,6 +548,7 @@ const app = {
 
         if (this.state.active.setIdx < this.state.active.totalSets) {
             this.state.active.setIdx++;
+            this.state.active.phase = 'working';
             document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
             
             document.getElementById('btn-swap-ex').style.display = 'none';
@@ -515,26 +560,10 @@ const app = {
                 document.getElementById('sw-display').innerText = "00:00";
             }
         } else {
-            document.getElementById('btn-swap-ex').style.display = 'none';
-            document.getElementById('btn-finish').style.display = 'none';
-            document.getElementById('decision-buttons').style.display = 'flex';
-            document.getElementById('rest-timer-area').style.display = 'none';
-
-            const nextEx = this.state.active.sessionExercises;
-            const nextEl = document.getElementById('next-ex-preview');
-            nextEl.innerText = nextEx ? `הבא בתור: ${nextEx.name}` : "הבא בתור: סיום אימון";
-            nextEl.style.display = 'block';
-
-            const exDef = this.getExerciseDef(exInst.id);
-            const addBtn = document.getElementById('btn-add-core');
-            if (exDef.cat === 'core') {
-                addBtn.style.display = 'block';
-            } else {
-                addBtn.style.display = 'none';
-            }
+            this.state.active.phase = 'decision';
+            this.showDecisionPhaseUI(exInst);
         }
-
-        this.saveActiveState();
+        this.saveSession();
     },
 
     startRestTimer: function(durationSec) {
@@ -583,6 +612,7 @@ const app = {
     addSet: function() {
         this.state.active.totalSets++;
         this.state.active.setIdx++;
+        this.state.active.phase = 'working';
         document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
         
         document.getElementById('btn-swap-ex').style.display = 'none';
@@ -597,8 +627,7 @@ const app = {
             this.state.active.stopwatchVal = 0;
             document.getElementById('sw-display').innerText = "00:00";
         }
-
-        this.saveActiveState();
+        this.saveSession();
     },
 
     deleteLastSet: function() {
@@ -609,22 +638,28 @@ const app = {
             exLog.sets.pop();
             this.stopRestTimer();
 
-            if (this.state.active.setIdx > 1) {
+            // Only decrement if we were genuinely working on a further set
+            if (this.state.active.phase !== 'decision' && this.state.active.setIdx > 1) {
                 this.state.active.setIdx--;
-                document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
-                
-                const exDef = this.getExerciseDef(exInst.id);
-                if (exDef.cat === 'core' && this.state.active.setIdx === 1) {
-                     document.getElementById('btn-swap-ex').style.display = 'block';
-                }
-
-                document.getElementById('decision-buttons').style.display = 'none';
-                document.getElementById('next-ex-preview').style.display = 'none';
-                document.getElementById('btn-finish').style.display = 'flex';
             }
+            
+            this.state.active.phase = 'working';
+            
+            document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
+            
+            const exDef = this.getExerciseDef(exInst.id);
+            if (exDef.cat === 'core' && this.state.active.setIdx === 1) {
+                 document.getElementById('btn-swap-ex').style.display = 'block';
+            } else {
+                 document.getElementById('btn-swap-ex').style.display = 'none';
+            }
+
+            document.getElementById('decision-buttons').style.display = 'none';
+            document.getElementById('next-ex-preview').style.display = 'none';
+            document.getElementById('btn-finish').style.display = 'flex';
+            
+            this.saveSession();
         }
-        
-        this.saveActiveState();
     },
 
     skipExercise: function() {
@@ -636,16 +671,23 @@ const app = {
         if (this.state.active.exIdx < this.state.active.sessionExercises.length - 1) {
             this.state.active.exIdx++;
             this.state.active.setIdx = 1;
-            this.saveActiveState();
+            this.state.active.phase = 'working';
             this.loadActiveExercise();
+            this.saveSession();
         } else {
             this.finishWorkout();
         }
     },
 
     finishWorkout: function() {
+        this.state.active.phase = 'summary';
         const endTime = Date.now();
-        const durationMin = Math.round((endTime - this.state.active.startTime) / 60000);
+        this.state.active.duration = Math.round((endTime - this.state.active.startTime) / 60000);
+        this.saveSession();
+        this.renderSummaryUI();
+    },
+
+    renderSummaryUI: function() {
         const dateStr = new Date().toLocaleDateString('he-IL');
         const progTitle = this.state.routines.title;
 
@@ -653,12 +695,12 @@ const app = {
             program: this.state.currentProgId,
             programTitle: progTitle, 
             date: dateStr,
-            duration: durationMin,
+            duration: this.state.active.duration,
             data: this.state.active.log
         };
 
         const meta = document.getElementById('summary-meta');
-        meta.innerText = `${dateStr} | ${durationMin} דקות`;
+        meta.innerText = `${dateStr} | ${this.state.active.duration} דקות`;
         const textBox = document.getElementById('summary-text');
         textBox.innerText = this.generateLogText(tempItem);
         this.nav('screen-summary');
@@ -673,7 +715,7 @@ const app = {
             if(ex.sets.length > 0) {
                 txt += `✅ ${ex.name}\n`;
                 const exDef = this.getExerciseDef(ex.id);
-                const isTime = (ex.id.includes('plank') || (exDef.settings.unit === 'bodyweight' && ex.sets.w === 0));
+                const isTime = (ex.id.includes('plank') || exDef.settings.unit === 'bodyweight' && ex.sets.w === 0);
                 const isSingleSide = exDef.settings.isUnilateral;
 
                 ex.sets.forEach((s, i) => {
@@ -698,56 +740,31 @@ const app = {
         return txt;
     },
 
-    finishAndCopy: function() {
+    /* --- Unified Finish Action --- */
+    finishAndSave: function() {
         const txt = document.getElementById('summary-text').innerText;
-        const successMsg = "הסיכום הועתק ונשמר בהצלחה!";
         
-        const finalize = () => {
-            alert(successMsg);
-            this.saveAndHome();
-        };
-
-        if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(txt)
-                .then(finalize)
-                .catch(() => {
-                    alert("הסיכום נשמר, אך ההעתקה נכשלה.");
-                    this.saveAndHome();
+        // Use copy function with callback to proceed ONLY after copying
+        this.copyText(txt, () => {
+            // Push to history
+            if (this.state.active.log.length > 0) {
+                const progTitle = this.state.routines.title;
+                this.state.history.push({
+                    date: new Date().toLocaleDateString('he-IL'),
+                    timestamp: Date.now(),
+                    program: this.state.currentProgId,
+                    programTitle: progTitle, 
+                    data: this.state.active.log,
+                    duration: this.state.active.duration
                 });
-        } else {
-            const ta = document.createElement('textarea');
-            ta.value = txt;
-            document.body.appendChild(ta);
-            ta.select();
-            try {
-                document.execCommand('copy');
-                finalize();
-            } catch(e) {
-                alert("הסיכום נשמר, אך ההעתקה נכשלה.");
-                this.saveAndHome();
+                this.saveData();
             }
-            document.body.removeChild(ta);
-        }
-    },
-
-    saveAndHome: function() {
-        if (this.state.active.log.length > 0) {
-            const progTitle = this.state.routines.title;
-            this.state.history.push({
-                date: new Date().toLocaleDateString('he-IL'),
-                timestamp: Date.now(),
-                program: this.state.currentProgId,
-                programTitle: progTitle, 
-                data: this.state.active.log,
-                duration: Math.round((Date.now() - this.state.active.startTime) / 60000)
-            });
-            this.saveData();
-        }
-        // Clear Active Session
-        this.state.active.on = false;
-        this.saveActiveState();
-
-        window.location.reload();
+            // Clear auto-save session
+            this.clearSession();
+            
+            alert("הסיכום הועתק והאימון נשמר בהצלחה!");
+            window.location.reload();
+        });
     },
 
     /* --- USER SELECTOR (SWAP/ADD) --- */
@@ -800,8 +817,9 @@ const app = {
                 sets: 3, 
                 rest: 60
             };
-            this.saveActiveState();
+            this.state.active.phase = 'working';
             this.loadActiveExercise();
+            this.saveSession();
         } else if (this.state.userSelector.mode === 'add') {
             const newExInst = {
                 id: exId,
@@ -810,7 +828,6 @@ const app = {
                 rest: 60
             };
             this.state.active.sessionExercises.splice(this.state.active.exIdx + 1, 0, newExInst);
-            this.saveActiveState();
             this.nextExercise();
         }
 
@@ -963,7 +980,7 @@ const app = {
         this.renderEditorList();
     },
 
-    /* --- ADMIN: EXERCISE MANAGER --- */
+    /* --- ADMIN: EXERCISE MANAGER (NEW) --- */
     
     openExerciseManager: function() {
         document.getElementById('admin-view-home').style.display = 'none';
@@ -1366,17 +1383,22 @@ const app = {
         }
     },
 
-    copyText: function(txt) {
+    copyText: function(txt, callback) {
         if (navigator.clipboard) {
-            navigator.clipboard.writeText(txt).then(() => alert("הועתק!"));
+            navigator.clipboard.writeText(txt).then(() => {
+                if(callback) callback();
+                else alert("הועתק!");
+            }).catch(e => {
+                if(callback) callback();
+                else alert("הועתק!");
+            });
         } else {
-            const ta = document.createElement('textarea');
-            ta.value = txt;
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-            alert("הועתק!");
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+            } catch(e) {}
+            if(callback) callback();
+            else alert("הועתק!");
         }
     }
 };
