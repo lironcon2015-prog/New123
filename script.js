@@ -1,8 +1,7 @@
 /**
- * GYMSTART V1.8.0
- * - Upgrade 1: Unified Finish & Copy button.
- * - Upgrade 2: Persistence & Resume (Crash Recovery) with Net Duration logic.
- * - Upgrade 3: Dynamic Reorder (Swap Future Exercises) & Core Swap on Set 1.
+ * GYMSTART V1.8.0 (Fixes Applied)
+ * - Timer Logic: Counts UP (Accumulating) based on start timestamp.
+ * - Core Logic: Improved detection to ensure Swap menu opens for Core exercises.
  */
 
 const CONFIG = {
@@ -10,14 +9,14 @@ const CONFIG = {
         ROUTINES: 'gymstart_v1_7_routines',
         HISTORY: 'gymstart_beta_02_history',
         EXERCISES: 'gymstart_v1_7_exercises_bank',
-        ACTIVE_WORKOUT: 'gymstart_active_workout_state' // New key for persistence
+        ACTIVE_WORKOUT: 'gymstart_active_workout_state'
     },
     VERSION: '1.8.0'
 };
 
 const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה' };
 
-// BASE EXERCISES FOR MIGRATION ONLY
+// BASE EXERCISES
 const BASE_BANK_INIT = [
     { id: 'goblet', name: 'גובלט סקוואט', cat: 'legs', settings: {unit:'kg', step:2.5, min:2.5, max:60} },
     { id: 'leg_press', name: 'לחיצת רגליים', cat: 'legs', settings: {unit:'kg', step:5, min:20, max:200} },
@@ -66,20 +65,20 @@ const app = {
             exIdx: 0, setIdx: 1, totalSets: 3,
             log: [], 
             startTime: 0, 
-            accumulatedTime: 0, // NEW: For net duration calculation
+            accumulatedTime: 0, 
             timerInterval: null, restInterval: null, 
-            restTargetTime: 0, // NEW: For accurate timer
+            restStartTime: 0, // Changed from restTargetTime for Count Up
+            restDuration: 60,
             feel: 'good', isStopwatch: false, stopwatchVal: 0,
             inputW: 10, inputR: 12
         },
-        // Temporary state for resume modal
         tempActive: null,
         
         admin: { 
             viewProgId: null, editTipEx: null, selectorFilter: 'all', exManagerFilter: 'all',
             tempExercises: [], editingExId: null 
         },
-        userSelector: { mode: null }, // 'swap', 'add', 'reorder'
+        userSelector: { mode: null },
         historySelection: [],
         viewHistoryIdx: null
     },
@@ -87,7 +86,7 @@ const app = {
     init: function() {
         try {
             this.loadData();
-            this.checkActiveWorkout(); // Upgrade 2: Check persistence
+            this.checkActiveWorkout();
             this.renderHome();
             this.renderProgramSelect(); 
             if(!this.state.tempActive) this.nav('screen-home'); 
@@ -130,23 +129,21 @@ const app = {
         localStorage.setItem(CONFIG.KEYS.EXERCISES, JSON.stringify(this.state.exercises));
     },
 
-    /* --- UPGRADE 2: PERSISTENCE & RESUME --- */
+    /* --- PERSISTENCE & RESUME --- */
     
     saveActiveState: function() {
         if (!this.state.active.on) {
             localStorage.removeItem(CONFIG.KEYS.ACTIVE_WORKOUT);
             return;
         }
-        // Update accumulated time to include current session part so far
         const currentSession = Date.now() - this.state.active.startTime;
         const stateToSave = { ...this.state.active };
         stateToSave.accumulatedTime = this.state.active.accumulatedTime + currentSession;
-        // Don't save intervals
         stateToSave.timerInterval = null;
         stateToSave.restInterval = null;
         
         localStorage.setItem(CONFIG.KEYS.ACTIVE_WORKOUT, JSON.stringify(stateToSave));
-        // Reset start time to now to prevent double counting if we continue running
+        // Reset start time to now to prevent double counting
         this.state.active.accumulatedTime = stateToSave.accumulatedTime;
         this.state.active.startTime = Date.now();
     },
@@ -162,14 +159,22 @@ const app = {
     resumeWorkout: function() {
         if (this.state.tempActive) {
             this.state.active = this.state.tempActive;
-            this.state.active.startTime = Date.now(); // Reset start time for new session
+            this.state.active.startTime = Date.now(); 
             this.state.active.timerInterval = null;
             this.state.active.restInterval = null;
-            this.state.currentProgId = this.state.active.log.length > 0 ? this.state.active.log[0].programId : Object.keys(this.state.routines)[0]; // Fallback
+            this.state.currentProgId = this.state.active.log.length > 0 ? this.state.active.log[0].programId : Object.keys(this.state.routines)[0];
             
-            // Re-find current prog id if possible for UI
-            // Not strictly needed for logic as sessionExercises has the data
-            
+            // Resume Timer if it was running
+            if (this.state.active.restStartTime > 0) {
+                 // Check if still within duration
+                 const elapsed = (Date.now() - this.state.active.restStartTime) / 1000;
+                 if (elapsed < (this.state.active.restDuration || 60)) {
+                      this.startRestTimer(this.state.active.restDuration);
+                 } else {
+                      this.state.active.restStartTime = 0; // Reset if expired while closed
+                 }
+            }
+
             document.getElementById('resume-modal').style.display = 'none';
             this.loadActiveExercise();
             this.nav('screen-active');
@@ -275,8 +280,16 @@ const app = {
     },
 
     getExerciseDef: function(exId) {
-        return this.state.exercises.find(e => e.id === exId) || 
-               { name: 'תרגיל לא ידוע', cat:'other', settings: {unit:'kg', step:2.5, min:0, max:50} };
+        const found = this.state.exercises.find(e => e.id === exId);
+        if (found) return found;
+        
+        // Safety Fallback for Core detection if Bank is missing
+        let isCore = exId.includes('plank') || exId.includes('core') || exId.includes('situp') || exId.includes('crunch');
+        return { 
+            name: 'תרגיל לא ידוע', 
+            cat: isCore ? 'core' : 'other', 
+            settings: {unit:'kg', step:2.5, min:0, max:50} 
+        };
     },
 
     /* --- WORKOUT LOGIC --- */
@@ -296,6 +309,8 @@ const app = {
             startTime: Date.now(),
             accumulatedTime: 0,
             timerInterval: null, restInterval: null, 
+            restStartTime: 0,
+            restDuration: 60,
             feel: 'good', isStopwatch: false, stopwatchVal: 0,
             inputW: 10, inputR: 12
         };
@@ -320,11 +335,10 @@ const app = {
             vidBtn.href = exDef.videoUrl;
         } else { vidBtn.style.display = 'none'; }
 
-        // Upgrade 3: Unified "Reorder/Swap" Button
+        // Reorder / Swap Logic
         const reorderBtn = document.getElementById('btn-reorder');
         if (this.state.active.setIdx === 1) {
             reorderBtn.style.display = 'block';
-            // Set Text contextually (though logic handled in openReorder)
             if (exDef.cat === 'core') reorderBtn.innerText = "החליפי תרגיל";
             else reorderBtn.innerText = "שינוי סדר";
             
@@ -542,9 +556,10 @@ const app = {
             else addBtn.style.display = 'none';
         }
         
-        this.saveActiveState(); // Save state on every set finish
+        this.saveActiveState();
     },
 
+    // Fixed Timer to Count UP with persistence
     startRestTimer: function(durationSec) {
         this.stopRestTimer();
         const area = document.getElementById('rest-timer-area');
@@ -554,39 +569,44 @@ const app = {
         area.style.display = 'flex';
         area.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-        this.state.active.restTargetTime = Date.now() + (durationSec * 1000);
+        this.state.active.restDuration = durationSec;
+        // If not resuming (fresh start), set start time
+        if (!this.state.active.restStartTime || this.state.active.restStartTime === 0) {
+            this.state.active.restStartTime = Date.now();
+        }
+        
         const MAX_OFFSET = 408; 
         
         this.state.active.restInterval = setInterval(() => {
-            const now = Date.now();
-            const remain = Math.ceil((this.state.active.restTargetTime - now) / 1000);
+            const elapsed = Math.floor((Date.now() - this.state.active.restStartTime) / 1000);
             
-            if (remain <= 0) {
-                disp.innerText = "00:00";
+            if (elapsed > durationSec) {
+                disp.innerText = "סיום!";
                 ring.style.strokeDashoffset = 0;
                 if (navigator.vibrate) navigator.vibrate([200,100,200]);
                 this.stopRestTimer();
+                this.state.active.restStartTime = 0; // Reset
                 return;
             }
 
-            let m = Math.floor(remain / 60);
-            let s = remain % 60;
+            let m = Math.floor(elapsed / 60);
+            let s = elapsed % 60;
             disp.innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`;
             
-            // Progress Ring
-            const elapsed = durationSec - remain;
+            // Ring fills up (Count Up)
             const ratio = elapsed / durationSec;
-            const offset = MAX_OFFSET - (MAX_OFFSET * (1-ratio)); 
-            ring.style.strokeDashoffset = (MAX_OFFSET * (1-ratio)); // Fix ring direction
-            ring.style.strokeDashoffset = MAX_OFFSET - (MAX_OFFSET * ratio); 
+            const offset = MAX_OFFSET - (MAX_OFFSET * ratio); 
+            ring.style.strokeDashoffset = offset;
 
         }, 100);
+        this.saveActiveState(); // Save timer state
     },
 
     stopRestTimer: function() {
         if(this.state.active.restInterval) clearInterval(this.state.active.restInterval);
         this.state.active.restInterval = null;
         document.getElementById('rest-timer-area').style.display = 'none';
+        this.state.active.restStartTime = 0;
     },
 
     stopAllTimers: function() {
@@ -662,7 +682,6 @@ const app = {
         const dateStr = new Date().toLocaleDateString('he-IL');
         const progTitle = this.state.routines[this.state.currentProgId]?.title || "אימון מזדמן";
 
-        // Save for the Summary View
         this.state.active.summary = {
             program: this.state.currentProgId,
             programTitle: progTitle, 
@@ -718,14 +737,10 @@ const app = {
         this.copyText(txt);
     },
 
-    /* --- UPGRADE 1: UNIFIED FINISH --- */
     finishAndCopy: function() {
         const summary = this.state.active.summary;
         if (summary) {
-            // 1. Copy
             this.copySummaryToClipboard();
-            
-            // 2. Save
             this.state.history.push({
                 date: summary.date,
                 timestamp: Date.now(),
@@ -735,26 +750,23 @@ const app = {
                 duration: summary.duration
             });
             this.saveData();
-            
-            // 3. Clear Active & Home
             localStorage.removeItem(CONFIG.KEYS.ACTIVE_WORKOUT);
             window.location.reload(); 
         }
     },
 
-    /* --- UPGRADE 3: REORDER / SWAP LOGIC --- */
+    /* --- REORDER / SWAP LOGIC --- */
     
     openReorder: function() {
         const exInst = this.state.active.sessionExercises[this.state.active.exIdx];
         const exDef = this.getExerciseDef(exInst.id);
         
         if (exDef.cat === 'core') {
-            this.state.userSelector.mode = 'swap'; // Core uses Swap Logic (from Bank)
+            this.state.userSelector.mode = 'swap';
             this.renderUserSelector('core');
             document.getElementById('user-sel-title').innerText = "החליפי תרגיל";
             document.getElementById('user-selector-modal').style.display = 'flex';
         } else {
-            // Other exercises use Reorder Logic (Future exercises from session)
             this.renderReorderList();
             document.getElementById('reorder-modal').style.display = 'flex';
         }
@@ -763,8 +775,6 @@ const app = {
     renderReorderList: function() {
         const list = document.getElementById('reorder-list');
         list.innerHTML = '';
-        
-        // Filter exercises that are AFTER the current one
         const futureExercises = this.state.active.sessionExercises.slice(this.state.active.exIdx + 1);
         
         if (futureExercises.length === 0) {
@@ -773,7 +783,6 @@ const app = {
         }
 
         futureExercises.forEach((ex, idx) => {
-             // idx is relative to the slice, so real index is current + 1 + idx
              const realIndex = this.state.active.exIdx + 1 + idx;
              list.innerHTML += `
              <div class="list-item" onclick="app.selectReorderExercise(${realIndex})">
@@ -784,13 +793,8 @@ const app = {
     },
 
     selectReorderExercise: function(targetIndex) {
-        // Splice Logic: Remove from target, Insert at current
         const chosenEx = this.state.active.sessionExercises.splice(targetIndex, 1)[0];
         this.state.active.sessionExercises.splice(this.state.active.exIdx, 0, chosenEx);
-        
-        // Current index now points to the new exercise.
-        // The old exercise was pushed to exIdx + 1.
-        
         this.closeReorder();
         this.saveActiveState();
         this.loadActiveExercise();
