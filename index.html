@@ -101,7 +101,7 @@
                 <div id="selector-list" class="vertical-stack scroll-y" style="margin-top:10px;"></div>
             </div>
 
-            <!-- VIEW 4: EXERCISE MANAGER -->
+            <!-- VIEW 4: EXERCISE MANAGER (New) -->
             <div id="admin-view-ex-manager" class="admin-view" style="display:none;">
                 <div class="modal-header">
                     <h3>מאגר תרגילים</h3>
@@ -110,6 +110,7 @@
                 
                 <input type="text" id="ex-mgr-search" class="search-input" placeholder="חפש במאגר..." onkeyup="app.renderExerciseManagerList()">
                 
+                <!-- Chips Filter for Manager -->
                 <div class="chip-container">
                     <button class="chip active" onclick="app.setExManagerFilter('all', this)">הכל</button>
                     <button class="chip" onclick="app.setExManagerFilter('legs', this)">רגליים</button>
@@ -126,7 +127,7 @@
                 </div>
             </div>
 
-            <!-- VIEW 5: EXERCISE EDIT FORM -->
+            <!-- VIEW 5: EXERCISE EDIT FORM (New) -->
             <div id="admin-view-ex-edit" class="admin-view" style="display:none;">
                 <div class="modal-header">
                     <h3>עריכת תרגיל</h3>
@@ -354,7 +355,7 @@
                             סיום סט
                         </button>
                         
-                        <!-- Swap Exercise Button (Initially hidden) -->
+                        <!-- Swap Exercise Button (Initially hidden, handled by JS) -->
                         <button id="btn-swap-ex" class="btn-quiet" onclick="app.openSwapExercise()" style="display:none;">
                             החליפי תרגיל
                         </button>
@@ -404,8 +405,7 @@
             </div>
             
             <div class="fixed-footer">
-                <!-- NEW SINGLE BUTTON FOR FINISH & COPY -->
-                <button class="btn-primary" onclick="app.finishAndCopy()">העתק ושמור אימון</button>
+                <button class="btn-primary" onclick="app.finishAndSave()">העתק סיכום וסיים אימון</button>
             </div>
         </div>
 
