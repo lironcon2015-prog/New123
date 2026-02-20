@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>GymStart V1.8.0</title>
+    <title>GymStart V1.8.1</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="stylesheet" href="style.css">
@@ -14,6 +14,23 @@
     <!-- Hidden File Inputs -->
     <input type="file" id="file-import-history" hidden accept=".json" onchange="app.importHistory(this)">
     <input type="file" id="file-import-config" hidden accept=".json" onchange="app.importConfig(this)">
+
+    <!-- RESUME SESSION MODAL (NEW V1.8.1) -->
+    <div id="resume-modal" class="modal-wrapper" style="z-index: 200;">
+        <div class="oled-modal compact-modal">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h3 style="margin: 0; font-size: 1.4rem;">נמצא אימון פעיל</h3>
+                <p id="resume-desc" style="color: #aaa; margin-top: 10px; font-size: 0.95rem;">
+                    האם להמשיך מהנקודה שבה הפסקת?
+                </p>
+            </div>
+            <div class="modal-footer-column">
+                <button class="btn-primary" onclick="app.resumeSession()">כן, המשך אימון</button>
+                <div style="height: 10px;"></div>
+                <button class="btn-danger-outline" onclick="app.discardSession()">לא, התחל מחדש</button>
+            </div>
+        </div>
+    </div>
 
     <!-- USER SELECTOR MODAL (For Swap/Add) -->
     <div id="user-selector-modal" class="modal-wrapper">
@@ -268,7 +285,7 @@
                     </div>
                 </div>
                 
-                <div class="version-tag">GymStart V1.8.0</div>
+                <div class="version-tag">GymStart V1.8.1</div>
             </div>
 
             <div class="fixed-footer">
