@@ -85,12 +85,7 @@ body, html {
     padding-bottom: calc(env(safe-area-inset-bottom) + 20px);
 }
 
-.active-header-section {
-    flex-shrink: 0;
-    text-align: center;
-    margin-bottom: 20px;
-}
-
+.active-header-section { flex-shrink: 0; text-align: center; margin-bottom: 20px; }
 .workspace { flex-shrink: 0; margin-bottom: 20px; }
 .active-controls-area { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
 .main-action-box { width: 100%; }
@@ -145,7 +140,6 @@ body, html {
     font-size: 0.95rem; margin-top: 10px;
 }
 
-/* Ghost Button */
 .btn-ghost {
     background: transparent;
     border: 1px solid #333;
@@ -157,19 +151,21 @@ body, html {
 }
 .btn-ghost:active { border-color: #666; color: white; background: #111; }
 
-/* New Quiet Button for Swap */
+/* The New Quiet Button (For Change Order) */
 .btn-quiet {
     background: transparent;
     border: none;
     color: var(--text-sec);
     width: 100%;
-    padding: 10px;
-    font-size: 0.9rem;
+    padding: 12px;
+    font-size: 0.95rem;
     cursor: pointer;
-    margin-top: 10px;
+    margin-top: 5px;
     text-decoration: none;
+    font-weight: 500;
+    opacity: 0.8;
 }
-.btn-quiet:active { color: white; background: rgba(255,255,255,0.05); border-radius: 8px; }
+.btn-quiet:active { color: white; opacity: 1; }
 
 /* Home */
 .hero { text-align: center; margin-bottom: 25px; margin-top: 20px; }
@@ -282,7 +278,7 @@ body, html {
 .btn-tool-danger:enabled { opacity: 1; }
 .text-close-btn { background: none; border: none; color: #777; font-size: 1rem; cursor: pointer; }
 
-/* --- NEW GYMPRO STYLE ADMIN --- */
+/* Admin Layout */
 .admin-layout { padding: 0; background: #000; overflow: hidden; height: 90vh; }
 .admin-view { display: flex; flex-direction: column; height: 100%; padding: 20px; overflow: hidden; }
 .scroll-y { overflow-y: auto; flex: 1; min-height: 0; }
