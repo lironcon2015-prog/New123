@@ -17,7 +17,7 @@ const CONFIG = {
 
 const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה' };
 
-// BASE EXERCISES FOR MIGRATION ONLY
+// BASE EXERCISES FOR MIGRATION ONLY (Not used directly anymore)
 const BASE_BANK_INIT =;
 
 const DEFAULT_ROUTINES_V17 = {
@@ -28,7 +28,7 @@ const DEFAULT_ROUTINES_V17 = {
 const app = {
     state: {
         routines: {},
-        history: [],
+        history:[],
         exercises:[],
         currentProgId: null,
         active: {
@@ -1384,22 +1384,27 @@ const app = {
     },
 
     copyText: function(txt, callback) {
-        if (navigator.clipboard) {
+        if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(txt).then(() => {
-                if(callback) callback();
-                else alert("הועתק!");
-            }).catch(e => {
-                if(callback) callback();
-                else alert("הועתק!");
+                if(callback) callback(); else alert("הועתק!");
+            }).catch(() => {
+                this.fallbackCopyText(txt, callback);
             });
         } else {
-            try {
-                const ta = document.createElement('textarea');
-                ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-            } catch(e) {}
-            if(callback) callback();
-            else alert("הועתק!");
+            this.fallbackCopyText(txt, callback);
         }
+    },
+    
+    fallbackCopyText: function(txt, callback) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = txt;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        } catch(e) {}
+        if(callback) callback(); else alert("הועתק!");
     }
 };
 
