@@ -15,7 +15,7 @@
     <input type="file" id="file-import-history" hidden accept=".json" onchange="app.importHistory(this)">
     <input type="file" id="file-import-config" hidden accept=".json" onchange="app.importConfig(this)">
 
-    <!-- RESUME WORKOUT MODAL (Upgrade 2) -->
+    <!-- RESUME WORKOUT MODAL -->
     <div id="resume-modal" class="modal-wrapper" style="z-index: 200;">
         <div class="oled-modal" style="text-align: center;">
             <h3 style="margin-bottom: 10px;">נמצא אימון פעיל</h3>
@@ -27,7 +27,7 @@
         </div>
     </div>
 
-    <!-- REORDER / SWAP MODAL (Upgrade 3) -->
+    <!-- REORDER / SWAP MODAL -->
     <div id="reorder-modal" class="modal-wrapper">
         <div class="oled-modal" style="max-height: 80vh;">
             <div class="modal-header">
@@ -35,6 +35,17 @@
                 <button class="text-close-btn" onclick="app.closeReorder()">ביטול</button>
             </div>
             <div id="reorder-list" class="vertical-stack scroll-y"></div>
+        </div>
+    </div>
+
+    <!-- USER SELECTOR MODAL (ADDED: Fixes Core Swap/Add) -->
+    <div id="user-selector-modal" class="modal-wrapper">
+        <div class="oled-modal" style="max-height: 80vh;">
+            <div class="modal-header">
+                <h3 id="user-sel-title">בחרי תרגיל</h3>
+                <button class="text-close-btn" onclick="app.closeUserSelector()">ביטול</button>
+            </div>
+            <div id="user-sel-list" class="vertical-stack scroll-y"></div>
         </div>
     </div>
 
@@ -366,7 +377,7 @@
                             סיום סט
                         </button>
                         
-                        <!-- Upgrade 3: Unified Button for Reorder/Swap -->
+                        <!-- Unified Button for Reorder/Swap -->
                         <button id="btn-reorder" class="btn-quiet" onclick="app.openReorder()" style="display:none;">
                             שינוי סדר
                         </button>
@@ -404,7 +415,7 @@
             </div>
         </div>
 
-        <!-- SCREEN 4: SUMMARY (Upgrade 1) -->
+        <!-- SCREEN 4: SUMMARY -->
         <div id="screen-summary" class="screen">
             <div class="scroll-content">
                 <div class="hero">
@@ -416,7 +427,6 @@
             </div>
             
             <div class="fixed-footer">
-                <!-- Upgrade 1: Unified Button -->
                 <button class="btn-primary big-btn" onclick="app.finishAndCopy()">סיים, העתק ושמור</button>
             </div>
         </div>
