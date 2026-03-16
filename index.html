@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>GymStart V1.8.0</title>
+    <title>GymStart V1.8.1</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="stylesheet" href="style.css">
@@ -290,7 +290,7 @@
                     </div>
                 </div>
                 
-                <div class="version-tag">GymStart V1.8.0</div>
+                <div class="version-tag">GymStart V1.8.1</div>
             </div>
 
             <div class="fixed-footer">
@@ -340,7 +340,7 @@
                     </div>
                     
                     <div id="coach-note" class="note-pill"></div>
-                    <div id="last-stat-strip" class="stats-strip">--</div>
+                    <div id="last-stat-strip" class="stats-strip-enhanced"></div>
                 </div>
 
                 <div class="workspace">
@@ -386,8 +386,8 @@
 
                         <div id="decision-buttons" style="display:none; flex-direction:column; gap:10px; width:100%;">
                             <div style="display:flex; gap:10px; width:100%;">
-                                <button class="btn-outline" onclick="app.addSet()" style="flex:1">עוד סט</button>
-                                <button class="btn-primary" onclick="app.nextExercise()" style="flex:1">תרגיל הבא</button>
+                                <button id="btn-add-set" class="btn-outline" onclick="app.addSet()" style="flex:1">עוד סט</button>
+                                <button id="btn-next-ex" class="btn-primary" onclick="app.nextExercise()" style="flex:1">תרגיל הבא</button>
                             </div>
                             <!-- Add Core Button -->
                             <button id="btn-add-core" class="btn-outline" onclick="app.openAddCoreExercise()" style="display:none; border-color:var(--primary); color:var(--primary);">
@@ -422,6 +422,10 @@
                     <h1>כל הכבוד!</h1>
                     <p>האימון הושלם בהצלחה</p>
                     <div id="summary-meta" class="meta-tag"></div>
+                </div>
+                <div id="win-card" style="display:none;" class="win-card">
+                    <div class="win-card-title">השיפורים שלך מהאימון הקודם</div>
+                    <div id="win-list"></div>
                 </div>
                 <div id="summary-text" class="summary-box"></div>
             </div>
