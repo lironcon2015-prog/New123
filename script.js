@@ -1,6 +1,6 @@
 /**
- * GYMSTART V1.8.0 (Fixes Applied)
- * - Timer Logic: Counts UP (Accumulating) based on start timestamp.
+ * GYMSTART V1.8.1 (Fixes Applied)
+ * - Timer Logic: Counts UP continuously, ring stops at 100%, never disappears automatically.
  * - Core Logic: Improved detection to ensure Swap menu opens for Core exercises.
  */
 
@@ -11,13 +11,13 @@ const CONFIG = {
         EXERCISES: 'gymstart_v1_7_exercises_bank',
         ACTIVE_WORKOUT: 'gymstart_active_workout_state'
     },
-    VERSION: '1.8.0'
+    VERSION: '1.8.1'
 };
 
 const FEEL_MAP_TEXT = { 'easy': 'קל', 'good': 'בינוני', 'hard': 'קשה' };
 
 // BASE EXERCISES
-const BASE_BANK_INIT = [
+const BASE_BANK_INIT =[
     { id: 'goblet', name: 'גובלט סקוואט', cat: 'legs', settings: {unit:'kg', step:2.5, min:2.5, max:60} },
     { id: 'leg_press', name: 'לחיצת רגליים', cat: 'legs', settings: {unit:'kg', step:5, min:20, max:200} },
     { id: 'rdl', name: 'דדליפט רומני', cat: 'legs', settings: {unit:'kg', step:2.5, min:10, max:100} },
@@ -49,25 +49,25 @@ const BASE_BANK_INIT = [
 ];
 
 const DEFAULT_ROUTINES_V17 = {
-    'A': { title: 'רגליים וגב (A)', exercises: [ {id:'goblet', sets:3, rest:90}, {id:'leg_press', sets:3}, {id:'lat_pull', sets:3} ] },
-    'B': { title: 'חזה וכתפיים (B)', exercises: [ {id:'chest_press', sets:3}, {id:'shoulder_press', sets:3}, {id:'plank', sets:3} ] }
+    'A': { title: 'רגליים וגב (A)', exercises:[ {id:'goblet', sets:3, rest:90}, {id:'leg_press', sets:3}, {id:'lat_pull', sets:3} ] },
+    'B': { title: 'חזה וכתפיים (B)', exercises:[ {id:'chest_press', sets:3}, {id:'shoulder_press', sets:3}, {id:'plank', sets:3} ] }
 };
 
 const app = {
     state: {
         routines: {},
-        history: [],
-        exercises: [], 
+        history:[],
+        exercises:[], 
         currentProgId: null,
         active: {
             on: false,
-            sessionExercises: [],
+            sessionExercises:[],
             exIdx: 0, setIdx: 1, totalSets: 3,
-            log: [], 
+            log:[], 
             startTime: 0, 
             accumulatedTime: 0, 
             timerInterval: null, restInterval: null, 
-            restStartTime: 0, // Changed from restTargetTime for Count Up
+            restStartTime: 0, 
             restDuration: 60,
             feel: 'good', isStopwatch: false, stopwatchVal: 0,
             inputW: 10, inputR: 12
@@ -76,10 +76,10 @@ const app = {
         
         admin: { 
             viewProgId: null, editTipEx: null, selectorFilter: 'all', exManagerFilter: 'all',
-            tempExercises: [], editingExId: null 
+            tempExercises:[], editingExId: null 
         },
         userSelector: { mode: null },
-        historySelection: [],
+        historySelection:[],
         viewHistoryIdx: null
     },
 
@@ -98,7 +98,7 @@ const app = {
 
     loadData: function() {
         const h = localStorage.getItem(CONFIG.KEYS.HISTORY);
-        this.state.history = h ? JSON.parse(h) : [];
+        this.state.history = h ? JSON.parse(h) :[];
         
         const r = localStorage.getItem(CONFIG.KEYS.ROUTINES);
         let loadedRoutines = r ? JSON.parse(r) : null;
@@ -166,13 +166,7 @@ const app = {
             
             // Resume Timer if it was running
             if (this.state.active.restStartTime > 0) {
-                 // Check if still within duration
-                 const elapsed = (Date.now() - this.state.active.restStartTime) / 1000;
-                 if (elapsed < (this.state.active.restDuration || 60)) {
-                      this.startRestTimer(this.state.active.restDuration);
-                 } else {
-                      this.state.active.restStartTime = 0; // Reset if expired while closed
-                 }
+                 this.startRestTimer(this.state.active.restDuration || 60);
             }
 
             document.getElementById('resume-modal').style.display = 'none';
@@ -305,7 +299,7 @@ const app = {
             on: true,
             sessionExercises: JSON.parse(JSON.stringify(prog.exercises)),
             exIdx: 0, setIdx: 1, totalSets: 3,
-            log: [], 
+            log:[], 
             startTime: Date.now(),
             accumulatedTime: 0,
             timerInterval: null, restInterval: null, 
@@ -399,21 +393,94 @@ const app = {
 
     renderStatsStrip: function(exId, unit) {
         const strip = document.getElementById('last-stat-strip');
-        let lastLog = null;
-        for(let i=this.state.history.length-1; i>=0; i--) {
+        strip.innerHTML = '';
+
+        const exHistory = [];
+        for (let i = 0; i < this.state.history.length; i++) {
             const sess = this.state.history[i];
             const found = sess.data.find(e => e.id === exId);
-            if(found && found.sets.length > 0) { lastLog = found.sets[found.sets.length-1]; break; }
+            if (found && found.sets.length > 0) exHistory.push(found);
         }
-        if (!lastLog) { strip.innerText = "אין הישג קודם"; return; }
 
+        if (exHistory.length === 0) {
+            strip.innerHTML = '<div class="strip-no-data">אין הישג קודם</div>';
+            return;
+        }
+
+        const exDef = this.getExerciseDef(exId);
+        const isBodyweight = exDef.settings.unit === 'bodyweight';
         const isTime = this.state.active.isStopwatch;
-        const isBody = (unit === 'bodyweight' && !isTime);
-        let wStr = isBody ? 'משקל גוף' : `${lastLog.w} ק״ג`;
-        if (unit === 'plates') wStr = `${lastLog.w} פלטות`;
-        let rStr = isTime ? `${lastLog.r} שניות` : `${lastLog.r} חזרות`;
-        
-        strip.innerText = (isTime && unit === 'bodyweight') ? `${rStr} (אימון קודם)` : `${wStr} | ${rStr}`;
+
+        const getBest = (exRecord) => {
+            if (isTime || isBodyweight) return Math.max(...exRecord.sets.map(s => s.r));
+            return Math.max(...exRecord.sets.map(s => s.w));
+        };
+
+        const getUnitLabel = () => {
+            if (isTime) return 'שנ\'';
+            if (isBodyweight) return 'חזר\'';
+            if (unit === 'plates') return 'פלטות';
+            return 'ק״ג';
+        };
+
+        const unitLabel = getUnitLabel();
+        const lastSession = exHistory[exHistory.length - 1];
+        const lastBest = getBest(lastSession);
+
+        let trendHtml = '';
+        if (exHistory.length >= 2) {
+            const prevBest = getBest(exHistory[exHistory.length - 2]);
+            const diff = lastBest - prevBest;
+            if (diff > 0) {
+                trendHtml = `<div class="strip-trend up">▲ +${diff} ${unitLabel}</div>`;
+            } else if (diff < 0) {
+                trendHtml = `<div class="strip-trend down">▼ ${diff} ${unitLabel}</div>`;
+            } else {
+                trendHtml = `<div class="strip-trend neutral">ללא שינוי</div>`;
+            }
+        }
+
+        const sparkData = exHistory.slice(-5).map(e => getBest(e));
+        let sparkHtml = '';
+        if (sparkData.length >= 2) {
+            const minV = Math.min(...sparkData);
+            const maxV = Math.max(...sparkData);
+            const range = maxV - minV || 1;
+            const W = 64, H = 28, pad = 3;
+            const points = sparkData.map((v, i) => {
+                const x = pad + (i / (sparkData.length - 1)) * (W - pad * 2);
+                const y = H - pad - ((v - minV) / range) * (H - pad * 2);
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+            });
+            const lastPt = points[points.length - 1].split(',');
+            sparkHtml = `
+                <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;overflow:visible;">
+                    <polyline points="${points.join(' ')}" fill="none" stroke="#00ffee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+                    <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="2.5" fill="#00ffee"/>
+                </svg>`;
+        }
+
+        const allBests = exHistory.map(e => getBest(e));
+        const pr = Math.max(...allBests);
+        const prSessionIndex = allBests.lastIndexOf(pr);
+        const isCurrentPR = (prSessionIndex === exHistory.length - 1);
+        const prLabel = isCurrentPR ? '⭐ שיא!' : `${pr} ${unitLabel}`;
+        const prColor = isCurrentPR ? 'var(--primary)' : '#777';
+
+        strip.innerHTML = `
+            <div class="strip-section">
+                <div class="strip-lbl">אימון קודם</div>
+                <div class="strip-val">${lastBest} ${unitLabel}</div>
+                ${trendHtml}
+            </div>
+            <div class="strip-section">
+                <div class="strip-lbl">מגמה</div>
+                ${sparkHtml || '<div class="strip-no-data" style="font-size:0.75rem;">מעט נתונים</div>'}
+            </div>
+            <div class="strip-section">
+                <div class="strip-lbl">שיא אישי</div>
+                <div class="strip-val" style="color:${prColor}; font-size:${isCurrentPR ? '0.85rem' : '1rem'};">${prLabel}</div>
+            </div>`;
     },
 
     populateSelects: function(exDef) {
@@ -421,7 +488,7 @@ const app = {
         const selR = document.getElementById('select-reps');
         const s = exDef.settings || {unit:'kg', step:2.5, min:0, max:50};
 
-        let wOpts = [];
+        let wOpts =[];
         if (s.unit === 'bodyweight') wOpts = [0];
         else {
             const min = parseFloat(s.min);
@@ -451,7 +518,7 @@ const app = {
         
         selW.onchange = (e) => this.state.active.inputW = Number(e.target.value);
 
-        let rOpts = [];
+        let rOpts =[];
         const maxReps = exDef.cat === 'core' ? 50 : 30;
         for(let i=1; i<=maxReps; i++) rOpts.push(i);
 
@@ -506,6 +573,7 @@ const app = {
     },
 
     finishSet: function() {
+        this.triggerPressEffect('btn-finish');
         let w, r;
         if (this.state.active.isStopwatch) {
             if(this.state.active.timerInterval) this.toggleStopwatch(); 
@@ -518,7 +586,7 @@ const app = {
         const exInst = this.state.active.sessionExercises[this.state.active.exIdx];
         let exLog = this.state.active.log.find(l => l.id === exInst.id);
         if(!exLog) {
-            exLog = { id: exInst.id, name: exInst.name, sets: [] };
+            exLog = { id: exInst.id, name: exInst.name, sets:[] };
             this.state.active.log.push(exLog);
         }
         exLog.sets.push({ w, r, feel: this.state.active.feel });
@@ -559,7 +627,7 @@ const app = {
         this.saveActiveState();
     },
 
-    // Fixed Timer to Count UP with persistence
+    // Fixed Timer to Count UP with persistence and no auto-stop
     startRestTimer: function(durationSec) {
         this.stopRestTimer();
         const area = document.getElementById('rest-timer-area');
@@ -579,22 +647,13 @@ const app = {
         
         this.state.active.restInterval = setInterval(() => {
             const elapsed = Math.floor((Date.now() - this.state.active.restStartTime) / 1000);
-            
-            if (elapsed > durationSec) {
-                disp.innerText = "סיום!";
-                ring.style.strokeDashoffset = 0;
-                if (navigator.vibrate) navigator.vibrate([200,100,200]);
-                this.stopRestTimer();
-                this.state.active.restStartTime = 0; // Reset
-                return;
-            }
 
             let m = Math.floor(elapsed / 60);
             let s = elapsed % 60;
             disp.innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`;
             
-            // Ring fills up (Count Up)
-            const ratio = elapsed / durationSec;
+            // Ring fills up (Count Up), constrained to a maximum of 1 (100%)
+            const ratio = Math.min(elapsed / durationSec, 1);
             const offset = MAX_OFFSET - (MAX_OFFSET * ratio); 
             ring.style.strokeDashoffset = offset;
 
@@ -615,6 +674,7 @@ const app = {
     },
 
     addSet: function() {
+        this.triggerPressEffect('btn-add-set');
         this.state.active.totalSets++;
         this.state.active.setIdx++;
         document.getElementById('set-badge').innerText = `סט ${this.state.active.setIdx} / ${this.state.active.totalSets}`;
@@ -660,6 +720,7 @@ const app = {
     skipExercise: function() { this.nextExercise(); },
 
     nextExercise: function() {
+        this.triggerPressEffect('btn-next-ex');
         this.stopAllTimers();
         if (this.state.active.exIdx < this.state.active.sessionExercises.length - 1) {
             this.state.active.exIdx++;
@@ -695,7 +756,101 @@ const app = {
         const textBox = document.getElementById('summary-text');
         textBox.innerText = this.generateLogText(this.state.active.summary);
         
+        this.renderSummaryStats(this.state.active.summary);
+        this.renderWinCard(this.state.active.summary);
         this.nav('screen-summary');
+    },
+
+    triggerPressEffect: function(btnId) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        btn.classList.add('pressed');
+        setTimeout(() => btn.classList.remove('pressed'), 180);
+    },
+
+    renderSummaryStats: function(summary) {
+        const totalSets = summary.data.reduce((acc, ex) => acc + ex.sets.length, 0);
+        const exCount = summary.data.filter(ex => ex.sets.length > 0).length;
+        
+        const statsHtml = `
+            <div class="summary-stats-row">
+                <div class="summary-stat-item">
+                    <div class="summary-stat-val">${exCount}</div>
+                    <div class="summary-stat-lbl">תרגילים</div>
+                </div>
+                <div class="summary-stat-item">
+                    <div class="summary-stat-val">${totalSets}</div>
+                    <div class="summary-stat-lbl">סטים</div>
+                </div>
+                <div class="summary-stat-item">
+                    <div class="summary-stat-val">${summary.duration}</div>
+                    <div class="summary-stat-lbl">דקות</div>
+                </div>
+            </div>`;
+        
+        document.getElementById('summary-meta').innerHTML = 
+            `<div style="margin-bottom:4px;">${summary.date}</div>${statsHtml}`;
+    },
+
+    renderWinCard: function(summary) {
+        const winCard = document.getElementById('win-card');
+        const winList = document.getElementById('win-list');
+        winCard.style.display = 'none';
+        winList.innerHTML = '';
+
+        const prevSession = [...this.state.history]
+            .reverse()
+            .find(h => h.program === summary.program);
+
+        if (!prevSession) return;
+
+        let hasAnyWin = false;
+        let html = '';
+
+        summary.data.forEach(ex => {
+            if (ex.sets.length === 0) return;
+
+            const prevEx = prevSession.data.find(p => p.id === ex.id);
+            if (!prevEx || prevEx.sets.length === 0) return;
+
+            const exDef = this.getExerciseDef(ex.id);
+            const isBodyweight = exDef.settings.unit === 'bodyweight';
+
+            const getCurrentBest = (sets) => {
+                if (isBodyweight) return Math.max(...sets.map(s => s.r));
+                return Math.max(...sets.map(s => s.w));
+            };
+
+            const currentBest = getCurrentBest(ex.sets);
+            const prevBest = getCurrentBest(prevEx.sets);
+            const unit = isBodyweight ? 'חזר\'' : (exDef.settings.unit === 'plates' ? 'פלטות' : 'ק״ג');
+
+            if (currentBest > prevBest) {
+                hasAnyWin = true;
+                html += `
+                    <div class="win-row">
+                        <div class="win-row-name">
+                            <span class="win-badge">+</span>${ex.name}
+                        </div>
+                        <div>
+                            <span class="win-prev">${prevBest} ${unit}</span>
+                            <span class="win-arrow">←</span>
+                            <span class="win-new">${currentBest} ${unit}</span>
+                        </div>
+                    </div>`;
+            } else {
+                html += `
+                    <div class="win-row">
+                        <span class="win-row-name">${ex.name}</span>
+                        <span class="win-no-change">ללא שינוי</span>
+                    </div>`;
+            }
+        });
+
+        if (hasAnyWin) {
+            winList.innerHTML = html;
+            winCard.style.display = 'block';
+        }
     },
 
     generateLogText: function(historyItem) {
@@ -897,7 +1052,7 @@ const app = {
 
     createNewProgram: function() {
         const id = 'prog_' + Date.now();
-        this.state.routines[id] = { title: 'תוכנית חדשה', exercises: [] };
+        this.state.routines[id] = { title: 'תוכנית חדשה', exercises:[] };
         this.openAdminEdit(id);
     },
 
@@ -1244,7 +1399,7 @@ const app = {
 
     /* --- HISTORY VIEW --- */
     showHistory: function() {
-        this.state.historySelection = [];
+        this.state.historySelection =[];
         this.updateHistoryActions(); 
         const list = document.getElementById('history-list');
         list.innerHTML = '';
@@ -1286,7 +1441,7 @@ const app = {
         const inputs = document.querySelectorAll('.custom-chk');
         const allSelected = this.state.historySelection.length === this.state.history.length && this.state.history.length > 0;
         if (allSelected) {
-            this.state.historySelection = [];
+            this.state.historySelection =[];
             inputs.forEach(i => i.checked = false);
         } else {
             this.state.historySelection = this.state.history.map((_, i) => i);
