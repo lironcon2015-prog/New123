@@ -162,7 +162,7 @@ const app = {
             this.state.active.startTime = Date.now(); 
             this.state.active.timerInterval = null;
             this.state.active.restInterval = null;
-            this.state.currentProgId = this.state.active.log.length > 0 ? this.state.active.log[0].programId : Object.keys(this.state.routines)[0];
+            this.state.currentProgId = this.state.active.progId || Object.keys(this.state.routines)[0];
             
             // Resume Timer if it was running
             if (this.state.active.restStartTime > 0) {
@@ -297,6 +297,7 @@ const app = {
 
         this.state.active = {
             on: true,
+            progId: this.state.currentProgId,
             sessionExercises: JSON.parse(JSON.stringify(prog.exercises)),
             exIdx: 0, setIdx: 1, totalSets: 3,
             log:[], 
@@ -802,7 +803,7 @@ const app = {
 
         if (!prevSession) return;
 
-        let hasAnyWin = false;
+        let winCount = 0;
         let html = '';
 
         summary.data.forEach(ex => {
@@ -813,40 +814,38 @@ const app = {
 
             const exDef = this.getExerciseDef(ex.id);
             const isBodyweight = exDef.settings.unit === 'bodyweight';
+            const isTime = isBodyweight && (ex.id.includes('plank') || ex.id.includes('static'));
 
-            const getCurrentBest = (sets) => {
-                if (isBodyweight) return Math.max(...sets.map(s => s.r));
+            const getBest = (sets) => {
+                if (isTime || isBodyweight) return Math.max(...sets.map(s => s.r));
                 return Math.max(...sets.map(s => s.w));
             };
 
-            const currentBest = getCurrentBest(ex.sets);
-            const prevBest = getCurrentBest(prevEx.sets);
-            const unit = isBodyweight ? 'חזר\'' : (exDef.settings.unit === 'plates' ? 'פלטות' : 'ק״ג');
+            const currentBest = getBest(ex.sets);
+            const prevBest = getBest(prevEx.sets);
+            const unit = isTime ? 'שנ\'' : isBodyweight ? 'חזר\'' : (exDef.settings.unit === 'plates' ? 'פלטות' : 'ק״ג');
 
             if (currentBest > prevBest) {
-                hasAnyWin = true;
-                html += `
-                    <div class="win-row">
-                        <div class="win-row-name">
-                            <span class="win-badge">+</span>${ex.name}
-                        </div>
-                        <div>
-                            <span class="win-prev">${prevBest} ${unit}</span>
-                            <span class="win-arrow">←</span>
-                            <span class="win-new">${currentBest} ${unit}</span>
-                        </div>
-                    </div>`;
-            } else {
+                winCount++;
                 html += `
                     <div class="win-row">
                         <span class="win-row-name">${ex.name}</span>
-                        <span class="win-no-change">ללא שינוי</span>
+                        <div class="win-delta">
+                            <span class="win-prev">${prevBest} ${unit}</span>
+                            <span class="win-arrow">→</span>
+                            <span class="win-new">${currentBest} ${unit}</span>
+                        </div>
                     </div>`;
             }
         });
 
-        if (hasAnyWin) {
+        if (winCount > 0) {
+            const suffix = winCount === 1 ? 'תרגיל' : 'תרגילים';
+            document.getElementById('win-card-subtitle').innerText = `שיפרת ב-${winCount} ${suffix} לעומת האימון הקודם`;
             winList.innerHTML = html;
+            winCard.style.animation = 'none';
+            winCard.offsetHeight;
+            winCard.style.animation = '';
             winCard.style.display = 'block';
         }
     },
@@ -892,19 +891,33 @@ const app = {
 
     finishAndCopy: function() {
         const summary = this.state.active.summary;
-        if (summary) {
-            this.copySummaryToClipboard();
+        if (!summary) return;
+
+        const doSaveAndReload = () => {
             this.state.history.push({
                 date: summary.date,
                 timestamp: Date.now(),
                 program: summary.program,
-                programTitle: summary.programTitle, 
+                programTitle: summary.programTitle,
                 data: summary.data,
                 duration: summary.duration
             });
             this.saveData();
             localStorage.removeItem(CONFIG.KEYS.ACTIVE_WORKOUT);
-            window.location.reload(); 
+            window.location.reload();
+        };
+
+        const txt = document.getElementById('summary-text').innerText;
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(txt).then(doSaveAndReload).catch(doSaveAndReload);
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = txt;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            doSaveAndReload();
         }
     },
 

@@ -432,35 +432,53 @@ body, html {
 .meta-tag { color: var(--text-sec); margin-top: 5px; }
 
 .win-card {
-    background: #001a18;
-    border: 1px solid rgba(0,255,238,0.2);
-    border-radius: 14px;
-    padding: 16px;
+    border-radius: var(--radius);
+    border: 1px solid rgba(0, 255, 102, 0.35);
+    background: linear-gradient(135deg, rgba(0,255,102,0.07) 0%, rgba(0,0,0,0) 60%);
+    padding: 18px;
     margin-bottom: 16px;
+    position: relative;
+    overflow: hidden;
+    animation: winPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
+@keyframes winPop {
+    from { opacity: 0; transform: scale(0.92) translateY(8px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.win-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.win-trophy { font-size: 1.6rem; line-height: 1; }
 .win-card-title {
-    font-size: 0.75rem;
-    color: var(--primary);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-bottom: 12px;
-    font-weight: 600;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--success);
+}
+.win-card-subtitle {
+    font-size: 0.8rem;
+    color: #77cc88;
+    margin-top: 1px;
 }
 .win-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 0;
-    border-bottom: 1px solid rgba(0,255,238,0.07);
+    background: rgba(0,0,0,0.35);
+    border-radius: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(0,255,102,0.1);
     font-size: 0.9rem;
+    margin-bottom: 8px;
 }
-.win-row:last-child { border-bottom: none; }
-.win-row-name { color: #ddd; font-weight: 600; }
-.win-badge { background: var(--primary); color: #000; font-size: 0.65rem; font-weight: 700; padding: 2px 7px; border-radius: 20px; margin-left: 6px; }
-.win-prev { color: #444; font-size: 0.82rem; }
-.win-arrow { color: #333; margin: 0 6px; font-size: 0.75rem; }
-.win-new { color: var(--primary); font-weight: 700; }
-.win-no-change { color: #444; font-size: 0.82rem; }
+.win-row:last-child { margin-bottom: 0; }
+.win-row-name { color: #ddd; font-weight: 600; flex: 1; }
+.win-delta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.win-prev { color: #555; font-size: 0.82rem; text-decoration: line-through; }
+.win-arrow { color: var(--success); font-size: 0.85rem; }
+.win-new { color: var(--success); font-weight: 700; font-size: 0.9rem; }
 .summary-stats-row {
     display: flex;
     justify-content: center;
