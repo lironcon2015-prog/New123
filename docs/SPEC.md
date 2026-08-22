@@ -1,0 +1,548 @@
+# התיק המשפחתי — אפיון טכני
+
+שלב 2. מגדיר את מודל הנתונים, טבלת `DOC_TYPES`, מנוע התפוגה ומסלולי הקלט.
+מה שכתוב כאן מחייב את שלב 3. סטייה = שינוי במסמך, לא אלתור בקוד.
+
+**מה המסמך הזה לא מכסה:** Gemini ו-MRZ (שלב 4), דרייב וסנכרון (שלב 5), Service Worker ומנגנון גרסה (שלב 6). מבנה הנתונים כאן כבר מכין להם מקום.
+
+**סימון:** קטע המסומן ⚠️ הוא הרחבה או סטייה מהאפיון המקורי, ומרוכז ב-§10.
+
+---
+
+## 1. מפת המודולים = סדר הטעינה
+
+אין build. סדר התגים ב-`index.html` **הוא** גרף התלות. כל מודול הוא IIFE שמפרסם אובייקט אחד ל-`window`.
+
+```
+config.js     → CONFIG      קבועים, גרסה, מפתחות הגדרות
+util.js       → U           מזהים, תאריכים, DOM, bidi, פורמט
+kinds.js      → KINDS       רישום סוגי שדה: פורמט · ולידציה · העתקה
+doctypes.js   → DOC_TYPES   טבלת סוגי המסמכים
+db.js         → DB          IndexedDB
+settings.js   → Settings    קריאה/כתיבה של הגדרות + מראת localStorage
+vault.js      → Vault       שער PIN
+files.js      → Files       נרמול קבצים, HEIC, גדלים
+expiry.js     → Expiry      מנוע התפוגה
+search.js     → Search      חיפוש גלובלי על שדות
+ui.js         → UI          toast, גיליונות, פרימיטיבים
+forms.js      → Forms       DOC_TYPES → טופס ידני
+screens.js    → Screens     ששת המסכים
+app.js        → App         אתחול, ניתוב, ארוע paste גלובלי
+```
+
+**כלל התלות:** מודול תלוי רק במי שנטען לפניו. `kinds.js` לא מכיר את `DB`. `doctypes.js` לא מכיר את `UI`. אם נוצרת תלות אחורה — המודול במקום הלא נכון.
+
+שלבים הבאים מוסיפים: `gemini.js` ו-`mrz.js` אחרי `files.js`; `google.js` ו-`sync.js` אחרי `db.js`; `sw.js` בשורש.
+
+---
+
+## 2. אחסון
+
+IndexedDB בשם `DocVaultDB`, גרסה `1`.
+
+| חנות | keyPath | אינדקסים | מסונכרן |
+|---|---|---|---|
+| `entities` | `id` | `by_updatedAt`, `by_sortOrder` | כן |
+| `docs` | `id` | `by_entityId`, `by_typeKey`, `by_updatedAt`, `by_expiryDate` | כן |
+| `blobs` | `id` | `by_docId` | **לא** — מקומי בלבד |
+| `settings` | `key` | — | **לא** — מקומי בלבד |
+
+`blobs` לעולם לא נכנס ל-`docvault-db.json`. `settings` לעולם לא עוזב את המכשיר — כולל מפתח Gemini, ה-hash של ה-PIN ומזהי הדרייב.
+
+### 2.1 מזהים
+
+```js
+U.id = () => (crypto.randomUUID
+  ? crypto.randomUUID()
+  : Date.now().toString(36) + '-' + [...crypto.getRandomValues(new Uint8Array(8))]
+      .map(b => b.toString(16).padStart(2,'0')).join(''));
+```
+
+הנפילה לאחור נחוצה ל-Safari ישן, שבו `randomUUID` חסר מחוץ להקשר מאובטח.
+
+### 2.2 חותמות זמן
+
+`updatedAt` הוא **מחרוזת ISO-8601 ב-UTC עם מילישניות** — `new Date().toISOString()`.
+הסיבה שזו מחרוזת ולא מספר: השוואה לקסיקוגרפית על ISO-UTC נותנת בדיוק את הסדר הכרונולוגי, כך שהמיזוג בשלב 5 עובד בלי המרות, וקובץ ה-JSON נשאר קריא לעין אדם.
+
+`ASK-NAVIGO.md` Q4 שואל מה הפורמט אצל נאביגו. **אם התשובה תהיה epoch-ms, הפורמט כאן משתנה בהתאם** — התאמה למיזוג גוברת על קריאוּת.
+
+### 2.3 מחיקה רכה
+
+`deleted` נשמר כ-`0` או `1`, לא כ-`true`/`false`. ⚠️ בוליאני אינו מפתח חוקי ב-IndexedDB, ורשומה מחוקה חייבת להיות ניתנת לסינון באינדקס. הסמנטיקה זהה.
+
+מחיקת מסמך: `deleted = 1`, `updatedAt` מתעדכן, **`fields` מתרוקן**. אין טעם להשאיר מספרי תעודות ב-tombstone שייסע לדרייב.
+ה-blobs של מסמך מחוק נמחקים מיד ומקומית — הם לא חלק מהסנכרון וממילא לא ניתנים לשחזור מרשומה מחוקה.
+
+---
+
+## 3. סכמות רשומה
+
+### 3.1 `entities`
+
+```js
+{
+  id:        'uuid',
+  type:      'person' | 'vehicle' | 'home' | 'other',
+  name:      'ליאור',
+  color:     '#4B6B7A',        // מתוך פלטת אווטארים קבועה, לא בורר צבע חופשי
+  avatar:    'ל',              // אות אחת. אין תמונות, אין אימוג׳י
+  sortOrder: 0,                // מספר שלם, סדר ידני
+  updatedAt: '2026-08-22T09:14:03.221Z',
+  deleted:   0
+}
+```
+
+`color` נבחר מתוך שמונה גוונים מוגדרים ב-`CONFIG.ENTITY_COLORS`. הם נייטרלים־עמומים בכוונה ולא נגזרים מהאקסנט: אווטאר צבעוני שמתחרה בפלטה הופך את מסך הבית לרועש.
+
+### 3.2 `docs`
+
+```js
+{
+  id:         'uuid',
+  entityId:   'uuid',
+  typeKey:    'vehicle_insurance',        // מפתח ב-DOC_TYPES
+  title:      'ביטוח רכב',                 // ברירת מחדל: label של הסוג. ניתן לעריכה
+  fields:     [ /* §3.3 */ ],
+  issueDate:  '2025-11-02' | null,        // YYYY-MM-DD, יום לוח מקומי
+  expiryDate: '2026-11-01' | null,
+  files:      [ { blobId, driveFileId, mime, name, size } ],
+  source:     'upload' | 'camera' | 'paste' | 'drop',
+  notes:      '' ,
+  updatedAt:  '2026-08-22T09:14:03.221Z',
+  deleted:    0
+}
+```
+
+**`issueDate` ו-`expiryDate` אינם ב-`fields[]`.** הם עמודות עליונות כי מנוע התפוגה קורא אותן ישירות והאינדקס `by_expiryDate` בנוי עליהן. בכרטיס המסמך הם מוצגים כשורות שדה סינתטיות שהמרנדר מייצר — לא נשמרים פעמיים.
+
+**פורמט תאריך:** `YYYY-MM-DD` בלבד, בלי שעה ובלי אזור זמן. תאריך תפוגה הוא יום לוח, לא רגע בזמן. שמירת `Date` מלא כאן היא המקור לשגיאת היום־האחד שמופיעה רק למשתמשים ממזרח לגריניץ׳.
+
+**`source`** נרשם פעם אחת, במסלול שיצר את המסמך. הוספת קובץ שני במסלול אחר לא משנה אותו.
+
+⚠️ `files[].size` נוסף לסכמה — גודל אחרי הנרמול, בבייטים. בלעדיו אי אפשר להציג "הצג את הגודל אחרי ההמרה" (§5 באפיון) בלי לטעון את ה-blob עצמו.
+
+### 3.3 `fields[]`
+
+```js
+{
+  key:        'policyNumber',
+  label:      'מספר פוליסה',
+  value:      '2291043',
+  kind:       'policy',
+  sensitive:  true,
+  confidence: 0.94 | null,     // מ-Gemini. null בהזנה ידנית
+  verified:   true | false,
+  multiline:  false            // ⚠️ הרחבה, §10.1
+}
+```
+
+`label` ו-`kind` משוכפלים מהטבלה לתוך הרשומה בכוונה. מסמך שנשמר לפני שינוי בטבלה חייב להמשיך להיקרא נכון, וקובץ ה-JSON בדרייב חייב להיות מובן בלי הקוד. `DOC_TYPES` היא מקור האמת ליצירה; הרשומה היא מקור האמת לתצוגה.
+
+**`verified` — כלל אחד, בלי חריגים:**
+
+> בשמירה, `verified = true` אם ורק אם הערך עבר את הוולידטור של ה-`kind` שלו, או שאין ל-`kind` ולידטור. אחרת `false`.
+
+הכלל חל זהה על הזנה ידנית ועל פלט Gemini. שדה עם `verified: false` מקבל תג "לאימות" ו**נשמר עם הערך שלו**. ספרה שגויה בת״ז גרועה מהיעדר ערך — אבל מחיקה שקטה גרועה משתיהן.
+
+`confidence` נשמר ואינו מוצג. הסיגנל היחיד בממשק הוא `verified`. ⚠️ §10.4.
+
+### 3.4 `blobs`
+
+```js
+{ id: 'uuid', docId: 'uuid', data: Blob, mime: 'image/jpeg', size: 184223 }
+```
+
+מאוחסן כ-`Blob`, לא כ-base64 ולא כ-`ArrayBuffer`. `Blob` ב-IndexedDB נשמר בדיסק ולא בזיכרון, ו-`URL.createObjectURL` עליו לא מעתיק את הבתים.
+
+### 3.5 `settings`
+
+חנות מפתח־ערך. `{ key, value }`.
+
+| מפתח | ערך | הערה |
+|---|---|---|
+| `pinHash` | hex של SHA-256 | ממתין ל-`ASK-NAVIGO.md` Q6 |
+| `pinEnabled` | `true` (ברירת מחדל) | DEC-03 |
+| `autoLockMinutes` | `5` | נעילה מחדש אחרי זמן ברקע |
+| `privacyMode` | `false` | טשטוש ערכים רגישים |
+| `palette` | `'a'` | DEC-06 |
+| `typeface` | `'assistant'` | DEC-06 |
+| `geminiKey` | `''` | שלב 4 |
+| `geminiConsent` | `false` | הסכמה מפורשת לפני שליחה ראשונה |
+| `geminiLastModel` | `''` | המודל האחרון שהצליח |
+| `driveFolderId` | `''` | שלב 5 |
+| `driveDbFileId` | `''` | שלב 5 |
+| `recentFields` | `[{docId, fieldKey}]` | מקסימום 6 |
+| `lastNoticeDay` | `'2026-08-22'` | באנר התפוגה פעם ביום |
+
+**מראת `localStorage`:** `palette` ו-`typeface` **בלבד** נכתבים במקביל ל-`localStorage`, ומוצבים כ-`data-pal`/`data-font` בסקריפט סינכרוני בראש `index.html` לפני ה-CSS. IndexedDB אסינכרוני, ובלי המראה כל טעינה נפתחת בהבזק של פלטת ברירת המחדל — דווקא במסך הנעילה, שהוא הדבר הראשון שנראה. שום מפתח אחר לא עובר ל-`localStorage`; בפרט לא `pinHash` ולא `geminiKey`.
+
+---
+
+## 4. רישום סוגי השדה — `KINDS`
+
+לכל `kind` חמש תכונות. אין `if` על שם סוג מחוץ לטבלה הזו.
+
+```js
+KINDS.id = {
+  label:     'תעודת זהות',
+  inputMode: 'numeric',
+  sensitive: true,          // ברירת מחדל, ניתנת לדריסה ברמת השדה
+  copyAs:    'canonical',
+  canonical: v => v.replace(/\D/g, ''),
+  format:    v => v.padStart(9, '0'),
+  validate:  v => ({ ok: israeliIdValid(v), reason: 'ספרת ביקורת נכשלה' })
+};
+```
+
+| kind | רגיש | copyAs | קנוני | תצוגה | ולידציה |
+|---|---|---|---|---|---|
+| `id` | כן | canonical | ספרות בלבד | ריפוד ל-9 ספרות | ספרת ביקורת ישראלית |
+| `passport` | כן | canonical | אותיות+ספרות, רישיות | כמו הקנוני | `^[A-Z0-9]{6,9}$` |
+| `plate` | לא | canonical | ספרות בלבד | `12-345-67` / `123-45-678` | 7 או 8 ספרות |
+| `policy` | כן | canonical | ללא רווחים | כמו הקנוני | לא ריק |
+| `date` | לא | **display** | `YYYY-MM-DD` | `DD/MM/YYYY` | תאריך אמיתי, שנה 1900–(היום+50) |
+| `iban` | כן | canonical | ללא רווחים, רישיות | קבוצות של 4 | mod-97 |
+| `phone` | לא | **display** | ספרות בלבד | `05X-XXX-XXXX` / `0X-XXX-XXXX` | 9 או 10 ספרות פותחות ב-0 |
+| `text` | לא | display | trim | trim | לא ריק אם `required` |
+
+**`copyAs` — הכלל וההצדקה:** מזהים מועתקים בצורתם הקנונית כי טפסים דוחים מפרידים; תאריכים וטלפונים מועתקים כפי שהם מוצגים כי זו הצורה שבן אדם מצפה לקבל בהודעה. אין נגיעה שמעתיקה את הצורה השנייה — ⚠️ נרשם ב-`DEBT.md` D1.
+
+**`plate` אינו רגיש.** לוחית הרישוי מודפסת על הרכב ברחוב. מיסוך שלה הוא תיאטרון שמאמן אותך להתעלם מהמסכה.
+
+### 4.1 ספרת ביקורת של תעודת זהות ישראלית
+
+```js
+function israeliIdValid(raw) {
+  const s = String(raw).replace(/\D/g, '').padStart(9, '0');
+  if (s.length !== 9) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let d = Number(s[i]) * (i % 2 === 0 ? 1 : 2);
+    if (d > 9) d -= 9;                 // שקול לסכימת ספרות התוצאה
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+```
+
+`d - 9` שקול לסכימת ספרות של מכפלה דו־ספרתית, כי המכפלה לעולם אינה עולה על 18.
+הריפוד לתשע ספרות נחוץ: תעודות ישנות מודפסות עם שמונה ספרות, והאפס המוביל הוא חלק מהמספר.
+
+### 4.2 מיסוך
+
+```
+value.length > 4  →  '•••• ' + last 4
+value.length ≤ 4  →  '••••'          // אין שארית לחשוף
+```
+
+חשיפה מחליפה טקסט בלבד. **ההעתקה קוראת תמיד את הערך המלא**, ללא קשר למצב המיסוך ולמצב הפרטיות.
+
+---
+
+## 5. `DOC_TYPES` — הטבלה המרכזית
+
+שורה אחת מייצרת: הטופס הידני · הפרומפט ל-Gemini · רשימת ההעתקה · התנהגות מנוע התפוגה.
+**הוספת סוג מסמך = שורה. אפס קוד חדש.**
+
+### 5.1 סכמת שורה
+
+```js
+{
+  key:         'vehicle_insurance',
+  label:       'ביטוח רכב',
+  icon:        'i-shield',
+  entityTypes: ['vehicle'],       // לאילו ישויות מותר לצרף
+  expiry:      'required',        // 'required' | 'optional' | 'none'
+  allowFiles:  true,
+  parse:       'gemini',          // 'gemini' | 'mrz' | 'mrz+gemini' | 'none'
+  titleFrom:   'insurer',         // key של שדה שממנו נגזרת הכותרת. אופציונלי
+  fields:      [ /* §3.3 בלי value/confidence/verified */ ]
+}
+```
+
+**`expiry`:**
+- `required` — שדה התפוגה מופיע בטופס ומסומן כנדרש. המסמך תמיד בדלי כלשהו.
+- `optional` — השדה מופיע, ריק מותר. מסמך בלי תאריך אינו נכנס לרשימת התפוגות כלל.
+- `none` — השדה **אינו** מופיע בטופס. במקומו יש פעולה "הוסף תזכורת" שחושפת אותו.
+
+**תזכורת ידנית משתמשת ב-`expiryDate` עצמו — אין שדה חדש.** "סוג בלי תפוגה מובנית מקבל תזכורת רק אם אני מגדיר אחת ידנית" (§7 באפיון) פירושו בדיוק זה: התאריך קיים או שאינו קיים. שדה `reminderDate` נפרד היה יוצר שני מסלולים במנוע התפוגה במקום אחד.
+
+### 5.2 שתים־עשרה השורות של v1
+
+| key | תווית | ישויות | תפוגה | קבצים | פרסינג |
+|---|---|---|---|---|---|
+| `id_card` | תעודת זהות | person | optional | כן | mrz+gemini |
+| `id_appendix` | ספח תעודת זהות | person | none | כן | gemini |
+| `passport` | דרכון | person | required | **לא** | mrz |
+| `driving_license` | רישיון נהיגה | person | required | כן | gemini |
+| `vehicle_license` | רישיון רכב | vehicle | required | כן | gemini |
+| `vehicle_test` | טסט | vehicle | required | כן | gemini |
+| `vehicle_insurance` | ביטוח רכב | vehicle | required | כן | gemini |
+| `home_insurance` | ביטוח דירה | home | required | כן | gemini |
+| `life_insurance` | ביטוח בריאות / חיים | person | optional | כן | gemini |
+| `hmo_card` | כרטיס קופת חולים | person | optional | כן | gemini |
+| `diploma` | תעודה / דיפלומה | person | none | כן | gemini |
+| `generic` | מסמך כללי | כולן | optional | כן | gemini |
+
+**`passport` הוא `allowFiles: false`** — DEC-01. מקור האמת לסריקה הוא נאביגו. ה-MRZ עדיין רץ, בצורת "סרוק כדי למלא": קורא מספר ותוקף, ממלא, ו**זורק את התמונה בלי לשמור blob**.
+
+**`generic` הוא שסתום הביטחון.** מסמך שאינו נופל לאחד עשר האחרים נכנס לשם עם ארבעה שדות חופשיים, במקום לגרור סוג חדש לטבלה בכל פעם.
+
+### 5.3 שדות לפי סוג
+
+```js
+id_card: [
+  { key:'idNumber',  label:'מספר תעודת זהות', kind:'id',   required:true },
+  { key:'fullName',  label:'שם מלא',          kind:'text', required:true },
+  { key:'birthDate', label:'תאריך לידה',      kind:'date' },
+  { key:'docNumber', label:'מספר התעודה',     kind:'text' }
+]
+
+id_appendix: [
+  { key:'idNumber', label:'מספר תעודת זהות', kind:'id', required:true },
+  { key:'fullName', label:'שם מלא',          kind:'text', required:true },
+  { key:'address',  label:'כתובת',           kind:'text', multiline:true },
+  { key:'children', label:'ילדים',           kind:'text', multiline:true }
+]
+
+passport: [
+  { key:'passportNumber', label:'מספר דרכון',     kind:'passport', required:true },
+  { key:'fullNameLatin',  label:'שם באנגלית',     kind:'text' },
+  { key:'birthDate',      label:'תאריך לידה',     kind:'date' }
+]
+
+driving_license: [
+  { key:'idNumber',      label:'מספר תעודת זהות', kind:'id', required:true },
+  { key:'licenseNumber', label:'מספר רישיון',     kind:'text' },
+  { key:'classes',       label:'דרגות',           kind:'text' }
+]
+
+vehicle_license: [
+  { key:'plate',      label:'מספר רישוי', kind:'plate', required:true },
+  { key:'vin',        label:'מספר שלדה',  kind:'text' },
+  { key:'makeModel',  label:'יצרן ודגם',  kind:'text' },
+  { key:'year',       label:'שנת ייצור',  kind:'text' },
+  { key:'ownerName',  label:'בעלים',      kind:'text' }
+]
+
+vehicle_test: [
+  { key:'plate',   label:'מספר רישוי', kind:'plate', required:true },
+  { key:'station', label:'תחנת בדיקה', kind:'text' },
+  { key:'mileage', label:'קילומטראז׳', kind:'text' }
+]
+
+vehicle_insurance: [
+  { key:'policyNumber', label:'מספר פוליסה', kind:'policy', required:true },
+  { key:'insurer',      label:'חברת ביטוח',  kind:'text',   required:true },
+  { key:'plate',        label:'מספר רישוי',  kind:'plate' },
+  { key:'coverage',     label:'סוג כיסוי',   kind:'text' },
+  { key:'agentName',    label:'סוכן',        kind:'text' },
+  { key:'agentPhone',   label:'טלפון סוכן',  kind:'phone' }
+]
+
+home_insurance: [
+  { key:'policyNumber', label:'מספר פוליסה', kind:'policy', required:true },
+  { key:'insurer',      label:'חברת ביטוח',  kind:'text',   required:true },
+  { key:'address',      label:'כתובת הנכס',  kind:'text' },
+  { key:'coverage',     label:'סוג כיסוי',   kind:'text' },
+  { key:'agentPhone',   label:'טלפון סוכן',  kind:'phone' }
+]
+
+life_insurance: [
+  { key:'policyNumber', label:'מספר פוליסה', kind:'policy', required:true },
+  { key:'insurer',      label:'חברה',        kind:'text',   required:true },
+  { key:'insuredName',  label:'שם המבוטח',   kind:'text' },
+  { key:'agentPhone',   label:'טלפון סוכן',  kind:'phone' }
+]
+
+hmo_card: [
+  { key:'idNumber',     label:'מספר תעודת זהות', kind:'id', required:true },
+  { key:'hmo',          label:'קופת חולים',      kind:'text', required:true },
+  { key:'memberNumber', label:'מספר חבר',        kind:'text' },
+  { key:'clinic',       label:'מרפאה',           kind:'text' }
+]
+
+diploma: [
+  { key:'title',       label:'שם התעודה', kind:'text', required:true },
+  { key:'institution', label:'מוסד',      kind:'text' },
+  { key:'fieldOfStudy',label:'תחום',      kind:'text' }
+]
+
+generic: [
+  { key:'title',     label:'כותרת',   kind:'text', required:true },
+  { key:'issuer',    label:'גורם מנפיק', kind:'text' },
+  { key:'reference', label:'מספר אסמכתא', kind:'text' }
+]
+```
+
+`iban` אינו בשימוש באף שורה ב-v1. הוא נשאר ברישום כי §3 באפיון נוקב בו במפורש, והשורה הראשונה שתצטרך אותו — פרטי חשבון להוראת קבע — לא תדרוש קוד חדש.
+
+---
+
+## 6. מנוע התפוגה
+
+### 6.1 נגזר בזמן ריצה, תמיד
+
+**אין לשמור ערכים נגזרים.** אין `daysLeft` ברשומה, אין `bucket`, אין `status`. הם מחושבים בכל רינדור. מסמך ששמר "בעוד 12 יום" ונפתח שבועיים אחר כך משקר, ולא תהיה שום דרך לדעת.
+
+### 6.2 חישוב
+
+```js
+function daysLeft(ymd, today = new Date()) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const exp = new Date(y, m - 1, d);            // חצות מקומי
+  const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((exp - now) / 86400000);
+}
+```
+
+**חצות מקומי בשני הצדדים, ולא UTC.** בנייה מ-`new Date('2026-11-01')` מפרשת את המחרוזת כ-UTC, ומחזירה בישראל יום אחד פחות במשך שעתיים בכל יממה. `Math.round` ולא `floor` — שינויי שעון קיץ מזיזים את ההפרש ב-±שעה, ו-`floor` היה הופך את זה ליום שלם.
+
+### 6.3 דליים
+
+| דלי | תנאי | תווית |
+|---|---|---|
+| `past` | `daysLeft <= 0` | `פג היום` · `פג לפני N ימים` |
+| `d30` | `1 ≤ daysLeft ≤ 30` | `בעוד N ימים` · `מחר` |
+| `d90` | `31 ≤ daysLeft ≤ 90` | `בעוד N ימים` |
+| `ok` | `daysLeft > 90` | `בתוקף עד DD/MM/YYYY` |
+
+⚠️ **`daysLeft === 0` נכנס ל-`past`, לא ל-`d30`.** מסמך שפג היום עדיין תקף היום מבחינה פורמלית, אבל אם הוא מופיע ברשימת "עד 30 יום" הוא נקבר בין תשעה אחרים ואתה מגלה אותו מחר. יום התפוגה הוא היום שבו צריך לפעול.
+
+מסמך עם `expiryDate === null` **אינו נכנס לרשימת התפוגות כלל**. הוא לא "תקין" ולא "חסר" — הוא פשוט לא מסמך שפג.
+
+### 6.4 מסך הבית
+
+- קיבוץ לפי דלי, מיון פנימי לפי `daysLeft` עולה.
+- דלי ריק אינו מוצג.
+- `ok` מקופל מאחורי שורת `תקין · N מסמכים`. מסך הבית מציג בעיות.
+- `ok` הוא ניטרלי, ללא צ׳יפ צבעוני — DEC-05.
+
+### 6.5 התראה
+
+אין backend, ואין push. **הממשק לא יבטיח התראה שלא תגיע** — אין מתג "קבל התראות", אין בקשת `Notification.requestPermission`.
+
+בפתיחת האפליקציה: אם קיים מסמך ב-`past` או ב-`d30`, ומפתח `lastNoticeDay` אינו היום, מוצג באנר בראש מסך הבית וה-מפתח מתעדכן. פעם ביום לכל מכשיר. הבאנר נסגר בנגיעה ואינו חוזר באותו יום.
+
+---
+
+## 7. מסלולי הקלט
+
+ארבעה מסלולים, **צינור אחד**. אף מסלול לא כותב ל-DB ישירות.
+
+```
+מסלול → File[] → Files.normalize() → מצע (staging) → פרסינג? → מסך אישור → DB.saveDoc()
+```
+
+| מסלול | טריגר | `source` |
+|---|---|---|
+| בחירת קובץ | `<input type="file" accept="image/*,application/pdf" multiple>` | `upload` |
+| מצלמה | אותו input עם `capture="environment"` | `camera` |
+| הדבקה | `paste` על `document` | `paste` |
+| גרירה | `dragover`/`drop` על מעטפת האפליקציה | `drop` |
+
+### 7.1 הדבקה — שני מסלולי משנה
+
+ארוע `paste` נבדק בסדר הזה:
+1. `clipboardData.files` או `items` מסוג `image/*` → מסלול תמונה.
+2. אחרת, `clipboardData.getData('text/plain')` לא ריק → **מסלול טקסט**: הטקסט נשלח לפרסינג ללא תמונה, ונוצר מסמך ללא קובץ.
+
+מסלול הטקסט הוא הדרך להכניס פרטי פוליסה שהגיעו בהודעה, בלי לצלם מסך.
+
+### 7.2 נרמול קבצים
+
+```
+PDF                        → עובר כמו שהוא, ללא נגיעה
+תמונה ≤ 2400px וגם ≤ 800KB → עוברת כמו שהיא
+כל תמונה אחרת (כולל HEIC)  → createImageBitmap → canvas → JPEG q0.85, צלע ארוכה 2400px
+```
+
+HEIC אינו נתמך ב-`<img>` בכרום ובפיירפוקס, אבל **`createImageBitmap` מצליח עליו ב-Safari** — שם הוא מגיע מהמצלמה. אם `createImageBitmap` נכשל, הקובץ נדחה עם הודעה מפורשת ולא נשמר שבור.
+
+הנרמול חל על **כל** התמונות ולא רק על HEIC. צילום של 12MP הוא 4MB; מאה מסמכים כאלה הם 400MB ב-IndexedDB ובדרייב. 2400px היא רזולוציה שבה מספר תעודה עדיין נקרא בזום.
+
+הגודל **אחרי** הנרמול מוצג בשורת הקובץ ונשמר ב-`files[].size`.
+
+### 7.3 מצע לפני שמירה
+
+בין הנרמול למסך האישור, הקבצים יושבים בזיכרון בלבד. **אין כתיבה ל-DB עד אישור.**
+נטישת המסך משחררת אותם ומבטלת `URL.createObjectURL` שנוצר.
+
+הנימוק: מסמך חצי־מפורסס שנשמר "כדי לא לאבד" הוא בדיוק המסמך שאף פעם לא תחזור לתקן, והוא יושב ברשימת התפוגות עם תאריך שגוי.
+
+### 7.4 שמירה
+
+```
+1. ולידציה של כל שדה → קביעת verified לכל אחד (§3.3)
+2. יצירת/עדכון רשומת docs עם updatedAt חדש
+3. כתיבת ה-blobs עם docId
+4. שלב 5: הכנסה לתור הסנכרון
+```
+
+הכל בטרנזקציית IndexedDB אחת מעל `docs` ו-`blobs`. כישלון באמצע לא משאיר מסמך בלי הקובץ שלו.
+
+---
+
+## 8. חיפוש — מסך ההעתקה המהירה
+
+**אין אינדקס חיפוש.** סריקה ליניארית על כל השדות של כל המסמכים, בזיכרון.
+מאה מסמכים × שישה שדות = 600 מחרוזות. אינדקס הפוך כאן הוא מבנה נתונים שצריך לתחזק, לסנכרן ולנפות באגים, בתמורה לחיסכון שאינו נמדד. אם המספר יגיע לאלפים — נבנה אינדקס אז, ונרשום ב-`DEBT.md`.
+
+### 8.1 התאמה
+
+השאילתה והערך שניהם עוברים נרמול: הורדת רישיות, הסרת מפרידים (`-`, `.`, `/`, רווח), הסרת ניקוד.
+כך `84521` מוצא `84-521-03`, ו`מאזדה` מוצא את הישות.
+
+שדה נכנס לתוצאות אם הנרמול של אחד מאלה מכיל את השאילתה:
+- ערך השדה · תווית השדה · כותרת המסמך · תווית הסוג · שם הישות
+
+**מיון:** התאמה בתחילת ערך → התאמה בתוך ערך → התאמה בתווית/כותרת/ישות. בתוך כל קבוצה, לפי `updatedAt` יורד.
+
+### 8.2 לפני הקלדה
+
+מוצגות שש השורות שהועתקו לאחרונה, מ-`settings.recentFields`, תחת הכותרת "אחרונים".
+מסך ריק בפתיחה הוא כישלון של המסך הזה — הוא נפתח כשמישהו מחכה.
+
+הרשימה מקומית ואינה מסונכרנת. שורה שהמסמך שלה נמחק מסוננת בזמן הרינדור, לא נמחקת מהרשימה.
+
+---
+
+## 9. הגדרת "בוצע" לשלב 3
+
+מתוך §11 באפיון, בתוספת מה שנגזר כאן:
+
+- [ ] יצירת ישות מכל ארבעת הסוגים
+- [ ] יצירת מסמך ידני מכל אחד מ-12 הסוגים, מהטבלה בלבד
+- [ ] צירוף קובץ בכל ארבעת המסלולים, כולל HEIC עם הצגת הגודל אחרי ההמרה
+- [ ] העתקה בנגיעה, כולל שורה ממוסכת וכולל מצב פרטיות
+- [ ] חיפוש גלובלי מחזיר שדות עם שם הישות והמסמך
+- [ ] רשימת תפוגות נכונה בארבעת הדליים, כולל `daysLeft === 0`
+- [ ] רענון דף שומר הכל
+- [ ] הכל אופליין, בלי מפתח Gemini ובלי חשבון גוגל
+- [ ] שער PIN, כולל כיבוי מההגדרות ונעילה אוטומטית
+- [ ] החלפת פלטה וכתב בהגדרות, ללא הבזק בטעינה
+- [ ] `prefers-reduced-motion` מכובד
+- [ ] אפס `TODO`/`FIXME`/`HACK` בקוד
+
+**לא בשלב 3:** Gemini, MRZ, דרייב, Service Worker.
+
+---
+
+## 10. הרחבות וסטיות מהאפיון המקורי
+
+כל אחת מהן מסומנת ⚠️ בגוף המסמך. אף אחת אינה סותרת אילוץ מ-§1 באפיון.
+
+**10.1 `multiline` על שדה.** האפיון מגדיר `fields[]` שטוח. כתובת ורשימת ילדים בספח אינן שורה אחת. הפתרון הוא **דגל ברמת השדה ולא `kind` חדש** — רישום ה-`kind` נשאר בדיוק כפי שנוקב באפיון (`id|passport|plate|policy|date|iban|phone|text`). שורה עם `multiline` גדלה לגובה התוכן; נגיעה מעתיקה את הבלוק כולו.
+
+**10.2 `deleted` כ-`0|1`.** בוליאני אינו מפתח חוקי ב-IndexedDB. סמנטיקה זהה.
+
+**10.3 `files[].size`.** נדרש כדי להציג את הגודל אחרי ההמרה (§5 באפיון) בלי לטעון את ה-blob.
+
+**10.4 `confidence` נשמר ואינו מוצג.** שני סיגנלים על אותה שורה — "לאימות" מהוולידטור ו"ביטחון נמוך" מהמודל — מלמדים להתעלם משניהם. הסיגנל היחיד הוא `verified`.
+
+**10.5 `daysLeft === 0` → `past`.** ראה §6.3.
+
+**10.6 תזכורת ידנית משתמשת ב-`expiryDate`.** אין שדה חדש. ראה §5.1.
+
+**מה שאינו הרחבה:** תאריכים כ-`YYYY-MM-DD`, `updatedAt` כמחרוזת ISO, היעדר אינדקס חיפוש והנרמול הגורף של תמונות — כולם החלטות מימוש בתוך מה שהאפיון מתיר.
