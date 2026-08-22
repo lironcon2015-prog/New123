@@ -1,0 +1,718 @@
+<title>מוקאפ התיק המשפחתי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700&family=Rubik:wght@400;500;600&display=swap">
+<style>
+/* ============ page chrome — deliberately achromatic ============ */
+:root{
+  --page-bg:#E3E4E1; --page-panel:#F6F6F4; --page-panel-2:#ECEDEA;
+  --page-ink:#1B1D1B; --page-ink-2:#63665F; --page-ink-3:#8E918A;
+  --page-line:#D1D4CE; --page-invert-bg:#1B1D1B; --page-invert-ink:#F3F4F1;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --page-bg:#171918; --page-panel:#212422; --page-panel-2:#1B1E1C;
+    --page-ink:#E9EAE6; --page-ink-2:#9BA096; --page-ink-3:#71766D;
+    --page-line:#2F332F; --page-invert-bg:#E9EAE6; --page-invert-ink:#171918;
+  }
+}
+:root[data-theme="dark"]{
+  --page-bg:#171918; --page-panel:#212422; --page-panel-2:#1B1E1C;
+  --page-ink:#E9EAE6; --page-ink-2:#9BA096; --page-ink-3:#71766D;
+  --page-line:#2F332F; --page-invert-bg:#E9EAE6; --page-invert-ink:#171918;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--page-bg); color:var(--page-ink);
+  font-family:'Rubik',system-ui,-apple-system,'Segoe UI',sans-serif;
+  font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 72px}
+:focus-visible{outline:2px solid var(--page-ink);outline-offset:3px;border-radius:4px}
+
+/* ============ control bar ============ */
+.bar{
+  position:sticky; top:0; z-index:40; background:var(--page-panel);
+  border-bottom:1px solid var(--page-line);
+}
+.bar-in{max-width:1180px;margin:0 auto;padding:12px 20px;display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center}
+.brand{font-weight:600;font-size:15px;letter-spacing:-.01em;margin-inline-end:auto;display:flex;align-items:center;gap:9px}
+.brand small{font-weight:400;font-size:12px;color:var(--page-ink-3);letter-spacing:.04em}
+.ctl{display:flex;align-items:center;gap:8px}
+.ctl-lbl{font-size:11px;letter-spacing:.09em;color:var(--page-ink-3);text-transform:uppercase}
+.seg{display:flex;background:var(--page-panel-2);border:1px solid var(--page-line);border-radius:999px;padding:3px;gap:2px}
+.seg button{
+  font:inherit;font-size:13px;font-weight:500;border:0;background:transparent;color:var(--page-ink-2);
+  padding:5px 13px;border-radius:999px;cursor:pointer;transition:background .15s,color .15s;
+}
+.seg button:hover{color:var(--page-ink)}
+.seg button[aria-pressed="true"]{background:var(--page-invert-bg);color:var(--page-invert-ink)}
+
+/* ============ intro ============ */
+.intro{padding:44px 0 30px;max-width:60ch}
+.eyebrow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--page-ink-3);margin:0 0 12px}
+h1{font-size:clamp(28px,4.6vw,40px);line-height:1.14;margin:0 0 14px;font-weight:600;letter-spacing:-.02em;text-wrap:balance}
+.lede{margin:0;color:var(--page-ink-2);font-size:16px}
+.lede b{color:var(--page-ink);font-weight:500}
+
+/* ============ artboard grid ============ */
+.rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(276px,1fr));gap:34px 26px;padding-top:8px}
+.art{display:flex;flex-direction:column;gap:12px;min-width:0}
+.cap{display:flex;flex-direction:column;gap:3px}
+.cap-t{font-weight:600;font-size:14px;letter-spacing:-.01em}
+.cap-s{font-size:12.5px;color:var(--page-ink-2);line-height:1.45}
+
+/* ============ the phone artboard ============ */
+.phone{
+  position:relative;width:100%;max-width:302px;height:612px;margin-inline:auto;
+  background:var(--bg);border:1px solid var(--page-line);border-radius:30px;overflow:hidden;
+  box-shadow:0 8px 30px rgba(20,22,20,.10);
+  font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  color:var(--ink);font-size:15px;line-height:1.5;
+  transition:background .28s ease;
+}
+.stage[data-font="assistant"] .phone{font-family:'Assistant',system-ui,sans-serif}
+.screen{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;padding:14px 16px 92px}
+.screen::-webkit-scrollbar{display:none}
+.screen.flush{padding:0 0 92px}
+
+/* ---- app tokens: fixed neutrals + swappable accent ---- */
+.stage{
+  --bg:#F6F5F2; --surface:#FFFFFF; --surface-2:#FAF9F7;
+  --ink:#16171A; --ink-2:#5A5F68; --ink-3:#8D929B; --line:#E9E6E1;
+  --exp-past-fg:#B02419; --exp-past-bg:#FCEBE9;
+  --exp-30-fg:#A05A00;  --exp-30-bg:#FDF1E2;
+  --exp-90-fg:#7A6320;  --exp-90-bg:#FAF4E2;
+  --shadow:0 2px 14px rgba(18,19,24,.055);
+  --r-card:24px; --r-row:14px; --r-btn:16px;
+}
+.stage[data-pal="a"]{--accent:#4A4080;--accent-strong:#3A3166;--accent-soft:#EDEBF6;--accent-on:#fff}
+.stage[data-pal="b"]{--accent:#1F5350;--accent-strong:#163E3C;--accent-soft:#E4EFEE;--accent-on:#fff}
+.stage[data-pal="c"]{
+  --accent:#A9492E;--accent-strong:#8A3A24;--accent-soft:#F7E9E4;--accent-on:#fff;
+  /* the collision tax: "expired" red must retreat to a cooler crimson */
+  --exp-past-fg:#9B1C2E;--exp-past-bg:#FAEAEC;
+}
+.phone *{transition:background-color .28s ease,color .28s ease,border-color .28s ease}
+
+/* ---- app type ---- */
+.scr-title{font-size:22px;font-weight:600;letter-spacing:-.02em;margin:6px 0 16px;line-height:1.25}
+.bucket-h{font-size:13px;color:var(--ink-2);margin:18px 2px 8px;font-weight:500}
+.bucket-h:first-child{margin-top:2px}
+
+/* ---- expiry card ---- */
+.card{
+  background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow);
+  padding:14px;display:flex;gap:12px;align-items:center;width:100%;border:0;text-align:start;
+  font:inherit;color:inherit;cursor:pointer;
+}
+.card+.card{margin-top:10px}
+.card:active{transform:scale(.97)}
+.av{
+  flex:0 0 40px;height:40px;border-radius:999px;display:grid;place-items:center;
+  font-size:15px;font-weight:600;color:#fff;letter-spacing:-.01em;
+}
+.card-b{min-width:0;flex:1}
+.card-t{font-size:15px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-s{font-size:13px;color:var(--ink-2);margin-top:2px}
+.chip{
+  font-size:12px;font-weight:500;padding:4px 10px;border-radius:999px;white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.chip.past{background:var(--exp-past-bg);color:var(--exp-past-fg)}
+.chip.d30{background:var(--exp-30-bg);color:var(--exp-30-fg)}
+.chip.d90{background:var(--exp-90-bg);color:var(--exp-90-fg)}
+.chip.ok{background:transparent;color:var(--ink-2);padding-inline:0}
+.chip.verify{background:var(--exp-30-bg);color:var(--exp-30-fg);font-size:11px;padding:2px 8px}
+
+/* ---- collapsed "valid" row ---- */
+.fold{
+  width:100%;background:transparent;border:1px solid var(--line);border-radius:var(--r-row);
+  padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font:inherit;font-size:14px;color:var(--ink-2);cursor:pointer;margin-top:10px;
+}
+.fold:active{transform:scale(.97)}
+
+/* ---- field row: the core component ---- */
+.rows{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden}
+.row{
+  display:flex;align-items:center;gap:10px;width:100%;min-height:56px;padding:9px 14px;
+  background:transparent;border:0;border-bottom:1px solid var(--line);
+  font:inherit;color:inherit;text-align:start;cursor:pointer;
+}
+.rows .row:last-child{border-bottom:0}
+.row:active{transform:scale(.97)}
+.row-b{min-width:0;flex:1}
+.row-l{font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:6px;line-height:1.35}
+.row-v{
+  font-size:17px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums;
+  letter-spacing:.01em;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.row-sub{font-size:12px;color:var(--ink-3);margin-top:1px}
+.eye{
+  flex:0 0 44px;height:44px;border-radius:999px;border:0;background:transparent;color:var(--ink-3);
+  display:grid;place-items:center;cursor:pointer;
+}
+.eye:hover{color:var(--ink-2);background:var(--surface-2)}
+
+/* ---- privacy mode (§11) ---- */
+.stage[data-privacy="on"] .sens{filter:blur(6px);user-select:none}
+
+/* ---- search ---- */
+.search{
+  display:flex;align-items:center;gap:9px;background:var(--surface);border-radius:var(--r-row);
+  padding:12px 14px;box-shadow:var(--shadow);color:var(--ink-3);margin-bottom:16px;
+}
+.search span{font-size:15px;color:var(--ink)}
+.search .caret{width:1.5px;height:17px;background:var(--accent);animation:blink 1.1s steps(1,end) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ---- document anchor ---- */
+.anchor{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;background:var(--surface-2)}
+.anchor-none{height:4px;background:var(--accent-soft)}
+.doc-head{background:var(--surface);border-radius:var(--r-card);overflow:hidden;box-shadow:var(--shadow);margin-bottom:12px}
+.doc-meta{padding:14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+
+/* ---- empty state (§4.6) ---- */
+.empty{
+  border:1.5px dashed var(--line);border-radius:var(--r-card);background:var(--surface);
+  padding:32px 22px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;margin-top:30px;
+}
+.empty.drag{border-color:var(--accent);background:var(--accent-soft)}
+.empty-t{font-size:16px;font-weight:600;letter-spacing:-.01em}
+.empty-s{font-size:13.5px;color:var(--ink-2);max-width:30ch}
+.btn{
+  font:inherit;font-size:15px;font-weight:600;border:0;border-radius:var(--r-btn);
+  background:var(--accent);color:var(--accent-on);padding:13px 24px;cursor:pointer;margin-top:12px;
+}
+.btn:active{transform:scale(.97)}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent);margin-top:0}
+.btn.wide{width:100%;margin-top:0}
+
+/* ---- lock screen ---- */
+.lock{position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:64px 26px 26px}
+.lock-mark{color:var(--accent);margin-bottom:20px}
+.lock-t{font-size:17px;font-weight:600;letter-spacing:-.01em}
+.lock-s{font-size:13px;color:var(--ink-2);margin-top:4px}
+.dots{display:flex;gap:13px;margin:30px 0 auto}
+.dot{width:12px;height:12px;border-radius:999px;border:1.8px solid var(--ink-3)}
+.dot.on{background:var(--accent);border-color:var(--accent)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;width:100%}
+.key{
+  font:inherit;font-size:22px;font-weight:500;font-variant-numeric:tabular-nums;
+  background:var(--surface);border:0;border-radius:var(--r-btn);padding:15px 0;color:var(--ink);
+  box-shadow:var(--shadow);cursor:pointer;
+}
+.key:active{transform:scale(.97)}
+.key.blank{background:transparent;box-shadow:none;cursor:default}
+
+/* ---- confirm screen ---- */
+.banner{
+  background:var(--accent-soft);color:var(--accent-strong);border-radius:var(--r-row);
+  padding:11px 14px;font-size:13.5px;font-weight:500;margin-bottom:12px;
+}
+.inp{
+  width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-row);
+  padding:8px 12px 10px;margin-bottom:9px;
+}
+.inp.flag{border-color:var(--exp-30-fg)}
+.inp label{font-size:12.5px;color:var(--ink-2);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.inp .v{font-size:16px;font-weight:500;font-variant-numeric:tabular-nums;margin-top:2px}
+.checks{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow);padding:12px 14px;margin:14px 0}
+.checks h4{margin:0 0 3px;font-size:13.5px;font-weight:600}
+.checks p{margin:0 0 10px;font-size:12px;color:var(--ink-3)}
+.chk{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14.5px}
+.box{width:20px;height:20px;border-radius:6px;border:1.8px solid var(--ink-3);flex:0 0 20px}
+
+/* ---- bottom bar + FAB ---- */
+.nav{
+  position:absolute;inset-inline:0;bottom:0;height:74px;background:var(--surface);
+  border-top:1px solid var(--line);display:flex;align-items:flex-start;padding-top:9px;
+}
+.nav-i{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:transparent;border:0;font:inherit;font-size:10.5px;color:var(--ink-3);cursor:pointer;
+}
+.nav-i.on{color:var(--accent)}
+.nav-i.gap{visibility:hidden}
+.fab{
+  position:absolute;inset-inline-start:50%;transform:translateX(-50%);bottom:36px;
+  width:56px;height:56px;border-radius:999px;background:var(--accent);color:var(--accent-on);
+  border:0;display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow);
+}
+.fab:active{transform:translateX(-50%) scale(.97)}
+
+/* ---- toast ---- */
+.toast{
+  position:absolute;inset-inline:0;bottom:88px;display:flex;justify-content:center;
+  pointer-events:none;opacity:0;transition:opacity .12s ease;z-index:5;
+}
+.toast.show{opacity:1}
+.toast span{
+  background:rgba(22,23,26,.92);color:#fff;font-size:13.5px;font-weight:500;
+  padding:8px 18px;border-radius:999px;
+}
+
+/* ============ token panel ============ */
+.tokens{margin-top:56px;background:var(--page-panel);border:1px solid var(--page-line);border-radius:18px;padding:26px 24px}
+.tokens h2{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.015em}
+.tokens .sub{margin:0 0 22px;font-size:13.5px;color:var(--page-ink-2);max-width:64ch}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.sw{border:1px solid var(--page-line);border-radius:12px;overflow:hidden;background:var(--page-panel-2)}
+.sw i{display:block;height:52px}
+.sw b{display:block;padding:8px 10px 2px;font-size:12.5px;font-weight:500}
+.sw code{
+  display:block;padding:0 10px 9px;font-size:11.5px;color:var(--page-ink-3);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;direction:ltr;text-align:start;
+}
+.note{
+  margin-top:22px;padding-top:18px;border-top:1px solid var(--page-line);
+  font-size:13.5px;color:var(--page-ink-2);max-width:72ch;
+}
+.note b{color:var(--page-ink);font-weight:500}
+.note ul{margin:10px 0 0;padding-inline-start:20px;display:flex;flex-direction:column;gap:6px}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+</style>
+
+<div dir="rtl" lang="he">
+
+<div class="bar">
+  <div class="bar-in">
+    <div class="brand">התיק המשפחתי <small>שלב 1 · מוקאפ</small></div>
+    <div class="ctl">
+      <span class="ctl-lbl">פלטה</span>
+      <div class="seg" id="pal">
+        <button data-v="a" aria-pressed="true">A אינדיגו</button>
+        <button data-v="b" aria-pressed="false">B פטרול</button>
+        <button data-v="c" aria-pressed="false">C טרקוטה</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <span class="ctl-lbl">כתב</span>
+      <div class="seg" id="font">
+        <button data-v="assistant" aria-pressed="true">Assistant</button>
+        <button data-v="system" aria-pressed="false">מערכת</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <span class="ctl-lbl">פרטיות</span>
+      <div class="seg" id="priv">
+        <button data-v="off" aria-pressed="true">כבוי</button>
+        <button data-v="on" aria-pressed="false">דלוק</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+<div class="intro">
+  <p class="eyebrow">מוקאפ להכרעה</p>
+  <h1>שישה מסכים, שלוש פלטות, החלטה אחת</h1>
+  <p class="lede">המסכים חיים: <b>נגיעה בשורת שדה מעתיקה באמת</b>, גם כשהערך ממוסך. כפתור העין חושף. מתג הפרטיות מטשטש. החלף פלטה ובדוק דבר אחד — האם ה־FAB והצ׳יפ האדום של «פג» נראים כמו שני דברים שונים.</p>
+</div>
+
+<div class="stage" id="stage" data-pal="a" data-font="assistant" data-privacy="off">
+<div class="rail">
+
+  <!-- ===== 1. expiries / home ===== -->
+  <div class="art">
+    <div class="cap">
+      <div class="cap-t">תפוגות · מסך הבית</div>
+      <div class="cap-s">סטטוס, לא מלאי. «תקין» מקופל ובלי צבע — הוא ברירת המחדל של רוב המסמכים.</div>
+    </div>
+    <div class="phone">
+      <div class="screen">
+        <div class="scr-title">תפוגות</div>
+
+        <div class="bucket-h">פג</div>
+        <button class="card">
+          <span class="av" style="background:#8B6F47">מ</span>
+          <span class="card-b">
+            <span class="card-t">ביטוח רכב</span>
+            <span class="card-s">מאזדה 3</span>
+          </span>
+          <span class="chip past">פג לפני 4 ימים</span>
+        </button>
+
+        <div class="bucket-h">עד 30 יום</div>
+        <button class="card">
+          <span class="av" style="background:#4B6B7A">ל</span>
+          <span class="card-b">
+            <span class="card-t">רישיון נהיגה</span>
+            <span class="card-s">ליאור</span>
+          </span>
+          <span class="chip d30">בעוד 12 יום</span>
+        </button>
+        <button class="card">
+          <span class="av" style="background:#8B6F47">מ</span>
+          <span class="card-b">
+            <span class="card-t">טסט שנתי</span>
+            <span class="card-s">מאזדה 3</span>
+          </span>
+          <span class="chip d30">בעוד 26 יום</span>
+        </button>
+
+        <div class="bucket-h">עד 90 יום</div>
+        <button class="card">
+          <span class="av" style="background:#7A5B7E">מ</span>
+          <span class="card-b">
+            <span class="card-t">דרכון</span>
+            <span class="card-s">מיכל · תפוגה בלבד</span>
+          </span>
+          <span class="chip d90">בעוד 63 יום</span>
+        </button>
+
+        <button class="fold">
+          <span>תקין · 23 מסמכים</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+      <div class="nav">
+        <button class="nav-i on"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>תפוגות</button>
+        <button class="nav-i"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>העתקה</button>
+        <button class="nav-i gap">·</button>
+        <button class="nav-i"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17.5" cy="9" r="2.6"/><path d="M16 14.3c2.3-.4 4 1.3 4.5 4.7"/></svg>ישויות</button>
+        <button class="nav-i"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M12 18.6V21M21 12h-2.4M5.4 12H3M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7M18.4 18.4l-1.7-1.7M7.3 7.3L5.6 5.6"/></svg>הגדרות</button>
+      </div>
+      <button class="fab"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div class="toast"><span>הועתק</span></div>
+    </div>
+  </div>
+
+  <!-- ===== 2. quick copy ===== -->
+  <div class="art">
+    <div class="cap">
+      <div class="cap-t">העתקה מהירה</div>
+      <div class="cap-s">המסך שמצדיק את האפליקציה. נגיעה מעתיקה — נסה. השורה הממוסכת מעתיקה את הערך המלא בלי לחשוף אותו.</div>
+    </div>
+    <div class="phone">
+      <div class="screen">
+        <div class="scr-title">העתקה מהירה</div>
+        <div class="search">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+          <span>רכב</span><i class="caret"></i>
+        </div>
+        <div class="rows">
+          <div class="row" role="button" tabindex="0" data-full="84-521-03">
+            <span class="row-b">
+              <span class="row-l">מספר רישוי</span>
+              <span class="row-v"><bdi dir="ltr">84-521-03</bdi></span>
+              <span class="row-sub">מאזדה 3 · רישיון רכב</span>
+            </span>
+          </div>
+          <div class="row" role="button" tabindex="0" data-full="PL-2291043" data-mask="•••• 1043" data-sens="1">
+            <span class="row-b">
+              <span class="row-l">מספר פוליסה</span>
+              <span class="row-v sens"><bdi dir="ltr">•••• 1043</bdi></span>
+              <span class="row-sub">מאזדה 3 · ביטוח רכב</span>
+            </span>
+            <span class="eye" role="button" tabindex="0" aria-label="הצג ערך"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+          </div>
+          <div class="row" role="button" tabindex="0" data-full="0524418890">
+            <span class="row-b">
+              <span class="row-l">טלפון סוכן</span>
+              <span class="row-v"><bdi dir="ltr">052-441-8890</bdi></span>
+              <span class="row-sub">מאזדה 3 · ביטוח רכב</span>
+            </span>
+          </div>
+          <div class="row" role="button" tabindex="0" data-full="JM0BM1V72E1234567">
+            <span class="row-b">
+              <span class="row-l">מספר שלדה</span>
+              <span class="row-v"><bdi dir="ltr">JM0BM1V72E1234567</bdi></span>
+              <span class="row-sub">מאזדה 3 · רישיון רכב</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="nav">
+        <button class="nav-i"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>תפוגות</button>
+        <button class="nav-i on"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>העתקה</button>
+        <button class="nav-i gap">·</button>
+        <button class="nav-i"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17.5" cy="9" r="2.6"/><path d="M16 14.3c2.3-.4 4 1.3 4.5 4.7"/></svg>ישויות</button>
+        <button class="nav-i"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M12 18.6V21M21 12h-2.4M5.4 12H3M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7M18.4 18.4l-1.7-1.7M7.3 7.3L5.6 5.6"/></svg>הגדרות</button>
+      </div>
+      <button class="fab"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div class="toast"><span>הועתק</span></div>
+    </div>
+  </div>
+
+  <!-- ===== 3. document card ===== -->
+  <div class="art">
+    <div class="cap">
+      <div class="cap-t">כרטיס מסמך</div>
+      <div class="cap-s">תמונת המסמך כעוגן ויזואלי, ומתחתיה שורות השדה. הערך גדול מהתווית — העין מוצאת אותו בלי לקרוא.</div>
+    </div>
+    <div class="phone">
+      <div class="screen flush">
+        <div class="doc-head" style="border-radius:0 0 var(--r-card) var(--r-card)">
+          <svg class="anchor" viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" role="img" aria-label="צילום רישיון נהיגה">
+            <rect width="320" height="200" fill="#DCD9D2"/>
+            <rect x="18" y="16" width="284" height="168" rx="12" fill="#F2EFE8"/>
+            <rect x="18" y="16" width="284" height="30" rx="12" fill="#C9C3B6"/>
+            <rect x="30" y="26" width="96" height="10" rx="5" fill="#8E877A"/>
+            <rect x="32" y="62" width="72" height="88" rx="8" fill="#CFC9BC"/>
+            <circle cx="68" cy="92" r="19" fill="#B3AC9E"/>
+            <path d="M44 148c3-16 12-24 24-24s21 8 24 24z" fill="#B3AC9E"/>
+            <rect x="118" y="64" width="150" height="8" rx="4" fill="#B9B2A4"/>
+            <rect x="118" y="84" width="112" height="8" rx="4" fill="#C7C1B4"/>
+            <rect x="118" y="104" width="134" height="8" rx="4" fill="#C7C1B4"/>
+            <rect x="118" y="124" width="88" height="8" rx="4" fill="#C7C1B4"/>
+            <rect x="118" y="144" width="150" height="6" rx="3" fill="#D6D0C3"/>
+          </svg>
+          <div class="doc-meta">
+            <div>
+              <div class="card-t">רישיון נהיגה</div>
+              <div class="card-s">ליאור</div>
+            </div>
+            <span class="chip d30">בעוד 12 יום</span>
+          </div>
+        </div>
+        <div style="padding:0 16px">
+          <div class="rows">
+            <div class="row" role="button" tabindex="0" data-full="123456782" data-mask="•••• 6782" data-sens="1">
+              <span class="row-b">
+                <span class="row-l">מספר תעודת זהות</span>
+                <span class="row-v sens"><bdi dir="ltr">•••• 6782</bdi></span>
+              </span>
+              <span class="eye" role="button" tabindex="0" aria-label="הצג ערך"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+            </div>
+            <div class="row" role="button" tabindex="0" data-full="4183920">
+              <span class="row-b">
+                <span class="row-l">מספר רישיון</span>
+                <span class="row-v"><bdi dir="ltr">4183920</bdi></span>
+              </span>
+            </div>
+            <div class="row" role="button" tabindex="0" data-full="B, A2, 1">
+              <span class="row-b">
+                <span class="row-l">דרגות</span>
+                <span class="row-v"><bdi dir="ltr">B, A2, 1</bdi></span>
+              </span>
+            </div>
+            <div class="row" role="button" tabindex="0" data-full="14/09/2026">
+              <span class="row-b">
+                <span class="row-l">בתוקף עד <span class="chip verify">לאימות</span></span>
+                <span class="row-v"><bdi dir="ltr">14/09/2026</bdi></span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="toast"><span>הועתק</span></div>
+    </div>
+  </div>
+
+  <!-- ===== 4. parse confirm ===== -->
+  <div class="art">
+    <div class="cap">
+      <div class="cap-t">אישור פרסינג</div>
+      <div class="cap-s">פלט Gemini לא נשמר בשקט. שדה שנכשל בוולידציה נשאר עם הערך שלו ומסומן «לאימות» — הילדים בספח מוצעים ולא נוצרים.</div>
+    </div>
+    <div class="phone">
+      <div class="screen">
+        <div class="scr-title">בדוק לפני שמירה</div>
+        <div class="banner">נמצאו 7 שדות · 1 דורש אימות</div>
+        <div class="inp">
+          <label>סוג מסמך</label>
+          <div class="v" style="font-variant-numeric:normal">ספח תעודת זהות</div>
+        </div>
+        <div class="inp">
+          <label>שם מלא</label>
+          <div class="v" style="font-variant-numeric:normal">ליאור כהן</div>
+        </div>
+        <div class="inp flag">
+          <label>מספר תעודת זהות <span class="chip verify">ספרת ביקורת נכשלה</span></label>
+          <div class="v"><bdi dir="ltr">123456783</bdi></div>
+        </div>
+        <div class="inp">
+          <label>תאריך הנפקה</label>
+          <div class="v"><bdi dir="ltr">02/03/2021</bdi></div>
+        </div>
+        <div class="checks">
+          <h4>נמצאו שני ילדים בספח</h4>
+          <p>יצירת ישות מאפשרת לתלות עליהם דרכון או ביטוח</p>
+          <div class="chk"><span class="box"></span><span>נועם כהן · <bdi dir="ltr">2016</bdi></span></div>
+          <div class="chk"><span class="box"></span><span>יעל כהן · <bdi dir="ltr">2019</bdi></span></div>
+        </div>
+        <button class="btn wide">שמירה</button>
+      </div>
+      <div class="toast"><span>הועתק</span></div>
+    </div>
+  </div>
+
+  <!-- ===== 5. empty state ===== -->
+  <div class="art">
+    <div class="cap">
+      <div class="cap-t">מצב ריק</div>
+      <div class="cap-s">הזמנה, לא הודעת שגיאה. הפעולה בתוך המסגרת — זה הפער שחוזר בשלוש אפליקציות אחרות.</div>
+    </div>
+    <div class="phone">
+      <div class="screen">
+        <div class="scr-title">ישויות</div>
+        <div class="empty">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:var(--ink-3)">
+            <path d="M3 7.5A2.5 2.5 0 015.5 5h3.2l1.8 2.4h8A2.5 2.5 0 0121 9.9v7.6a2.5 2.5 0 01-2.5 2.5h-13A2.5 2.5 0 013 17.5z"/>
+            <path d="M12 11.5v5M9.5 14h5"/>
+          </svg>
+          <div class="empty-t">עוד אין כאן מסמכים</div>
+          <div class="empty-s">צלם תעודה, הדבק מהלוח, או גרור קובץ לכאן</div>
+          <button class="btn">הוספת מסמך</button>
+        </div>
+        <div class="empty drag" style="margin-top:16px">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)">
+            <path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 15v3.5A2.5 2.5 0 006.5 21h11a2.5 2.5 0 002.5-2.5V15"/>
+          </svg>
+          <div class="empty-t" style="color:var(--accent-strong)">שחרר כדי להוסיף</div>
+          <div class="empty-s">גרירה פעילה · מצב שני של אותה מסגרת</div>
+        </div>
+      </div>
+      <div class="nav">
+        <button class="nav-i"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>תפוגות</button>
+        <button class="nav-i"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>העתקה</button>
+        <button class="nav-i gap">·</button>
+        <button class="nav-i on"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17.5" cy="9" r="2.6"/><path d="M16 14.3c2.3-.4 4 1.3 4.5 4.7"/></svg>ישויות</button>
+        <button class="nav-i"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M12 18.6V21M21 12h-2.4M5.4 12H3M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7M18.4 18.4l-1.7-1.7M7.3 7.3L5.6 5.6"/></svg>הגדרות</button>
+      </div>
+      <button class="fab"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div class="toast"><span>הועתק</span></div>
+    </div>
+  </div>
+
+  <!-- ===== 6. lock ===== -->
+  <div class="art">
+    <div class="cap">
+      <div class="cap-t">מסך נעילה</div>
+      <div class="cap-s">מקלדת משלנו, לא <bdi dir="ltr">input type=number</bdi> — כדי שלא תוקפץ מקלדת מערכת ולא תתאפשר הדבקה. אין קישור «כיבוי» כאן.</div>
+    </div>
+    <div class="phone">
+      <div class="lock">
+        <div class="lock-mark">
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="10.5" width="16" height="10.5" rx="3"/>
+            <path d="M8 10.5V7.8a4 4 0 018 0v2.7"/>
+          </svg>
+        </div>
+        <div class="lock-t">התיק המשפחתי</div>
+        <div class="lock-s">הזן קוד כדי להיכנס</div>
+        <div class="dots"><i class="dot on"></i><i class="dot on"></i><i class="dot on"></i><i class="dot"></i><i class="dot"></i><i class="dot"></i></div>
+        <div class="pad">
+          <button class="key">1</button><button class="key">2</button><button class="key">3</button>
+          <button class="key">4</button><button class="key">5</button><button class="key">6</button>
+          <button class="key">7</button><button class="key">8</button><button class="key">9</button>
+          <button class="key blank"></button><button class="key">0</button>
+          <button class="key"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M9.5 5h9A2.5 2.5 0 0121 7.5v9a2.5 2.5 0 01-2.5 2.5h-9L3 12z"/><path d="M12 9.5l5 5M17 9.5l-5 5"/></svg></button>
+        </div>
+      </div>
+      <div class="toast"><span>הועתק</span></div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<div class="tokens">
+  <h2>האסימונים של הפלטה הפעילה</h2>
+  <p class="sub">הנייטרלים זהים בכל השלוש. משתנה רק האקסנט — ובפלטה C, גם האדום של «פג», שנאלץ לסגת לכיוון קר יותר כדי להתרחק ממנו.</p>
+  <div class="grid" id="swatches"></div>
+  <div class="note">
+    <b>מה לבדוק לפני שתבחר:</b>
+    <ul>
+      <li>עבור לפלטה <b>C</b> והסתכל על מסך הבית. ה־FAB והצ׳יפ של «פג» הם שני גוונים חמים באותו מסך — אחד מזמין ואחד מזהיר, והעין לא מפרידה ביניהם מיד. זה הטיעון היחיד נגדה, והוא בכוונה גלוי כאן ולא כתוב בטבלה.</li>
+      <li>עבור בין <b>Assistant</b> ל<b>מערכת</b> והסתכל על שורות השדה. ההבדל קטן בדסקטופ וגדול באנדרואיד — שם המחסנית הסיסטמית מרנדרת עברית פחות טוב מ‑iOS.</li>
+      <li>הדלק <b>פרטיות</b> ואז נסה להעתיק שורה מטושטשת. הערך המלא נכנס ללוח. זו הנקודה של האפליקציה.</li>
+    </ul>
+  </div>
+</div>
+
+</div>
+
+</div>
+
+<script>
+(function(){
+  var stage = document.getElementById('stage');
+
+  function seg(id, attr, onChange){
+    var box = document.getElementById(id);
+    box.addEventListener('click', function(e){
+      var b = e.target.closest('button'); if(!b) return;
+      box.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed', String(x === b)); });
+      stage.setAttribute(attr, b.dataset.v);
+      if(onChange) onChange(b.dataset.v);
+    });
+  }
+  seg('pal', 'data-pal', paint);
+  seg('font', 'data-font');
+  seg('priv', 'data-privacy');
+
+  /* ---- token panel reflects the live palette ---- */
+  var PAL = {
+    a:{name:'A · אינדיגו־חציל', accent:'#4A4080', strong:'#3A3166', soft:'#EDEBF6', past:'#B02419'},
+    b:{name:'B · פטרול עמוק',  accent:'#1F5350', strong:'#163E3C', soft:'#E4EFEE', past:'#B02419'},
+    c:{name:'C · טרקוטה חרוכה', accent:'#A9492E', strong:'#8A3A24', soft:'#F7E9E4', past:'#9B1C2E'}
+  };
+  function paint(v){
+    var p = PAL[v], out = '';
+    var items = [
+      ['אקסנט', p.accent], ['אקסנט לחוץ', p.strong], ['אקסנט רך', p.soft],
+      ['פג', p.past], ['עד 30 יום', '#A05A00'], ['עד 90 יום', '#7A6320'],
+      ['רקע', '#F6F5F2'], ['משטח', '#FFFFFF'], ['דיו', '#16171A'], ['קו', '#E9E6E1']
+    ];
+    items.forEach(function(it){
+      out += '<div class="sw"><i style="background:'+it[1]+'"></i><b>'+it[0]+'</b><code>'+it[1]+'</code></div>';
+    });
+    document.getElementById('swatches').innerHTML = out;
+  }
+  paint('a');
+
+  /* ---- clipboard, inside the gesture (iOS Safari) ---- */
+  function copy(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).catch(fallback);
+    } else { fallback(); }
+    function fallback(){
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly','');
+      ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch(err){}
+      document.body.removeChild(ta);
+    }
+  }
+  var timers = new WeakMap();
+  function toast(phone){
+    var t = phone.querySelector('.toast'); if(!t) return;
+    t.classList.add('show');
+    clearTimeout(timers.get(t));
+    timers.set(t, setTimeout(function(){ t.classList.remove('show'); }, 1600));
+  }
+
+  document.addEventListener('click', function(e){
+    var eye = e.target.closest('.eye');
+    if(eye){
+      e.preventDefault(); e.stopPropagation();
+      var r = eye.closest('.row');
+      var v = r.querySelector('.row-v bdi');
+      var shown = r.dataset.shown === '1';
+      v.textContent = shown ? r.dataset.mask : r.dataset.full;
+      r.dataset.shown = shown ? '0' : '1';
+      eye.setAttribute('aria-label', shown ? 'הצג ערך' : 'הסתר ערך');
+      return;
+    }
+    var row = e.target.closest('.row');
+    if(row && row.dataset.full){
+      copy(row.dataset.full);
+      toast(row.closest('.phone'));
+    }
+  });
+
+  document.addEventListener('keydown', function(e){
+    if(e.key !== 'Enter' && e.key !== ' ') return;
+    var hit = e.target.closest('.eye, .row');
+    if(hit){ e.preventDefault(); hit.click(); }
+  });
+})();
+</script>
