@@ -101,11 +101,9 @@
       return Promise.all(mine.map(function (d) { return DB.deleteDoc(d.id); }));
     }).then(function () {
       return DB.get('entities', id);
-    }).then(function (e) {
-      if (!e) return null;
-      e.deleted = 1;
-      e.updatedAt = U.now();
-      return DB.put('entities', e);
+    }).then(function (rec) {
+      if (!rec) return null;
+      return DB.put('entities', { id: rec.id, deleted: 1, updatedAt: U.now() });
     });
   };
 
@@ -130,14 +128,13 @@
     });
   };
 
+  /* ported from Navigo: js/db.js:remove — tombstone מצומצם, לא רשומה מופשטת.
+     בדיוק המפתחות שהמיזוג ואינדקס ה-entityId צריכים. כל השאר נמחק בכוונה:
+     אין סיבה שמספר תעודת זהות של רשומה מחוקה ימשיך להסתובב ב-db.json. */
   DB.deleteDoc = function (id) {
-    return DB.get('docs', id).then(function (d) {
-      if (!d) return null;
-      d.deleted = 1;
-      d.fields = [];          /* אין טעם להשאיר מספרי תעודות ב-tombstone */
-      d.files = [];
-      d.notes = '';
-      d.updatedAt = U.now();
+    return DB.get('docs', id).then(function (rec) {
+      if (!rec) return null;
+      var d = { id: rec.id, entityId: rec.entityId, deleted: 1, updatedAt: U.now() };
       return tx(['docs', 'blobs'], 'readwrite').then(function (t) {
         t.objectStore('docs').put(d);
         var idx = t.objectStore('blobs').index('by_docId');

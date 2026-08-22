@@ -158,9 +158,15 @@ const dstSafe = await page.evaluate(() => {
 t('חישוב חוצה שעון קיץ נותר שלם', dstSafe === 31, String(dstSafe));
 
 await page.click('.nav-i[data-hash="#/expiries"]');
+// לחכות למסך עצמו ולא ל-.bucket-h: הכותרת "אחרונים" במסך החיפוש חולקת
+// את אותה מחלקה, ומספקת את ההמתנה עוד לפני שהרינדור התחלף
+await page.waitForFunction(() =>
+  location.hash === '#/expiries' &&
+  document.querySelector('.scr-title')?.textContent === 'התיק המשפחתי');
 await page.waitForSelector('.bucket-h');
 const homeText = await page.textContent('.scr');
-t('מסך הבית מקבץ לדליים', homeText.includes('עד 30 יום') || homeText.includes('עד 90 יום'));
+t('מסך הבית מקבץ לדליים', homeText.includes('עד 30 יום') || homeText.includes('עד 90 יום'), homeText.slice(0, 160));
+t('הדלי "תקין" מקופל מאחורי שורה אחת', homeText.includes('תקין ·'), homeText.slice(0, 160));
 
 // ---------- files: all four routes ----------
 console.log('\n— ארבעת מסלולי הקלט —');

@@ -260,7 +260,7 @@
       return wrap;
     }
 
-    mine.sort(function (a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); });
+    mine.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
     mine.forEach(function (doc) {
       var days = doc.expiryDate ? E.daysLeft(doc.expiryDate) : null;
       var bucket = E.bucket(days);

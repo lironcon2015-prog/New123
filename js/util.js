@@ -16,7 +16,11 @@
     return Date.now().toString(36) + '-' + hex;
   };
 
-  U.now = function () { return new Date().toISOString(); };
+  /* ported from Navigo: js/db.js:put — epoch ms, מספר, לא מחרוזת ISO.
+     `(rec.updatedAt || 0)` נשען על כך שהערך מספרי כדי שרשומה בלי חותמת
+     תיפול ל-0 ותפסיד כל התנגשות. עם מחרוזות, `'' > '2026-…'` הוא false
+     בשני הכיוונים — רשומה בלי חותמת נתקעת ולא מסתנכרנת לשום כיוון. */
+  U.now = function () { return Date.now(); };
 
   U.todayYmd = function (d) {
     d = d || new Date();
@@ -121,19 +125,30 @@
   };
 
   /* ---------- בידוד bidi ---------- */
-  /* STUB pending Q9 — ממתין לדפוס של נאביגו. הכלל כאן: כל ערך מספרי או
-     לטיני נעטף ב-<bdi dir="ltr">, כולל ערך מעורב. אם נאביגו משתמשת בתווי
-     בקרה של יוניקוד — זה מוחלף כאן ובמקום אחד בלבד. */
-  U.LTR_RE = /[0-9A-Za-z]/;
+  /* ported from Navigo: js/ui.js — דפוס, לא קוד. לנאביגו אין פונקציית עטיפה
+     ואין `<bdi>` בכלל; היא שמה `dir="ltr"` ידנית בנקודת השימוש, ולכן ערך
+     מעורב עברית-לטינית נשבר אצלה. ההמלצה שחזרה משם, ואומצה כאן:
+
+       לטיני/מספרי בלבד  →  <bdi dir="ltr">   כפיית כיוון, בטוחה
+       מעורב              →  <bdi>             בידוד בלי כפייה
+       עברית בלבד         →  <span>            אין מה לבודד
+
+     `dir="ltr"` על "רחוב הרצל 5, תל אביב" זורק את הסיפא לתחילת השורה.
+     ההבדל בין השורה השנייה לראשונה הוא ההבדל בין בידוד לכפייה.
+
+     תווי בקרה של יוניקוד (U+2066/U+2069) נשקלו ונדחו: הם בלתי-נראים במקור,
+     נמלטים מ-grep, ונוסעים בשקט לתוך ערכים שנשמרים ב-DB. */
+  U.HAS_LTR = /[0-9A-Za-z]/;
+  U.HAS_RTL = /[\u0590-\u05FF]/;
 
   U.bidi = function (value, cls) {
     var s = String(value == null ? '' : value);
-    if (!U.LTR_RE.test(s)) {
-      return U.el('span', { class: cls || null, text: s });
-    }
-    var b = U.el('bdi', { dir: 'ltr', text: s });
-    if (!cls) return b;
-    return U.el('span', { class: cls }, b);
+    var node;
+    if (!U.HAS_LTR.test(s)) node = U.el('span', { text: s });
+    else if (U.HAS_RTL.test(s)) node = U.el('bdi', { text: s });
+    else node = U.el('bdi', { dir: 'ltr', text: s });
+    if (!cls) return node;
+    return U.el('span', { class: cls }, node);
   };
 
   /* ---------- שונות ---------- */

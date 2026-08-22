@@ -136,6 +136,113 @@ t('ערך קצר ממוסך במלואו', v.maskShort === '••••', v.mas
 t('לוחית רישוי אינה רגישה', v.plateSens === false);
 t('ת״ז רגישה', v.idSens === true);
 
+console.log('\n— בידוד bidi —');
+const bidi = await page.evaluate(() => {
+  const out = {};
+  const one = (v) => {
+    const n = window.U.bidi(v);
+    return { tag: n.tagName.toLowerCase(), dir: n.getAttribute('dir'), text: n.textContent };
+  };
+  out.latin = one('M4821639');
+  out.digits = one('84-521-03');
+  out.date = one('01/11/2026');
+  out.hebrew = one('הראל');
+  out.mixed = one('רחוב הרצל 5, תל אביב');
+  out.mixed2 = one('ביטוח רכב PL-2291043');
+  out.empty = one('');
+  return out;
+});
+t('לטיני בלבד → bdi dir=ltr', bidi.latin.tag === 'bdi' && bidi.latin.dir === 'ltr');
+t('מספרי בלבד → bdi dir=ltr', bidi.digits.dir === 'ltr' && bidi.date.dir === 'ltr');
+t('עברית בלבד → span, בלי בידוד', bidi.hebrew.tag === 'span' && bidi.hebrew.dir === null);
+t('מעורב → bdi בלי dir (בידוד, לא כפייה)',
+  bidi.mixed.tag === 'bdi' && bidi.mixed.dir === null, bidi.mixed.dir);
+t('מעורב שני → bdi בלי dir', bidi.mixed2.tag === 'bdi' && bidi.mixed2.dir === null);
+t('הטקסט נשמר כמות שהוא', bidi.mixed.text === 'רחוב הרצל 5, תל אביב');
+t('ערך ריק לא מתפוצץ', bidi.empty.text === '');
+
+// הבאג שהדפוס הזה מונע: dir=ltr כפוי זורק את הסיפא העברית לתחילת השורה
+// ההבדל בין בידוד לכפייה נמדד על סדר הגלישה בפועל, לא על מיקום האלמנט.
+// דקות שכדאי לדעת: בערך שיש בו ספרות בלבד לצד עברית, EN נצמדת לריצה
+// העברית וכפיית LTR לא משנה דבר. ההבדל אמיתי כשיש אותיות לטיניות.
+const order = await page.evaluate(() => {
+  const where = (html, needle) => {
+    const d = document.createElement('div');
+    d.setAttribute('dir', 'rtl');
+    d.style.cssText = 'position:fixed;top:-999px;left:0;width:400px;font-size:16px';
+    d.innerHTML = html;
+    document.body.appendChild(d);
+    const node = d.firstChild.firstChild;
+    const i = node.textContent.indexOf(needle);
+    const r = document.createRange();
+    r.setStart(node, i); r.setEnd(node, i + needle.length);
+    const x = Math.round(r.getBoundingClientRect().left - d.getBoundingClientRect().left);
+    d.remove();
+    return x;
+  };
+  const v = 'ביטוח AIG ישראל';
+  const num = 'רחוב הרצל 5';
+  return {
+    forced:   where('<bdi dir="ltr">' + v + '</bdi>', 'ביטוח'),
+    isolated: where('<bdi>' + v + '</bdi>', 'ביטוח'),
+    numForced:   where('<bdi dir="ltr">' + num + '</bdi>', '5'),
+    numIsolated: where('<bdi>' + num + '</bdi>', '5')
+  };
+});
+t('כפיית dir=ltr הופכת את סדר הקריאה בערך מעורב',
+  order.forced !== order.isolated,
+  'forced=' + order.forced + ' isolated=' + order.isolated);
+t('בידוד משאיר את הרישא במקומה הטבעי בצד ימין',
+  order.isolated > order.forced,
+  'forced=' + order.forced + ' isolated=' + order.isolated);
+t('בערך עם ספרות בלבד אין הבדל — הספרה נצמדת לריצה העברית',
+  order.numForced === order.numIsolated,
+  order.numForced + ' vs ' + order.numIsolated);
+
+console.log('\n— חותמות זמן ו-tombstones —');
+const stamps = await page.evaluate(async () => {
+  const U = window.U, DB = window.DB;
+  const now = U.now();
+  const e = await DB.saveEntity({ id: U.id(), type: 'person', name: 'זמני', color: '#4B6B7A', avatar: 'ז' });
+  const d = await DB.saveDoc({
+    id: U.id(), entityId: e.id, typeKey: 'generic', title: 'זמני',
+    fields: [{ key: 'title', label: 'כותרת', value: 'סודי', kind: 'text', sensitive: false, confidence: null, verified: true }],
+    issueDate: null, expiryDate: null, files: [], source: 'upload', notes: 'הערה', deleted: 0
+  }, []);
+  await DB.deleteDoc(d.id);
+  const tomb = await DB.get('docs', d.id);
+  await DB.deleteEntity(e.id);
+  const etomb = await DB.get('entities', e.id);
+  return {
+    type: typeof now, isEpoch: now > 1.6e12 && now < 4e12,
+    docType: typeof d.updatedAt,
+    tombKeys: Object.keys(tomb).sort(),
+    tombDeleted: tomb.deleted,
+    etombKeys: Object.keys(etomb).sort()
+  };
+});
+t('updatedAt הוא מספר', stamps.type === 'number' && stamps.docType === 'number');
+t('והוא epoch במילישניות', stamps.isEpoch === true);
+t('tombstone של מסמך מצומצם לארבעה מפתחות',
+  stamps.tombKeys.join(',') === 'deleted,entityId,id,updatedAt', stamps.tombKeys.join(','));
+t('ולא נשארו בו שדות, קבצים או הערות',
+  !stamps.tombKeys.includes('fields') && !stamps.tombKeys.includes('notes'));
+t('tombstone של ישות מצומצם לשלושה',
+  stamps.etombKeys.join(',') === 'deleted,id,updatedAt', stamps.etombKeys.join(','));
+t('deleted נשמר כ-1 ולא כבוליאני', stamps.tombDeleted === 1);
+
+console.log('\n— מצב ריק —');
+await page.goto(BASE + '#/expiries');
+await page.waitForTimeout(300);
+const emptyShape = await page.evaluate(() => {
+  const e = document.querySelector('.empty');
+  if (!e) return null;
+  return { tag: e.tagName.toLowerCase(), inner: e.querySelectorAll('button').length };
+});
+t('כל מסגרת מצב הריק היא button אחד',
+  emptyShape && emptyShape.tag === 'button', emptyShape && emptyShape.tag);
+t('ואין בתוכה כפתור מקונן', emptyShape && emptyShape.inner === 0);
+
 console.log('\n— אין תלות ברשת ---');
 const external = reqs.filter(u => !u.startsWith('http://127.0.0.1:8777') && !u.startsWith('data:'));
 t('אפס בקשות לדומיין חיצוני', external.length === 0, external.join(' | '));

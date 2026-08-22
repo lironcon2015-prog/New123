@@ -125,17 +125,22 @@
     }, U.el('span', { text: (e.avatar || (e.name || '?').trim()[0] || '?') }));
   };
 
-  /* ---------- מצב ריק — הפעולה בתוך המסגרת ---------- */
+  /* ---------- מצב ריק — הפעולה בתוך המסגרת ----------
+     ported from Navigo: js/app.js:renderHero — **כל המסגרת היא <button> אחד**,
+     לא div עם כפתור בתוכו. זה מה שנותן ל"הפעולה בתוך המסגרת" משמעות אמיתית:
+     כל השטח לחיץ, ו-scale(.97) מגיב על המסגרת כולה ולא על הפיל הפנימי. */
   UI.empty = function (o) {
     var kids = [
       U.icon(o.icon || 'i-file', 48),
       U.el('div', { class: 'empty-t', text: o.title }),
       o.sub ? U.el('div', { class: 'empty-s', text: o.sub }) : null
     ];
-    if (o.action) {
-      kids.push(U.el('button', { class: 'btn', type: 'button', onClick: o.onAction }, o.action));
-    }
-    return U.el('div', { class: 'empty' }, kids);
+    if (!o.action) return U.el('div', { class: 'empty' }, kids);
+
+    kids.push(U.el('span', { class: 'btn', text: o.action }));
+    return U.el('button', {
+      class: 'empty empty-act', type: 'button', onClick: o.onAction
+    }, kids);
   };
 
   /* ---------- גיליון תחתון ---------- */

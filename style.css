@@ -219,6 +219,9 @@ body.privacy .sens { filter: blur(6px); user-select: none; }
 }
 .empty-t { font-size: 16px; font-weight: 600; color: var(--ink); letter-spacing: -.01em; }
 .empty-s { font-size: 13.5px; color: var(--ink-2); max-width: 30ch; }
+.empty-act { width: 100%; cursor: pointer; transition: transform var(--dur-fast) var(--ease); }
+.empty-act:active { transform: scale(.97); }
+.empty-act .btn { pointer-events: none; }
 body.dragging .empty { border-color: var(--accent); background: var(--accent-soft); }
 
 /* ============ כפתורים ============ */

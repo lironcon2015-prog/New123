@@ -53,7 +53,7 @@
     });
     scored.sort(function (a, b) {
       return a.rank - b.rank ||
-        String(b.row.doc.updatedAt).localeCompare(String(a.row.doc.updatedAt));
+        ((b.row.doc.updatedAt || 0) - (a.row.doc.updatedAt || 0));
     });
     return scored.map(function (s) { return s.row; });
   };
