@@ -1,0 +1,68 @@
+/* config.js — קבועים. אין תלות באיש. */
+(function () {
+  'use strict';
+
+  window.CONFIG = {
+    APP_NAME: 'התיק המשפחתי',
+    VERSION: '0.3.0',
+
+    DB_NAME: 'DocVaultDB',
+    DB_VERSION: 1,
+
+    /* נרמול תמונות — SPEC §7.2 */
+    IMAGE_MAX_EDGE: 2400,
+    IMAGE_PASS_BYTES: 800 * 1024,
+    JPEG_QUALITY: 0.85,
+
+    RECENT_MAX: 6,
+
+    DEFAULT_PALETTE: 'a',
+    DEFAULT_TYPEFACE: 'assistant',
+    DEFAULT_AUTOLOCK_MINUTES: 5,
+
+    /* מפתחות settings — SPEC §3.5 */
+    K: {
+      pinHash: 'pinHash',
+      pinEnabled: 'pinEnabled',
+      autoLockMinutes: 'autoLockMinutes',
+      privacyMode: 'privacyMode',
+      palette: 'palette',
+      typeface: 'typeface',
+      geminiKey: 'geminiKey',
+      geminiConsent: 'geminiConsent',
+      geminiLastModel: 'geminiLastModel',
+      driveFolderId: 'driveFolderId',
+      driveDbFileId: 'driveDbFileId',
+      recentFields: 'recentFields',
+      lastNoticeDay: 'lastNoticeDay'
+    },
+
+    /* המפתחות היחידים שממורים ל-localStorage — SPEC §3.5 */
+    MIRRORED: ['palette', 'typeface'],
+    LS_PREFIX: 'fv.',
+
+    ENTITY_TYPES: [
+      { key: 'person',  label: 'אדם',  icon: 'i-person' },
+      { key: 'vehicle', label: 'רכב',  icon: 'i-car' },
+      { key: 'home',    label: 'בית',  icon: 'i-home' },
+      { key: 'other',   label: 'אחר',  icon: 'i-doc' }
+    ],
+
+    /* עמומים בכוונה: אווטאר שמתחרה באקסנט הופך את מסך הבית לרועש */
+    ENTITY_COLORS: [
+      '#4B6B7A', '#8B6F47', '#7A5B7E', '#4F6B4A',
+      '#8A5A5A', '#5B6480', '#7E6B3F', '#5F7370'
+    ],
+
+    PALETTES: [
+      { key: 'a', label: 'אינדיגו־חציל', swatch: '#4A4080' },
+      { key: 'b', label: 'פטרול עמוק',   swatch: '#1F5350' },
+      { key: 'c', label: 'טרקוטה חרוכה', swatch: '#A9492E' }
+    ],
+
+    TYPEFACES: [
+      { key: 'assistant', label: 'Assistant' },
+      { key: 'system',    label: 'מחסנית מערכת' }
+    ]
+  };
+})();
