@@ -80,10 +80,11 @@
   /* טופס מסמך — כולו נגזר מהטבלה */
   Forms.doc = function (opts) {
     var doc = opts.doc || null;
+    var proposal = opts.proposal || null;
     var entities = opts.entities || [];
     var current = doc ? { entityId: doc.entityId, typeKey: doc.typeKey } : {
       entityId: opts.entityId || (entities[0] && entities[0].id) || '',
-      typeKey: ''
+      typeKey: (proposal && proposal.typeKey) || ''
     };
 
     var host = U.el('div', { class: 'form' });
@@ -101,10 +102,20 @@
       return ent ? DT.forEntityType(ent.type) : DT.all();
     }
 
+    /* ההצעה ממלאת רק מה שאין. עריכה של מסמך קיים גוברת על פרסינג. */
     function fieldValue(key) {
-      if (!doc) return '';
-      var f = (doc.fields || []).filter(function (x) { return x.key === key; })[0];
-      return f ? f.value : '';
+      if (doc) {
+        var f = (doc.fields || []).filter(function (x) { return x.key === key; })[0];
+        if (f) return f.value;
+      }
+      if (proposal && proposal.values[key]) return proposal.values[key];
+      return '';
+    }
+
+    function proposedDate(which) {
+      if (doc && doc[which]) return doc[which];
+      if (proposal && proposal[which]) return proposal[which];
+      return '';
     }
 
     function renderFields() {
@@ -125,7 +136,7 @@
         var input = def.multiline
           ? U.el('textarea', { class: 'f-i f-multi', id: id, rows: '2' })
           : U.el('input', {
-              class: 'f-i', id: id, type: 'text',
+              class: 'f-i', id: id, type: KINDS.inputType(def.kind),
               inputmode: kind.inputMode, autocomplete: 'off'
             });
         input.value = fieldValue(def.key);
@@ -136,11 +147,11 @@
       });
 
       /* תאריכים — נגזר מ-expiry בטבלה. SPEC §5.1 */
-      var issueVal = (doc && doc.issueDate) || '';
+      var issueVal = proposedDate('issueDate');
       issueI = dateInput('d-issue', issueVal);
       fieldsHost.appendChild(group([label('תאריך הנפקה', 'd-issue'), issueI]));
 
-      var expVal = (doc && doc.expiryDate) || '';
+      var expVal = proposedDate('expiryDate');
       expiryI = dateInput('d-expiry', expVal);
       var expLabel = label('בתוקף עד' + (t.expiry === 'required' ? ' *' : ''), 'd-expiry');
       var expGroup = group([expLabel, expiryI, U.el('div', { class: 'f-err', id: 'd-expiry-err' })]);
@@ -192,9 +203,16 @@
     host.appendChild(fieldsHost);
     rebuildTypes();
 
+    function currentValues() {
+      var out = {};
+      Object.keys(inputs).forEach(function (k) { out[k] = inputs[k].input.value.trim(); });
+      return out;
+    }
+
     return {
       element: host,
       typeKey: function () { return current.typeKey; },
+      values: currentValues,
 
       /* verified = true אם ורק אם עבר את הוולידטור. SPEC §3.3 */
       read: function () {
@@ -227,7 +245,12 @@
             multiline: !!rec.def.multiline
           };
           var check = KINDS.check(field);
-          field.verified = check.ok;
+          /* שדה שהפרסינג מילא בלי ראיה — שם מ-MRZ, שאין לו ספרת ביקורת —
+             נשמר לא מאומת גם אם ה-kind שלו אינו יודע לפסול אותו. */
+          var forced = proposal && proposal.unverified.indexOf(rec.def.key) !== -1 &&
+                       raw === fieldValue(rec.def.key);
+          field.verified = check.ok && !forced;
+          if (forced && check.ok) unverified++;
           if (!check.ok) {
             unverified++;
             if (err) err.textContent = check.reason + ' · נשמר ומסומן לאימות';

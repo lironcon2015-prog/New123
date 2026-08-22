@@ -49,7 +49,7 @@ console.log('\n— מסמך ידני —');
 async function newDoc(entityName, typeKey, fill, dates) {
   await page.click('.fab');
   await page.waitForSelector('.routes');
-  await page.click('.routes .route >> nth=2');           // הזנה ידנית
+  await page.click('.routes .route:has-text("הזנה ידנית")');
   await page.waitForSelector('#d-type');
   const ents = await page.$$eval('#d-entity option', o => o.map(x => ({ v: x.value, t: x.textContent })));
   const ent = ents.find(e => e.t === entityName);

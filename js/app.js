@@ -8,8 +8,10 @@
 
   var App = {
     staged: [],
+    proposal: null,
     pendingEntityId: null,
-    pendingSource: 'upload'
+    pendingSource: 'upload',
+    pendingMode: 'plain'
   };
 
   var root, nav, fileInput, locked = false;
@@ -85,17 +87,21 @@
 
   /* ---------- מסלולי הקלט ---------- */
 
-  App.pickFiles = function (existingDoc, useCamera) {
+  App.pickFiles = function (existingDoc, useCamera, mode) {
     fileInput.value = '';
     if (useCamera) fileInput.setAttribute('capture', 'environment');
     else fileInput.removeAttribute('capture');
     fileInput.dataset.docId = existingDoc ? existingDoc.id : '';
+    App.pendingMode = mode || 'plain';
     fileInput.click();
   };
 
   function ingest(fileList, source, existingDocId) {
     if (!fileList || !fileList.length) return;
     App.pendingSource = source;
+    var mode = App.pendingMode;
+    App.pendingMode = 'plain';
+
     Files.normalizeAll(fileList).then(function (r) {
       if (r.errors.length) UI.toast(r.errors[0]);
       if (!r.files.length) return;
@@ -103,10 +109,50 @@
       if (existingDocId) return attachTo(existingDocId, r.files);
 
       App.staged = r.files;
+      App.proposal = null;
       var converted = r.files.filter(function (f) { return f.converted; })[0];
       if (converted) UI.toast('הומר · ' + Files.label(converted));
-      location.hash = '#/doc/new';
-      if (parse()[0] === 'doc' && parse()[1] === 'new') App.render();
+
+      var image = r.files.filter(function (f) { return f.mime !== 'application/pdf'; })[0];
+      if (mode !== 'mrz' || !image) return openForm();
+
+      return runMrz(image).then(openForm);
+    });
+  }
+
+  function openForm() {
+    if (location.hash === '#/doc/new') App.render();
+    else location.hash = '#/doc/new';
+  }
+
+  /* קריאת MRZ אורכת שניות ומורידה נכסים בפעם הראשונה — מסך שקוף על זה
+     ולא ספינר אילם, כי המשתמש צריך לדעת שהוא מחכה להורדה חד-פעמית. */
+  function runMrz(image) {
+    var status = U.el('p', { class: 'sheet-p', text: 'מכין את הקריאה…' });
+    var sheet = UI.sheet('קריאת המסמך', [
+      status,
+      U.el('p', { class: 'muted small', text:
+        'הקריאה מתבצעת על המכשיר. שום דבר לא נשלח לשום מקום.' })
+    ]);
+
+    var LABEL = {
+      'loading tesseract core': 'טוען את רכיב הקריאה…',
+      'initializing tesseract': 'מאתחל…',
+      'loading language traineddata': 'מוריד את מודל הקריאה — פעם אחת בלבד…',
+      'initializing api': 'מאתחל…',
+      'recognizing text': 'קורא את המסמך…'
+    };
+
+    return window.Parse.fromMrz(image.blob, {
+      onProgress: function (m) {
+        if (m && LABEL[m.status]) status.textContent = LABEL[m.status];
+      }
+    }).then(function (proposal) {
+      App.proposal = proposal;
+      if (proposal.dropFiles) App.staged = [];
+      sheet.close();
+    }).catch(function () {
+      sheet.close();
     });
   }
 

@@ -9,6 +9,13 @@
     id_card: {
       label: 'תעודת זהות', icon: 'i-card',
       entityTypes: ['person'], expiry: 'optional', allowFiles: true, parse: 'mrz+gemini',
+      /* גב תעודת זהות ביומטרית הוא TD1. המיפוי משדות ה-MRZ לשדות הטבלה
+         יושב כאן ולא בקוד הפרסינג — הוספת סוג עם MRZ היא שורה. */
+      mrzFormat: 'TD1',
+      mrzMap: {
+        idNumber: 'israeliId', fullName: 'nameEn',
+        birthDate: 'birthDate', docNumber: 'documentNumber'
+      },
       fields: [
         { key: 'idNumber',  label: 'מספר תעודת זהות', kind: 'id',   required: true },
         { key: 'fullName',  label: 'שם מלא',          kind: 'text', required: true },
@@ -20,6 +27,9 @@
     id_appendix: {
       label: 'ספח תעודת זהות', icon: 'i-doc',
       entityTypes: ['person'], expiry: 'none', allowFiles: true, parse: 'gemini',
+      /* DEC-04: הילדים שבספח מוצעים כישויות, לא נוצרים. השדה שמזין את
+         ההצעה מוגדר כאן, ולכן זה עובד גם בהזנה ידנית ולא רק אחרי פרסינג. */
+      peopleFrom: 'children',
       fields: [
         { key: 'idNumber', label: 'מספר תעודת זהות', kind: 'id',   required: true },
         { key: 'fullName', label: 'שם מלא',          kind: 'text', required: true },
@@ -36,6 +46,8 @@
       label: 'דרכון', icon: 'i-passport',
       entityTypes: ['person'], expiry: 'required', allowFiles: false, parse: 'mrz',
       syncFields: false, notify: false,
+      mrzFormat: 'TD3',
+      mrzMap: { passportNumber: 'documentNumber', fullNameLatin: 'nameEn', birthDate: 'birthDate' },
       fields: [
         { key: 'passportNumber', label: 'מספר דרכון', kind: 'passport', required: true },
         { key: 'fullNameLatin',  label: 'שם באנגלית', kind: 'text' },
@@ -167,7 +179,12 @@
 
     /* ברירת המחדל של שני הדגלים היא "כן" — סוג צריך לוותר במפורש */
     syncFields: function (key) { return T[key] ? T[key].syncFields !== false : true; },
-    notify: function (key) { return T[key] ? T[key].notify !== false : true; }
+    notify: function (key) { return T[key] ? T[key].notify !== false : true; },
+
+    /* פורמט ה-MRZ קובע את סוג המסמך, ולא להפך: TD3 הוא דרכון, TD1 הוא ת״ז */
+    byMrzFormat: function (format) {
+      return API.all().filter(function (t) { return t.mrzFormat === format; })[0] || null;
+    }
   };
 
   window.DOC_TYPES = API;

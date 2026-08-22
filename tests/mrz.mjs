@@ -113,6 +113,32 @@ const noisy = await page.evaluate(s => {
 }, samples);
 t('רצף אות חוזרת מהמילוי לא נכנס לשם', noisy.ok && noisy.fields.givenNames === 'MICHAL', noisy.ok && noisy.fields.givenNames);
 
+console.log('\n— תיקון מילוי, שספרת הביקורת שופטת —');
+const rep = await page.evaluate(s => {
+  const noisy = s.td1.slice();
+  // בדיוק מה שה-OCR מחזיר: מילוי '<' שנקרא כרצף L, בתוך אזור הביקורת
+  noisy[1] = noisy[1].slice(0, 18) + 'LLLLLLLLLLL' + noisy[1].slice(29);
+  const fixed = window.MRZ.fromText(noisy.join('\n'));
+
+  // תיקון שאינו נכון פשוט לא עובר: משנים תאריך לידה, שהוא אזור מוגן
+  const wrong = s.td1.slice();
+  wrong[1] = '770101' + wrong[1].slice(6, 18) + 'LLLLLLLLLLL' + wrong[1].slice(29);
+  const still = window.MRZ.fromText(wrong.join('\n'));
+
+  return { fixed: { ok: fixed.ok, num: fixed.ok && fixed.fields.documentNumber }, still: still.ok };
+}, samples);
+t('מילוי שנקרא כאותיות מתוקן והקריאה עוברת', rep.fixed.ok === true);
+t('והערך שיצא הוא המקורי', rep.fixed.num === '004821639', rep.fixed.num);
+t('אבל תיקון לא מציל קריאה שגויה באמת', rep.still === false);
+
+const nameNoise = await page.evaluate(s => {
+  const l = s.td1.slice();
+  l[2] = 'COHEN<<LIOR<<<<KLLLLKLKLKLKLK';
+  const r = window.MRZ.parseTD1(l);
+  return r.ok ? r.fields.givenNames : 'FAILED';
+}, samples);
+t('רעש דו-אותיות ארוך לא נכנס לשם', nameNoise === 'LIOR', nameNoise);
+
 console.log('\n— קריאה מקצה לקצה דרך Tesseract מקומי —');
 const t0 = Date.now();
 const ocr = await page.evaluate(async (s) => {

@@ -435,8 +435,21 @@
       return w;
     }
 
-    var staged = window.App.staged;
+    var proposal = doc ? null : window.App.proposal;
+    var staged = (proposal && proposal.dropFiles) ? [] : window.App.staged;
     var wrap = U.el('div', { class: 'scr' }, backHead(doc ? 'עריכת מסמך' : 'מסמך חדש'));
+
+    if (proposal && proposal.notice) {
+      wrap.appendChild(U.el('div', { class: 'notice notice-' + proposal.notice.level }, [
+        U.icon(proposal.notice.level === 'ok' ? 'i-check' : 'i-bell', 20),
+        U.el('span', { text: proposal.notice.text })
+      ]));
+    }
+
+    if (proposal && proposal.dropFiles && window.App.staged.length) {
+      wrap.appendChild(U.el('p', { class: 'muted small', text:
+        'הצילום שימש לקריאה בלבד ולא נשמר.' }));
+    }
 
     if (staged.length) {
       wrap.appendChild(U.el('div', { class: 'staged' }, [
@@ -452,6 +465,7 @@
 
     var form = Forms.doc({
       doc: doc,
+      proposal: proposal,
       entities: state.entities,
       entityId: window.App.pendingEntityId
     });
@@ -466,6 +480,16 @@
       var r = form.read();
       if (r.error) { err.textContent = r.error; return; }
 
+      /* DEC-04: ילדים שנמצאו בספח מוצעים לפני השמירה, ברירת מחדל לא מסומן */
+      var people = doc ? [] : window.Parse.peopleIn(r.value.typeKey, form.values());
+      if (people.length) {
+        Screens.peopleSheet(people, function (chosen) { commit(r, chosen); });
+        return;
+      }
+      commit(r, []);
+    });
+
+    function commit(r, people) {
       var t = DT.get(r.value.typeKey);
       var files = (t && t.allowFiles) ? staged : [];
       var blobs = files.map(function (f) {
@@ -480,14 +504,24 @@
       if (!doc && files.length) r.value.source = window.App.pendingSource || 'upload';
 
       DB.saveDoc(r.value, blobs).then(function () {
+        return Promise.all(people.map(function (p) {
+          return DB.saveEntity({
+            id: U.id(), type: 'person', name: p.name,
+            color: U.pick(C.ENTITY_COLORS, p.name), avatar: p.name.trim()[0]
+          });
+        }));
+      }).then(function () {
         window.App.staged = [];
+        window.App.proposal = null;
         window.App.pendingEntityId = null;
-        UI.toast(r.unverified
+        var msg = r.unverified
           ? U.count(r.unverified, 'נשמר · שדה אחד לאימות', 'נשמר · שדות לאימות')
-          : 'נשמר');
+          : 'נשמר';
+        if (people.length) msg += ' · ' + U.count(people.length, 'ישות נוצרה', 'ישויות נוצרו');
+        UI.toast(msg);
         location.hash = '#/doc/' + r.value.id;
       });
-    });
+    }
     wrap.appendChild(save);
 
     if (!doc && staged.length) {
@@ -542,6 +576,49 @@
     }
   };
 
+  /* ---------- גיליון הצעת ישויות ---------- */
+  /* מציע, לא יוצר. הצ׳קבוקסים פתוחים ולא מסומנים — פלט פרסינג לא נשמר בשקט. */
+  Screens.peopleSheet = function (people, done) {
+    var boxes = people.map(function (p) {
+      var box = U.el('span', { class: 'box' });
+      var row = U.el('button', { class: 'chk', type: 'button', 'aria-pressed': 'false' }, [
+        box,
+        U.el('span', {}, [
+          U.el('span', { text: p.name }),
+          p.year ? U.el('span', { class: 'chk-y' }, U.bidi(p.year)) : null
+        ])
+      ]);
+      row.addEventListener('click', function () {
+        var on = row.getAttribute('aria-pressed') !== 'true';
+        row.setAttribute('aria-pressed', String(on));
+        row.classList.toggle('on', on);
+      });
+      return { row: row, person: p };
+    });
+
+    var sheet = UI.sheet('נמצאו אנשים במסמך', [
+      U.el('p', { class: 'sheet-p', text:
+        'יצירת ישות מאפשרת לתלות עליהם דרכון או ביטוח. אפשר גם לדלג ולעשות את זה אחר כך.' }),
+      U.el('div', { class: 'checks' }, boxes.map(function (b) { return b.row; })),
+      U.el('div', { class: 'sheet-actions col' }, [
+        U.el('button', {
+          class: 'btn wide', type: 'button',
+          onClick: function () {
+            var chosen = boxes.filter(function (b) {
+              return b.row.getAttribute('aria-pressed') === 'true';
+            }).map(function (b) { return b.person; });
+            sheet.close();
+            done(chosen);
+          }
+        }, 'שמירה'),
+        U.el('button', {
+          class: 'btn ghost wide', type: 'button',
+          onClick: function () { sheet.close(); done([]); }
+        }, 'שמירה בלי ליצור ישויות')
+      ])
+    ]);
+  };
+
   /* ---------- גיליון הוספה ---------- */
 
   Screens.addSheet = function (entityId) {
@@ -549,16 +626,22 @@
 
     function route(kind) {
       sheet.close();
-      window.App.pendingSource = kind === 'camera' ? 'camera' : 'upload';
+      window.App.pendingSource = (kind === 'camera' || kind === 'mrz') ? 'camera' : 'upload';
       if (kind === 'manual') {
         window.App.staged = [];
+        window.App.proposal = null;
         location.hash = '#/doc/new';
+      } else if (kind === 'mrz') {
+        window.App.pickFiles(null, true, 'mrz');
       } else {
         window.App.pickFiles(null, kind === 'camera');
       }
     }
 
     var items = [
+      { icon: 'i-passport', t: 'סריקת דרכון או ת״ז', k: 'mrz',
+        s: 'קריאה על המכשיר · הורדה חד-פעמית של ' +
+           String(window.Parse.ASSET_MB).replace('.', '.') + 'MB' },
       { icon: 'i-camera', t: 'צילום', s: 'מצלמת המכשיר', k: 'camera' },
       { icon: 'i-upload', t: 'בחירת קובץ', s: 'תמונה או PDF', k: 'file' },
       { icon: 'i-edit', t: 'הזנה ידנית', s: 'בלי קובץ', k: 'manual' }

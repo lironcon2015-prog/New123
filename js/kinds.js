@@ -94,6 +94,7 @@
     date: {
       label: 'תאריך',
       inputMode: 'text',
+      inputType: 'date',        /* בורר תאריך, לא שדה טקסט */
       sensitive: false,
       copyAs: 'display',
       canonical: function (v) { return trim(v); },
@@ -130,6 +131,7 @@
     phone: {
       label: 'טלפון',
       inputMode: 'tel',
+      inputType: 'tel',
       sensitive: false,
       copyAs: 'display',
       canonical: function (v) {
@@ -165,6 +167,9 @@
   /* ---------- שירותים נגזרים ---------- */
 
   KINDS.get = function (kind) { return KINDS[kind] || KINDS.text; };
+
+  /* סוג ה-input נגזר מהרישום ולא מ-if על שם ה-kind */
+  KINDS.inputType = function (kind) { return KINDS.get(kind).inputType || 'text'; };
 
   KINDS.isSensitive = function (field) {
     return field.sensitive != null ? !!field.sensitive : !!KINDS.get(field.kind).sensitive;

@@ -42,16 +42,36 @@
     return window.U.isRealDate(out) ? out : null;
   }
 
-  /* מילוי '<' נקרא לעיתים כרצף של אות אחת חוזרת. אין ל-l1 ספרת ביקורת,
-     ולכן השם תמיד חוזר לא מאומת — כאן רק מנקים את הרעש הגלוי. */
+  /* תווי המילוי '<' נקראים ב-OCR כאותיות דמויות-מקל — L, K, I, C, E, X.
+     כשזה נוחת באזור שספרת הביקורת מחשבת עליו, הקריאה נופלת שלמה.
+
+     התיקון אגרסיבי בכוונה ובטוח בדיוק באותה מידה: **ספרת הביקורת נשארת
+     השופט.** מנסים את המקור, ואם נכשל — מנסים גרסה מתוקנת, ורק אם היא
+     עוברת את כל ספרות הביקורת היא מתקבלת. תיקון שגוי פשוט לא עובר. */
+  var FILLER = /([LKICEX])\1{2,}/g;
+
+  function repairFiller(line) {
+    return line.replace(FILLER, function (m) { return new Array(m.length + 1).join('<'); });
+  }
+
+  /* אין ל-שורת השם ספרת ביקורת, ולכן השם תמיד חוזר לא מאומת. כאן רק
+     נזרק רעש שברור שאינו שם: רצף ארוך מאותן שתי אותיות. זו היוריסטיקה,
+     לא ערובה — ולכן היא מותרת רק על שדה שממילא מסומן לאימות. */
+  function looksLikeNoise(tok) {
+    if (tok.length >= 4 && /^(.)\1+$/.test(tok)) return true;
+    if (tok.length >= 5) {
+      var seen = {};
+      for (var i = 0; i < tok.length; i++) seen[tok[i]] = 1;
+      if (Object.keys(seen).length <= 2) return true;
+    }
+    return false;
+  }
+
   function cleanName(s) {
     return String(s || '')
       .replace(/</g, ' ')
       .split(/\s+/)
-      .filter(function (tok) {
-        if (!tok) return false;
-        return !(tok.length >= 4 && /^(.)\1+$/.test(tok));
-      })
+      .filter(function (tok) { return tok && !looksLikeNoise(tok); })
       .join(' ')
       .trim();
   }
@@ -158,16 +178,27 @@
     /* הגייט הוא על השורה השנייה, לא הראשונה. שורה 1 נושאת שם ומילוי בלבד,
        אין לה ספרת ביקורת, ו-OCR מאבד בה תווי '<' באופן שגרתי — 39 תווים
        במקום 44 הוא המצב הרגיל ולא חריג. השורה שקובעת היא זו שמאמתת את עצמה. */
+    /* כל מועמד נבדק פעמיים: כמות שנקרא, ואז עם מילוי מתוקן. */
+    function attempt(parser, group) {
+      var r = parser(group);
+      if (r.ok) return r;
+      var repaired = group.map(repairFiller);
+      var same = repaired.every(function (l, k) { return l === group[k]; });
+      if (same) return r;
+      var r2 = parser(repaired);
+      return r2.ok ? r2 : r;
+    }
+
     for (var i = 0; i < lines.length - 1; i++) {
       if (lines[i][0] !== 'P' || lines[i + 1].length < 40) continue;
-      var td3 = parseTD3([lines[i], lines[i + 1]]);
+      var td3 = attempt(parseTD3, [lines[i], lines[i + 1]]);
       if (td3.ok) return td3;
       if (td3.reason === 'checkdigit') lastFail = td3;
     }
     for (var j = 0; j < lines.length - 2; j++) {
       if ('IAC'.indexOf(lines[j][0]) === -1) continue;
       if (lines[j + 1].length < 28 || lines[j + 1].length > 32) continue;
-      var td1 = parseTD1([lines[j], lines[j + 1], lines[j + 2]]);
+      var td1 = attempt(parseTD1, [lines[j], lines[j + 1], lines[j + 2]]);
       if (td1.ok) return td1;
       if (td1.reason === 'checkdigit') lastFail = td1;
     }
