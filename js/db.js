@@ -157,6 +157,19 @@
     });
   };
 
+  /* ---------- הכנה לסנכרון ----------
+     DEC-13: סוג עם syncFields:false לא מוציא את השדות שלו מהמכשיר.
+     פונקציה טהורה, בלי I/O, כדי שאפשר יהיה לבדוק אותה עוד לפני שיש סנכרון —
+     וכדי שמסלול הייצוא בשלב 5 לא יוכל לעקוף אותה בשכחה. */
+  DB.forSync = function (doc) {
+    if (window.DOC_TYPES.syncFields(doc.typeKey)) return doc;
+    var out = {};
+    Object.keys(doc).forEach(function (k) { out[k] = doc[k]; });
+    out.fields = [];
+    out.notes = '';
+    return out;
+  };
+
   /* ---------- blobs ---------- */
 
   DB.blob = function (id) { return DB.get('blobs', id); };

@@ -128,7 +128,7 @@
     var today = U.todayYmd();
     if (S.get(C.K.lastNoticeDay) === today) return null;
 
-    var n = grouped.past.length + grouped.d30.length;
+    var n = E.notifiable(grouped).length;
     var bar = U.el('div', { class: 'notice' }, [
       U.icon('i-bell', 20),
       U.el('span', { text: U.count(n, 'מסמך אחד דורש טיפול', 'מסמכים דורשים טיפול') }),

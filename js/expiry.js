@@ -53,8 +53,17 @@
     return out;
   };
 
+  /* DEC-14: סוג עם notify:false מופיע ברשימת התפוגות אבל אינו נספר בבאנר.
+     הדרכון מוצג כעובדה על המסך, ולא כהתראה יזומה — נאביגו כבר מתריעה עליו,
+     והתראה כפולה מאמנת להתעלם משתיהן. */
+  E.notifiable = function (grouped) {
+    return grouped.past.concat(grouped.d30).filter(function (it) {
+      return window.DOC_TYPES.notify(it.doc.typeKey);
+    });
+  };
+
   E.needsNotice = function (grouped) {
-    return grouped.past.length > 0 || grouped.d30.length > 0;
+    return E.notifiable(grouped).length > 0;
   };
 
   window.Expiry = E;

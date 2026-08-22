@@ -243,6 +243,54 @@ t('כל מסגרת מצב הריק היא button אחד',
   emptyShape && emptyShape.tag === 'button', emptyShape && emptyShape.tag);
 t('ואין בתוכה כפתור מקונן', emptyShape && emptyShape.inner === 0);
 
+console.log('\n— בידוד הדרכון —');
+const iso = await page.evaluate(() => {
+  const DT = window.DOC_TYPES, DB = window.DB;
+  const mk = (typeKey) => ({
+    id: 'x', entityId: 'e', typeKey, title: 'ת',
+    fields: [{ key: 'passportNumber', label: 'מספר דרכון', value: 'M4821639', kind: 'passport', sensitive: true, verified: true }],
+    issueDate: null, expiryDate: '2030-01-01', files: [], source: 'upload', notes: 'הערה', deleted: 0
+  });
+  const p = DB.forSync(mk('passport'));
+  const g = DB.forSync(mk('generic'));
+  return {
+    passSync: DT.syncFields('passport'), genSync: DT.syncFields('generic'),
+    passNotify: DT.notify('passport'), genNotify: DT.notify('generic'),
+    passFiles: DT.get('passport').allowFiles,
+    strippedFields: p.fields.length, strippedNotes: p.notes,
+    keptExpiry: p.expiryDate, keptId: p.id,
+    genericFields: g.fields.length,
+    others: DT.all().filter(t => t.key !== 'passport')
+      .filter(t => DT.syncFields(t.key) === false || DT.notify(t.key) === false).map(t => t.key)
+  };
+});
+t('דרכון: השדות אינם מסתנכרנים', iso.passSync === false);
+t('דרכון: אינו נספר בבאנר', iso.passNotify === false);
+t('דרכון: אין לו קבצים', iso.passFiles === false);
+t('forSync מרוקן את שדות הדרכון', iso.strippedFields === 0 && iso.strippedNotes === '');
+t('אבל משאיר את התפוגה ואת המזהה', iso.keptExpiry === '2030-01-01' && iso.keptId === 'x');
+t('סוג רגיל עובר בלי נגיעה', iso.genericFields === 1 && iso.genSync === true && iso.genNotify === true);
+t('אף סוג אחר אינו מוותר על הדגלים', iso.others.length === 0, iso.others.join(','));
+
+const banner = await page.evaluate(() => {
+  const E = window.Expiry;
+  const d = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  const docs = [
+    { id: '1', typeKey: 'passport', expiryDate: d(10) },
+    { id: '2', typeKey: 'vehicle_insurance', expiryDate: d(-3) }
+  ];
+  const g = E.group(docs);
+  const onlyPassport = E.group([docs[0]]);
+  return {
+    listed: g.d30.length,
+    notifiable: E.notifiable(g).length,
+    passportAlone: E.needsNotice(onlyPassport)
+  };
+});
+t('דרכון מופיע ברשימת התפוגות', banner.listed === 1);
+t('והבאנר סופר את הביטוח בלבד, לא אותו', banner.notifiable === 1, String(banner.notifiable));
+t('דרכון לבדו אינו מדליק באנר', banner.passportAlone === false);
+
 console.log('\n— אין תלות ברשת ---');
 const external = reqs.filter(u => !u.startsWith('http://127.0.0.1:8777') && !u.startsWith('data:'));
 t('אפס בקשות לדומיין חיצוני', external.length === 0, external.join(' | '));

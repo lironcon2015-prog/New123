@@ -28,10 +28,14 @@
       ]
     },
 
-    /* allowFiles: false — DEC-01. מקור האמת לסריקה הוא נאביגו. */
+    /* שלושה דגלים שמבודדים את הדרכון, וכולם שורות בטבלה ולא if בקוד:
+       allowFiles: false  — DEC-01, מקור האמת לסריקה הוא נאביגו
+       syncFields: false  — DEC-13, מספר הדרכון לא עוזב את המכשיר
+       notify: false      — DEC-14, מופיע ברשימת התפוגות ולא בבאנר היומי */
     passport: {
       label: 'דרכון', icon: 'i-passport',
       entityTypes: ['person'], expiry: 'required', allowFiles: false, parse: 'mrz',
+      syncFields: false, notify: false,
       fields: [
         { key: 'passportNumber', label: 'מספר דרכון', kind: 'passport', required: true },
         { key: 'fullNameLatin',  label: 'שם באנגלית', kind: 'text' },
@@ -159,7 +163,11 @@
     forEntityType: function (etype) {
       return API.all().filter(function (t) { return t.entityTypes.indexOf(etype) !== -1; });
     },
-    hasExpiry: function (key) { return T[key] ? T[key].expiry !== 'none' : false; }
+    hasExpiry: function (key) { return T[key] ? T[key].expiry !== 'none' : false; },
+
+    /* ברירת המחדל של שני הדגלים היא "כן" — סוג צריך לוותר במפורש */
+    syncFields: function (key) { return T[key] ? T[key].syncFields !== false : true; },
+    notify: function (key) { return T[key] ? T[key].notify !== false : true; }
   };
 
   window.DOC_TYPES = API;
