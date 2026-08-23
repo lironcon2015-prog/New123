@@ -16,18 +16,20 @@
 
   var root, nav, fileInput, locked = false;
 
+  /* הפריט הימני ביותר הוא מסך הבית — לשם מגיע האגודל הימני.
+     "העתקה מהירה" נשארת צמודה ל-FAB: היא הפעולה השנייה בתדירותה. */
   var TABS = [
-    { hash: '#/expiries', icon: 'i-calendar', label: 'תפוגות' },
+    { hash: '#/entities', icon: 'i-users',    label: 'ישויות' },
     { hash: '#/quick',    icon: 'i-search',   label: 'העתקה' },
     { hash: null,         gap: true },
-    { hash: '#/entities', icon: 'i-users',    label: 'ישויות' },
+    { hash: '#/expiries', icon: 'i-calendar', label: 'תפוגות' },
     { hash: '#/settings', icon: 'i-settings', label: 'הגדרות' }
   ];
 
   /* ---------- ניתוב ---------- */
 
   function parse() {
-    var h = (location.hash || '#/expiries').replace(/^#\/?/, '');
+    var h = (location.hash || '#/' + C.HOME).replace(/^#\/?/, '');
     return h.split('/').filter(Boolean);
   }
 
@@ -35,13 +37,14 @@
     switch (parts[0]) {
       case 'quick':    return Screens.quick();
       case 'entities': return Screens.entities();
+      case 'expiries': return Screens.expiries();
       case 'entity':   return Screens.entity(parts[1]);
       case 'settings': return Screens.settings();
       case 'doc':
         if (parts[1] === 'new') return Screens.docForm(null);
         if (parts[2] === 'edit') return Screens.docForm(parts[1]);
         return Screens.doc(parts[1]);
-      default:         return Screens.expiries();
+      default:         return Screens[C.HOME]();
     }
   }
 
@@ -70,7 +73,7 @@
   /* ---------- סרגל ---------- */
 
   function paintNav(parts) {
-    var active = '#/' + (parts[0] || 'expiries');
+    var active = '#/' + (parts[0] || C.HOME);
     /* מסך פנימי משאיר את הלשון הראשית מודגשת */
     if (parts[0] === 'entity' || parts[0] === 'doc') active = '#/entities';
     nav.querySelectorAll('.nav-i').forEach(function (b) {
@@ -398,7 +401,7 @@
     DB.open()
       .then(function () { return S.load(); })
       .then(function () {
-        if (!location.hash) location.hash = '#/expiries';
+        if (!location.hash) location.hash = '#/' + C.HOME;
         if (Vault.enabled() && Vault.hasPin() && !Vault.isUnlocked()) {
           showLock();
         } else {

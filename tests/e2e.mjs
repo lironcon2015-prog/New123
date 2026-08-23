@@ -25,6 +25,13 @@ await page.waitForSelector('.scr-title');
 console.log('\n— אתחול —');
 t('נטען בלי שגיאות קונסול', errs.length === 0, errs.join(' | '));
 t('כותרת מסך הבית', (await page.textContent('.scr-title')) === 'התיק המשפחתי');
+t('מסך הבית הוא ישויות', (await page.evaluate(() => location.hash)) === '#/entities',
+  await page.evaluate(() => location.hash));
+t('והוא הפריט הימני בסרגל', await page.evaluate(() => {
+  const items = [...document.querySelectorAll('.nav-i')];
+  const right = items.reduce((a, b) => a.getBoundingClientRect().right > b.getBoundingClientRect().right ? a : b);
+  return right.dataset.hash === '#/entities';
+}));
 t('מצב ריק עם פעולה בתוך המסגרת', await page.isVisible('.empty .btn'));
 t('data-pal הוצב לפני CSS', (await page.getAttribute('html', 'data-pal')) === 'a');
 
@@ -162,11 +169,18 @@ await page.click('.nav-i[data-hash="#/expiries"]');
 // את אותה מחלקה, ומספקת את ההמתנה עוד לפני שהרינדור התחלף
 await page.waitForFunction(() =>
   location.hash === '#/expiries' &&
-  document.querySelector('.scr-title')?.textContent === 'התיק המשפחתי');
+  document.querySelector('.scr-title')?.textContent === 'תפוגות');
 await page.waitForSelector('.bucket-h');
 const homeText = await page.textContent('.scr');
 t('מסך הבית מקבץ לדליים', homeText.includes('עד 30 יום') || homeText.includes('עד 90 יום'), homeText.slice(0, 160));
 t('הדלי "תקין" מקופל מאחורי שורה אחת', homeText.includes('תקין ·'), homeText.slice(0, 160));
+
+// הבאנר היומי עבר עם מסך הבית — בלעדיו מנוע התפוגה מאבד את המשטח בפתיחה
+t('אין באנר תפוגה במסך התפוגות עצמו', !homeText.includes('דורשים טיפול'));
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.card');
+t('הבאנר יושב במסך הבית', (await page.textContent('.scr')).includes('דורש'),
+  (await page.textContent('.scr')).slice(0, 90));
 
 // ---------- files: all four routes ----------
 console.log('\n— ארבעת מסלולי הקלט —');

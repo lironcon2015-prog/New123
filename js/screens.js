@@ -63,12 +63,15 @@
   /* ---------- מסך הבית: תפוגות ---------- */
 
   Screens.expiries = function () {
-    var wrap = U.el('div', { class: 'scr' }, head(C.APP_NAME));
+    var home = C.HOME === 'expiries';
+    var wrap = U.el('div', { class: 'scr' }, head(home ? C.APP_NAME : 'תפוגות'));
     var grouped = E.group(state.docs);
     var total = grouped.past.length + grouped.d30.length + grouped.d90.length + grouped.ok.length;
 
-    var notice = Screens.noticeBanner(grouped);
-    if (notice) wrap.appendChild(notice);
+    if (home) {
+      var notice = Screens.noticeBanner(grouped);
+      if (notice) wrap.appendChild(notice);
+    }
 
     if (!state.docs.length) {
       wrap.appendChild(UI.empty({
@@ -201,12 +204,20 @@
   /* ---------- ישויות ---------- */
 
   Screens.entities = function () {
-    var wrap = U.el('div', { class: 'scr' }, head('ישויות', [
+    var home = C.HOME === 'entities';
+    var wrap = U.el('div', { class: 'scr' }, head(home ? C.APP_NAME : 'ישויות', [
       U.el('button', {
         class: 'iconbtn', type: 'button', 'aria-label': 'ישות חדשה',
         onClick: function () { Screens.entitySheet(null); }
       }, U.icon('i-plus', 22))
     ]));
+
+    /* הבאנר היומי חי במסך הבית, לא במסך התפוגות. מנוע התפוגה חייב משטח
+       בפתיחת האפליקציה — בלעדיו הוא קיים רק למי שנכנס אליו במיוחד. */
+    if (home) {
+      var notice = Screens.noticeBanner(E.group(state.docs));
+      if (notice) wrap.appendChild(notice);
+    }
 
     if (!state.entities.length) {
       wrap.appendChild(UI.empty({
@@ -228,7 +239,9 @@
           U.el('span', { class: 'card-t', text: e.name }),
           U.el('span', { class: 'card-s', text: (meta ? meta.label : '') + ' · ' + U.count(n, 'מסמך אחד', 'מסמכים') })
         ]),
-        U.icon('i-chevron', 18)
+        /* שברון שמצביע שמאלה — "היכנס". השברון היורד קורא כ"הרחב",
+           והשורה הזאת מנווטת למסך אחר. */
+        U.el('span', { class: 'card-go' }, U.icon('i-back', 18))
       ]);
       card.addEventListener('click', function () { location.hash = '#/entity/' + e.id; });
       wrap.appendChild(card);
@@ -1055,7 +1068,7 @@
     wrap.appendChild(UI.empty({
       icon: 'i-file', title: msg,
       sub: 'ייתכן שהוא נמחק', action: 'למסך הבית',
-      onAction: function () { location.hash = '#/expiries'; }
+      onAction: function () { location.hash = '#/' + C.HOME; }
     }));
     return wrap;
   };
