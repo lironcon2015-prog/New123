@@ -17,6 +17,7 @@
   DEFAULTS[C.K.geminiLastModel] = '';
   DEFAULTS[C.K.driveFolderId] = '';
   DEFAULTS[C.K.driveDbFileId] = '';
+  DEFAULTS[C.K.lastSync] = 0;
   DEFAULTS[C.K.recentFields] = [];
   DEFAULTS[C.K.lastNoticeDay] = '';
   DEFAULTS[C.K.pinHash] = '';

@@ -36,6 +36,7 @@
       geminiLastModel: 'geminiLastModel',
       driveFolderId: 'driveFolderId',
       driveDbFileId: 'driveDbFileId',
+      lastSync: 'lastSync',
       recentFields: 'recentFields',
       lastNoticeDay: 'lastNoticeDay'
     },
