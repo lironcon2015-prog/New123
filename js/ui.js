@@ -125,9 +125,24 @@
     if (size) style += ';width:' + size + 'px;height:' + size + 'px;font-size:' +
                        Math.round(size * 0.38) + 'px';
     var box = U.el('span', { class: 'av' + (e.avatarImage ? ' av-img' : ''), style: style });
-    if (e.avatarImage) box.appendChild(U.el('img', { src: e.avatarImage, alt: '' }));
-    else box.appendChild(U.el('span', { text: (e.avatar || (e.name || '?').trim()[0] || '?') }));
+    if (e.avatarImage) {
+      var img = U.el('img', { src: e.avatarImage, alt: '' });
+      /* המסגרת שנבחרה. ברירת המחדל היא מרכז — וזה בדיוק מה שאווטאר
+         שנשמר לפני שהבורר היה קיים כבר נראה, ולכן הוא אינו משתנה. */
+      img.style.objectPosition = UI.focusCss(e.avatarFocus);
+      box.appendChild(img);
+    } else {
+      box.appendChild(U.el('span', { text: (e.avatar || (e.name || '?').trim()[0] || '?') }));
+    }
     return box;
+  };
+
+  UI.focusCss = function (focus, def) {
+    var d = def || { x: 50, y: 50 };
+    var f = focus || {};
+    var x = isNaN(Number(f.x)) ? d.x : Number(f.x);
+    var y = isNaN(Number(f.y)) ? d.y : Number(f.y);
+    return x + '% ' + y + '%';
   };
 
   /* ---------- מצב ריק — הפעולה בתוך המסגרת ----------
@@ -241,62 +256,93 @@
     });
   };
 
-  /* ---------- בורר מסגרת לתצוגה המקדימה ----------
-     העוגן הוא חלון 16:10 לתוך תמונה שרובה בדרך כלל גבוהה ממנו. `50% 0`
-     הוא ברירת מחדל טובה — ראש המסמך הוא מה שמזהה אותו — אבל הוא ניחוש,
-     והוא שגוי בכל צילום שיש בו שוליים למעלה.
+  /* ---------- בורר מסגרת ----------
+     מסגרת היא חלון לתוך תמונה שאינה בצורתה: 16:10 לעוגן המסמך, עיגול
+     לאווטאר של ישות. באיזה חלק של התמונה החלון יושב אינו דבר שקוד יכול
+     לנחש נכון — ראש התמונה שגוי בצילום עם שוליים, והמרכז שגוי בפורטרט
+     שהפנים בו למעלה. לכן זו בחירה, ולא ברירת מחדל חכמה.
 
-     כאן המשתמש מחליט. גרירה אנכית על התצוגה עצמה, ולצידה מחוון שמגיע
-     גם למקלדת. שניהם כותבים את אותו מספר.
+     שני צירים, כי הצורה קובעת איזה מהם חי: `cover` משאיר סרך בציר אחד
+     בלבד, ובעיגול הוא יכול להיות כל אחד מהם. הגרירה מומרת **לפי הסרך
+     האמיתי בפיקסלים**, ולכן היא עוקבת אחרי האצבע ולא מקרבת.
 
-     כשהתמונה **רחבה** מהמסגרת, `cover` חותך לרוחב ואין שום סרך אנכי
-     להזיז. במקרה הזה המחוון מושבת ואומר למה, במקום להזיז ולא לעשות כלום. */
-  UI.cropper = function (blob, focusY) {
-    var value = Math.max(0, Math.min(100, Number(focusY) || 0));
-    var slack = 0;
+     `src` הוא Blob או data URL — האווטאר כבר שמור כמחרוזת, והמסמך יושב
+     בחנות ה-blobs. `URL.createObjectURL` נוצר ומבוטל רק במקרה הראשון. */
+  UI.cropper = function (src, focus, opts) {
+    opts = opts || {};
+    var def = opts.defaultFocus || { x: 50, y: 50 };
+    function clamp(v, d) {
+      var n = Number(v);
+      return isNaN(n) ? d : Math.max(0, Math.min(100, n));
+    }
+    var pos = { x: clamp(focus && focus.x, def.x), y: clamp(focus && focus.y, def.y) };
+    var slack = { x: 0, y: 0 };
 
-    var url = URL.createObjectURL(blob);
-    var img = U.el('img', { class: 'crop-img', src: url, alt: 'תצוגה מקדימה' });
-    var box = U.el('div', { class: 'crop-box' }, img);
-    var slider = U.el('input', {
-      type: 'range', min: '0', max: '100', step: '1', value: String(value),
-      class: 'crop-range', 'aria-label': 'מיקום התצוגה המקדימה'
+    var isBlob = typeof src !== 'string';
+    var url = isBlob ? URL.createObjectURL(src) : src;
+    var img = U.el('img', { class: 'crop-img', src: url, alt: opts.alt || 'תצוגה מקדימה' });
+    var box = U.el('div', {
+      class: 'crop-box' + (opts.shape === 'circle' ? ' crop-circle' : ''),
+      tabindex: '0', role: 'application',
+      'aria-label': opts.label || 'מיקום התצוגה המקדימה'
+    }, img);
+
+    var slider = opts.slider === false ? null : U.el('input', {
+      type: 'range', min: '0', max: '100', step: '1', value: String(pos.y),
+      class: 'crop-range', 'aria-label': opts.label || 'מיקום התצוגה המקדימה'
     });
-    var hint = U.el('p', { class: 'muted small', text: 'גרור את התצוגה למעלה ולמטה' });
+    var hint = U.el('p', { class: 'muted small', text: opts.hint || 'גרור כדי לבחור מה יוצג' });
 
     function paint() {
-      img.style.objectPosition = '50% ' + value + '%';
-      slider.value = String(value);
+      img.style.objectPosition = pos.x + '% ' + pos.y + '%';
+      if (slider) slider.value = String(Math.round(pos.y));
     }
     paint();
 
     img.addEventListener('load', function () {
-      URL.revokeObjectURL(url);
-      /* הסרך האנכי בפיקסלים: גובה התמונה כשהיא נמתחת לרוחב המסגרת,
-         פחות גובה המסגרת. אפס או פחות = אין מה להזיז. */
-      var w = box.clientWidth || 1;
-      var shown = w * (img.naturalHeight / (img.naturalWidth || 1));
-      slack = shown - box.clientHeight;
-      if (slack <= 1) {
-        slider.disabled = true;
+      if (isBlob) URL.revokeObjectURL(url);
+      /* הסרך בכל ציר: גודל התמונה כשהיא מכסה את המסגרת, פחות המסגרת.
+         `cover` מותח לפי הציר הצר, ולכן רק אחד מהם יוצא חיובי. */
+      var bw = box.clientWidth || 1, bh = box.clientHeight || 1;
+      var iw = img.naturalWidth || 1, ih = img.naturalHeight || 1;
+      var scale = Math.max(bw / iw, bh / ih);
+      slack.x = iw * scale - bw;
+      slack.y = ih * scale - bh;
+
+      if (slack.x <= 1 && slack.y <= 1) {
+        if (slider) slider.disabled = true;
         box.classList.add('crop-flat');
+        hint.textContent = opts.flatHint ||
+          'התמונה בדיוק בצורת המסגרת — אין מה להזיז.';
+        return;
+      }
+      if (slider && slack.y <= 1) {
+        slider.disabled = true;
         hint.textContent = 'התמונה רחבה מהמסגרת ונחתכת לרוחב — אין מה להזיז לאורך.';
       }
     });
 
-    slider.addEventListener('input', function () {
-      value = Number(slider.value);
-      paint();
-    });
+    if (slider) {
+      slider.addEventListener('input', function () {
+        pos.y = Number(slider.value);
+        paint();
+      });
+    }
 
-    /* גרירה: הזזת האצבע למטה מורידה את התמונה, כלומר חושפת יותר מהראש.
-       ההמרה לפי הסרך האמיתי בפיקסלים, כדי שהתנועה תהיה 1:1 ולא "בערך". */
-    var dragging = false, lastY = 0;
+    /* גרירה: האצבע מזיזה את **התמונה**. משיכה למעלה חושפת את מה שמתחת,
+       כלומר מגדילה את האחוז. זו המוסכמה בכל בורר תמונה. */
+    var dragging = false, last = null;
+
+    function move(dx, dy) {
+      if (slack.x > 1) pos.x = clamp(pos.x - (dx / slack.x) * 100, pos.x);
+      if (slack.y > 1) pos.y = clamp(pos.y - (dy / slack.y) * 100, pos.y);
+      paint();
+    }
 
     box.addEventListener('pointerdown', function (e) {
-      if (slack <= 1) return;
+      if (slack.x <= 1 && slack.y <= 1) return;
       dragging = true;
-      lastY = e.clientY;
+      last = { x: e.clientX, y: e.clientY };
       box.classList.add('crop-drag');
       try { box.setPointerCapture(e.pointerId); } catch (err) { /* לא חוסם */ }
     });
@@ -304,10 +350,8 @@
     box.addEventListener('pointermove', function (e) {
       if (!dragging) return;
       e.preventDefault();
-      var dy = e.clientY - lastY;
-      lastY = e.clientY;
-      value = Math.max(0, Math.min(100, value - (dy / slack) * 100));
-      paint();
+      move(e.clientX - last.x, e.clientY - last.y);
+      last = { x: e.clientX, y: e.clientY };
     });
 
     function stop() {
@@ -318,9 +362,26 @@
     box.addEventListener('pointerup', stop);
     box.addEventListener('pointercancel', stop);
 
+    /* מקשי החיצים — הדרך היחידה להגיע לזה בלי עכבר או מגע, ובעיגול
+       גם הדרך היחידה להזיז לרוחב כשאין מחוון. */
+    var STEP = 4;
+    box.addEventListener('keydown', function (e) {
+      var dx = 0, dy = 0;
+      if (e.key === 'ArrowUp') dy = -STEP;
+      else if (e.key === 'ArrowDown') dy = STEP;
+      else if (e.key === 'ArrowLeft') dx = -STEP;
+      else if (e.key === 'ArrowRight') dx = STEP;
+      else return;
+      e.preventDefault();
+      /* המקשים מזיזים את החלון, לא את התמונה — "למעלה" מראה מה שלמעלה */
+      if (dy) pos.y = clamp(pos.y + dy, pos.y);
+      if (dx) pos.x = clamp(pos.x + dx, pos.x);
+      paint();
+    });
+
     return {
       element: U.el('div', { class: 'crop' }, [box, slider, hint]),
-      value: function () { return Math.round(value); }
+      value: function () { return { x: Math.round(pos.x), y: Math.round(pos.y) }; }
     };
   };
 

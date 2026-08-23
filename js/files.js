@@ -114,25 +114,28 @@
   };
 
   /* ---------- אווטאר של ישות ----------
-     ריבוע חתוך מהמרכז, מוקטן ומקודד ל-data URL. נשמר על רשומת הישות
-     ולא בחנות ה-blobs: הוא נצבע בכל כרטיס ובכל שורה, ותצוגה שמחכה
-     לקריאה אסינכרונית מהדיסק מהבהבת. הוא גם מסתנכרן לדרייב עם הישות
-     בלי שורת קוד נוספת בסנכרון.
+     מוקטן ומקודד ל-data URL. נשמר על רשומת הישות ולא בחנות ה-blobs:
+     הוא נצבע בכל כרטיס ובכל שורה, ותצוגה שמחכה לקריאה אסינכרונית
+     מהדיסק מהבהבת. הוא גם מסתנכרן לדרייב עם הישות בלי שורת קוד בסנכרון.
 
-     ההקטנה ל-192px נעשית פעם אחת בבחירה, ולכן המחיר משולם שם ולא בכל
-     רינדור. איכות יורדת בלולאה עד שהתוצאה נכנסת לתקרה. */
+     **התמונה נשמרת שלמה ולא נחתכת כאן.** החיתוך לעיגול הוא `object-fit`
+     בזמן תצוגה, עם `object-position` שהמשתמש בוחר — ולכן אפשר להזיז את
+     המסגרת גם חודש אחרי הבחירה, בלי לבקש את הקובץ המקורי שכבר אין.
+
+     מה שנקבע הוא **הצלע הקצרה**: כל חיתוך ריבועי אפשרי יוצא לפחות
+     בגודל הזה. איכות יורדת בלולאה עד שהתוצאה נכנסת לתקרה. */
   F.avatar = function (file) {
     if (typeof createImageBitmap !== 'function') {
       return Promise.reject(new Error('הדפדפן הזה לא יודע לקרוא את הקובץ'));
     }
     return createImageBitmap(file).then(function (bitmap) {
-      var edge = Math.min(bitmap.width, bitmap.height);
-      var sx = Math.round((bitmap.width - edge) / 2);
-      var sy = Math.round((bitmap.height - edge) / 2);
-      var size = C.AVATAR_EDGE;
+      var short = Math.min(bitmap.width, bitmap.height);
+      var scale = Math.min(1, C.AVATAR_SHORT_EDGE / short);
+      var w = Math.max(1, Math.round(bitmap.width * scale));
+      var h = Math.max(1, Math.round(bitmap.height * scale));
       var canvas = document.createElement('canvas');
-      canvas.width = size; canvas.height = size;
-      canvas.getContext('2d').drawImage(bitmap, sx, sy, edge, edge, 0, 0, size, size);
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
       if (bitmap.close) bitmap.close();
 
       var q = C.AVATAR_QUALITY, url = '';

@@ -222,21 +222,37 @@
     return App.ingestText(text);
   };
 
-  App.ingestText = function (text) {
+  /* מחזירה true רק כשהיא באמת עשתה משהו. טקסט שאי אפשר לפרסר אינו
+     "טופל" — הקורא צריך לדעת את זה כדי להציע מסלול אחר, ולא לבלוע. */
+  App.ingestText = function (text, opts) {
     if (!text || !text.trim()) return false;
+    if (!window.Gemini.ready('text')) {
+      if (!(opts && opts.quiet)) UI.toast('כדי לפרסר טקסט, הפעל את זה בהגדרות');
+      return false;
+    }
     App.staged = [];
     App.proposal = null;
-    if (window.Gemini.ready('text')) {
-      runGemini({ text: text.trim() }).then(openForm);
-    } else {
-      UI.toast('כדי לפרסר טקסט, הפעל את זה בהגדרות');
-    }
+    runGemini({ text: text.trim() }).then(openForm);
     return true;
   };
 
-  /* קריאת הלוח ביוזמת המשתמש. נתמכת ברוב הדפדפנים המודרניים ודורשת
-     מחווה — ולכן היא נקראת מתוך לחיצה. איפה שהיא חסומה או לא קיימת,
-     נופלים ליעד הדבקה ידני במקום להשאיר כפתור שלא עושה כלום. */
+  /* קריאת הלוח ביוזמת המשתמש. דורשת מחווה, ולכן היא נקראת מתוך לחיצה.
+
+     **מה שה-API הזה לא יודע לעשות:** הוא מוסר רשימת טיפוסים מסוננת —
+     `text/plain`, `text/html`, `image/png`. **`application/pdf` אינו
+     ברשימה ולעולם לא יחזור ממנו**, ולא משנה מה יש בלוח בפועל; אפילו
+     `clipboard.write` דוחה אותו במפורש. קובץ מגיע רק דרך אירוע `paste`
+     אמיתי, שנושא `DataTransfer.files` — או דרך גרירה ובחירת קובץ.
+
+     לכן כשאין כאן תמונה או טקסט בר-פרסינג, המסלול אינו מסתיים בהודעה
+     אלא **ביעד ההדבקה**, שהוא המקום היחיד שבו הדבקת PDF באמת עובדת. */
+  /* שתי נסיבות שונות, ושתיהן נגמרות באותו מקום — אבל לא באותו הסבר.
+     "הדפדפן חסם" ו"הלוח לא הכיל קובץ" מובילים את המשתמש לשני דברים
+     שונים לנסות, ולכן הודעה אחת לשניהם הייתה מדויקת פחות משתיהן. */
+  var WHERE = ' הדבק כאן במסגרת — שם זה כן עובד — או בחר את הקובץ מהמכשיר.';
+  var NO_FILE = 'הדפדפן אינו מוסר קבצים מהלוח לקוד.' + WHERE;
+  var BLOCKED = 'הדפדפן לא נתן לקרוא את הלוח.' + WHERE;
+
   App.pasteRoute = function () {
     var nav = navigator.clipboard;
     if (!nav || !nav.read) {
@@ -258,12 +274,10 @@
         }
       }
       return (nav.readText ? nav.readText() : Promise.resolve('')).then(function (txt) {
-        if (!App.ingestText(txt)) {
-          Screens.pasteSheet('אין קובץ, תמונה או טקסט בלוח.');
-        }
+        if (!App.ingestText(txt, { quiet: true })) Screens.pasteSheet(NO_FILE);
       });
     }).catch(function () {
-      Screens.pasteSheet('הדפדפן לא נתן לקרוא את הלוח.');
+      Screens.pasteSheet(BLOCKED);
     });
   };
 

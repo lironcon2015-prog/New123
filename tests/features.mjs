@@ -102,7 +102,9 @@ const av = await page.evaluate(async () => {
   return { url: url.slice(0, 24), w: bmp.width, h: bmp.height, bytes: Math.round(url.length * 0.75) };
 });
 t('האווטאר הוא data URL של JPEG', /^data:image\/jpeg/.test(av.url), av.url);
-t('והוא ריבוע בגודל הקבוע', av.w === 192 && av.h === 192, av.w + 'x' + av.h);
+t('התמונה נשמרת שלמה ולא נחתכת לריבוע', av.w !== av.h, av.w + 'x' + av.h);
+t('והצלע הקצרה היא שנקבעת', Math.min(av.w, av.h) === 256, av.w + 'x' + av.h);
+t('היחס נשמר', Math.abs(av.w / av.h - 900 / 600) < 0.02, (av.w / av.h).toFixed(3));
 t('ומתחת לתקרת המשקל', av.bytes <= 120 * 1024, String(av.bytes));
 
 const avShown = await page.evaluate(async () => {
@@ -121,6 +123,46 @@ const avShown = await page.evaluate(async () => {
 });
 t('ישות עם תמונה מציגה תמונה', avShown.img === true);
 t('וישות בלעדיה נשארת עם האות', avShown.letter === 'א', avShown.letter);
+
+/* מסגרת האווטאר — מה שיוצג בתוך העיגול */
+const avFocus = await page.evaluate(async () => {
+  const DB = window.DB;
+  const before = document.querySelector('.ecard .av img');
+  const beforePos = before ? before.style.objectPosition : '';
+  const e = (await DB.listEntities()).filter(x => x.name === 'דנה')[0];
+  e.avatarFocus = { x: 30, y: 80 };
+  await DB.saveEntity(e);
+  await window.App.render();
+  const after = [...document.querySelectorAll('.ecard')]
+    .filter(c => c.querySelector('.card-t').textContent === 'דנה')[0]
+    .querySelector('.av img');
+  return { beforePos: beforePos, afterPos: after.style.objectPosition };
+});
+t('אווטאר בלי מסגרת שמורה נשאר במרכז', avFocus.beforePos === '50% 50%', avFocus.beforePos);
+t('והמסגרת שנבחרה מצוירת', avFocus.afterPos === '30% 80%', avFocus.afterPos);
+
+await page.evaluate(() => window.Screens.entitySheet(
+  window.Screens.state.entities.filter(e => e.name === 'דנה')[0]));
+await page.waitForSelector('#e-name');
+await page.waitForTimeout(200);
+t('טופס הישות מציג בורר עגול', await page.isVisible('.crop-circle'));
+t('ובלי מחוון — בעיגול גוררים לשני הכיוונים',
+  (await page.locator('.crop-circle').count()) === 1 &&
+  (await page.locator('.crop-range').count()) === 0);
+
+/* מקשי החיצים הם הדרך היחידה להזיז בלי עכבר, ובעיגול גם לרוחב */
+await page.focus('.crop-box');
+await page.keyboard.press('ArrowRight');
+await page.keyboard.press('ArrowDown');
+const moved = await page.evaluate(() => document.querySelector('.crop-img').style.objectPosition);
+t('חיצים מזיזים את המסגרת בשני הצירים', moved === '34% 84%', moved);
+
+await page.click('.sheet-actions .btn:not(.ghost)');
+await page.waitForSelector('.backdrop', { state: 'detached' });
+const savedFocus = await page.evaluate(async () =>
+  (await window.DB.listEntities()).filter(e => e.name === 'דנה')[0].avatarFocus);
+t('והבחירה נשמרת על הישות',
+  savedFocus && savedFocus.x === 34 && savedFocus.y === 84, JSON.stringify(savedFocus));
 
 /* ---------- 3 · מסמך מעודכן דוחק את הקודם ---------- */
 console.log('\n— גרסאות של אותו מסמך —');
@@ -474,22 +516,79 @@ const paste = await page.evaluate(() => {
 });
 t('קובץ PDF מהלוח מזוהה', paste.n === 1 && paste.mime === 'application/pdf', JSON.stringify(paste));
 
-const clipPdf = await page.evaluate(async () => {
-  /* לוח שיש בו PDF בלבד. לפני התיקון הוא נקרא כ"אין תמונה או טקסט". */
-  const seen = [];
-  const orig = navigator.clipboard.read;
-  navigator.clipboard.read = () => Promise.resolve([{
-    types: ['application/pdf'],
-    getType: (t) => { seen.push(t); return Promise.resolve(new Blob([new Uint8Array([37, 80, 68, 70])], { type: t })); }
-  }]);
-  window.App.pasteRoute();
-  await new Promise(r => setTimeout(r, 400));
-  navigator.clipboard.read = orig;
-  return { seen, staged: window.App.staged.map(f => f.mime), sheet: !!document.querySelector('.paste-target') };
+/* **המסלול היחיד שבו PDF באמת מגיע מהלוח** הוא אירוע `paste` אמיתי.
+   ה-Clipboard API האסינכרוני אינו מוסר `application/pdf` בשום דפדפן —
+   הבדיקה למטה מוודאת את זה מול הדפדפן ולא מול הנחה. */
+const realPaste = await page.evaluate(async () => {
+  window.App.staged = [];
+  location.hash = '#/entities';
+  await window.App.render();
+  const dt = new DataTransfer();
+  dt.items.add(new File([new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52])],
+    'policy.pdf', { type: 'application/pdf' }));
+  document.body.dispatchEvent(new ClipboardEvent('paste', {
+    clipboardData: dt, bubbles: true, cancelable: true
+  }));
+  await new Promise(r => setTimeout(r, 600));
+  return { staged: window.App.staged.map(f => f.mime + '|' + f.name), hash: location.hash };
 });
-t('הלוח נקרא כ-PDF ולא נדחה', clipPdf.seen.join(',') === 'application/pdf', clipPdf.seen.join(','));
-t('והקובץ נכנס כמצורף', clipPdf.staged.join(',') === 'application/pdf', clipPdf.staged.join(','));
-t('ולא נפתח יעד הדבקה ידני', clipPdf.sheet === false);
+t('הדבקת PDF באירוע אמיתי מצרפת את הקובץ',
+  realPaste.staged.join(',') === 'application/pdf|policy.pdf', realPaste.staged.join(','));
+t('ופותחת את טופס המסמך', realPaste.hash === '#/doc/new', realPaste.hash);
+
+const targetPaste = await page.evaluate(async () => {
+  window.App.staged = [];
+  location.hash = '#/entities';
+  await window.App.render();
+  window.Screens.pasteSheet();
+  await new Promise(r => setTimeout(r, 200));
+  const target = document.querySelector('.paste-target');
+  const dt = new DataTransfer();
+  dt.items.add(new File([new Uint8Array([37, 80, 68, 70])], 'x.pdf', { type: 'application/pdf' }));
+  target.dispatchEvent(new ClipboardEvent('paste', {
+    clipboardData: dt, bubbles: true, cancelable: true
+  }));
+  await new Promise(r => setTimeout(r, 600));
+  return { staged: window.App.staged.map(f => f.mime), hash: location.hash };
+});
+t('והדבקה לתוך המסגרת עובדת גם היא',
+  targetPaste.staged.join(',') === 'application/pdf', targetPaste.staged.join(','));
+
+const apiLimit = await page.evaluate(async () => {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      'application/pdf': new Blob([new Uint8Array([37, 80, 68, 70])], { type: 'application/pdf' })
+    })]);
+    return { supported: true };
+  } catch (e) { return { supported: false, err: String(e.message || e) }; }
+});
+t('ה-Clipboard API אינו יודע PDF כלל — ולכן הכפתור אינו יכול להסתמך עליו',
+  apiLimit.supported === false, apiLimit.err);
+
+/* לוח עם טקסט בלבד ובלי הסכמת פרסינג: המסלול חייב להסתיים ביעד ההדבקה,
+   שבו הדבקת קובץ כן עובדת, ולא בהודעה שמפנה להגדרות ונגמרת. */
+const deadEnd = await page.evaluate(async () => {
+  location.hash = '#/entities';
+  await window.App.render();
+  const orig = navigator.clipboard.read, origT = navigator.clipboard.readText;
+  navigator.clipboard.read = () => Promise.resolve([{
+    types: ['text/plain'], getType: (t) => Promise.resolve(new Blob(['policy.pdf'], { type: t }))
+  }]);
+  navigator.clipboard.readText = () => Promise.resolve('policy.pdf');
+  window.App.pasteRoute();
+  await new Promise(r => setTimeout(r, 600));
+  navigator.clipboard.read = orig;
+  navigator.clipboard.readText = origT;
+  const sheet = document.querySelector('.paste-target');
+  const reason = document.querySelector('.sheet-p');
+  return { sheet: !!sheet, reason: reason ? reason.textContent : '' };
+});
+t('לוח בלי קובץ נופל ליעד ההדבקה במקום להיתקע', deadEnd.sheet === true);
+t('וההסבר אומר איפה כן להדביק', /הדבק כאן במסגרת/.test(deadEnd.reason), deadEnd.reason);
+await page.evaluate(() => {
+  const b = document.querySelector('.backdrop');
+  if (b) b.remove();
+});
 
 const nameFor = await page.evaluate(() => [
   window.Files.nameFor('application/pdf'),

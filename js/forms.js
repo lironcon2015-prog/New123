@@ -53,26 +53,51 @@
 
     /* ---------- אווטאר ----------
        תמונה גוברת על האות. כל עוד אין תמונה, האות והצבע נשארים —
-       ולכן ישות בלי תמונה נראית בדיוק כמו קודם. */
+       ולכן ישות בלי תמונה נראית בדיוק כמו קודם.
+
+       כשיש תמונה, התצוגה המקדימה **היא הבורר**: התמונה נשמרת שלמה,
+       והעיגול הוא חלון לתוכה שאפשר לגרור. חיתוך מהמרכז בזמן הבחירה
+       היה מקבע ניחוש שאי אפשר לתקן בלי הקובץ המקורי. */
     var avatarImage = e.avatarImage || '';
-    var preview = U.el('span', { class: 'av av-lg' });
+    var avatarFocus = e.avatarFocus || { x: 50, y: 50 };
+    var framer = null;
+
+    var host = U.el('div', { class: 'av-host' });
     var pickI = U.el('input', {
       type: 'file', accept: 'image/*', class: 'hidden-input',
       id: 'e-avatar', 'aria-label': 'תמונת ישות'
     });
     var avErr = U.el('div', { class: 'f-err' });
+    var pickB = U.el('button', { class: 'btn ghost', type: 'button' }, 'בחירת תמונה');
     var removeB = U.el('button', { class: 'btn ghost', type: 'button' }, 'הסרת התמונה');
 
+    function readFocus() {
+      if (framer) avatarFocus = framer.value();
+      return avatarFocus;
+    }
+
     function paintAvatar() {
-      U.clear(preview);
-      preview.style.background = chosen;
-      preview.classList.toggle('av-img', !!avatarImage);
-      if (avatarImage) preview.appendChild(U.el('img', { src: avatarImage, alt: '' }));
-      else preview.appendChild(U.el('span', { text: (nameI.value.trim()[0] || '?') }));
+      U.clear(host);
+      framer = null;
+      if (avatarImage) {
+        framer = window.UI.cropper(avatarImage, avatarFocus, {
+          shape: 'circle', slider: false,
+          label: 'מה יוצג בעיגול האווטאר',
+          hint: 'גרור כדי לבחור מה יוצג בעיגול',
+          flatHint: 'התמונה ריבועית — כולה נכנסת לעיגול.'
+        });
+        host.appendChild(framer.element);
+      } else {
+        var circle = U.el('span', {
+          class: 'av av-lg', style: 'background:' + chosen
+        }, U.el('span', { text: (nameI.value.trim()[0] || '?') }));
+        host.appendChild(circle);
+      }
+      pickB.textContent = avatarImage ? 'החלפת התמונה' : 'בחירת תמונה';
       removeB.style.display = avatarImage ? '' : 'none';
     }
 
-    nameI.addEventListener('input', paintAvatar);
+    nameI.addEventListener('input', function () { if (!avatarImage) paintAvatar(); });
     pickI.addEventListener('change', function () {
       var f = pickI.files && pickI.files[0];
       pickI.value = '';
@@ -80,27 +105,28 @@
       avErr.textContent = '';
       window.Files.avatar(f).then(function (url) {
         avatarImage = url;
+        /* תמונה חדשה מתחילה במרכז. שמירת המסגרת הקודמת הייתה מציגה
+           פינה אקראית של תמונה אחרת לגמרי. */
+        avatarFocus = { x: 50, y: 50 };
         paintAvatar();
       }, function (err) { avErr.textContent = err.message; });
     });
-    removeB.addEventListener('click', function () { avatarImage = ''; paintAvatar(); });
+    pickB.addEventListener('click', function () { pickI.click(); });
+    removeB.addEventListener('click', function () {
+      avatarImage = '';
+      avatarFocus = { x: 50, y: 50 };
+      paintAvatar();
+    });
 
     var avatarRow = U.el('div', { class: 'av-row' }, [
-      preview,
-      U.el('div', { class: 'av-acts' }, [
-        U.el('button', {
-          class: 'btn ghost', type: 'button',
-          onClick: function () { pickI.click(); }
-        }, avatarImage ? 'החלפת התמונה' : 'בחירת תמונה'),
-        removeB
-      ]),
+      host,
+      U.el('div', { class: 'av-acts' }, [pickB, removeB]),
       pickI
     ]);
 
-    /* בחירת צבע צריכה להשתקף בתצוגה המקדימה, ולכן העטיפה */
-    var repaintOnColor = swatches.querySelectorAll('.sw');
-    Array.prototype.forEach.call(repaintOnColor, function (b) {
-      b.addEventListener('click', function () { paintAvatar(); });
+    /* בחירת צבע משתקפת בעיגול האות, ולכן הציור מחדש */
+    Array.prototype.forEach.call(swatches.querySelectorAll('.sw'), function (b) {
+      b.addEventListener('click', function () { if (!avatarImage) paintAvatar(); });
     });
 
     var form = U.el('div', { class: 'form' }, [
@@ -125,6 +151,7 @@
             color: chosen,
             avatar: name[0],
             avatarImage: avatarImage || '',
+            avatarFocus: readFocus(),
             sortOrder: e.sortOrder != null ? e.sortOrder : Date.now(),
             deleted: 0
           }

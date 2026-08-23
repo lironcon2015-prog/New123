@@ -724,7 +724,11 @@
 
       blobP.then(function (blob) {
         if (!blob) return;
-        cropCtl = UI.cropper(blob, cropFile.focusY);
+        cropCtl = UI.cropper(blob, { x: 50, y: cropFile.focusY }, {
+          defaultFocus: { x: 50, y: 0 },
+          label: 'מיקום התצוגה המקדימה',
+          hint: 'גרור את התצוגה למעלה ולמטה'
+        });
         U.clear(cropHost);
         cropHost.appendChild(U.el('div', { class: 'files-h', text: 'תצוגה מקדימה' }));
         cropHost.appendChild(cropCtl.element);
@@ -828,7 +832,7 @@
 
       /* המסגרת נשמרת על הקובץ שמצויר בעוגן, ולא על המסמך — החלפת הקובץ
          מחליפה גם את המסגרת שלו, וזה הדבר הנכון. */
-      if (cropCtl && r.value.files.length) r.value.files[0].focusY = cropCtl.value();
+      if (cropCtl && r.value.files.length) r.value.files[0].focusY = cropCtl.value().y;
 
       /* ---------- זיהוי מסמך מעודכן ----------
          אותו סוג, אותה ישות, אותם שדות חובה — אותו מסמך. מה שקובע מי
@@ -1003,7 +1007,7 @@
            String(window.Parse.ASSET_MB).replace('.', '.') + 'MB' },
       { icon: 'i-camera', t: 'צילום', s: 'מצלמת המכשיר', k: 'camera' },
       { icon: 'i-upload', t: 'בחירת קובץ', s: 'תמונה או PDF', k: 'file' },
-      { icon: 'i-paste', t: 'הדבקה מהלוח', s: 'צילום מסך או פרטים שהעתקת', k: 'paste' },
+      { icon: 'i-paste', t: 'הדבקה מהלוח', s: 'צילום מסך, קובץ, או פרטים שהעתקת', k: 'paste' },
       { icon: 'i-edit', t: 'הזנה ידנית', s: 'בלי קובץ', k: 'manual' }
     ];
 
@@ -1045,9 +1049,11 @@
 
     var sheet = UI.sheet('הדבקה מהלוח', [
       U.el('p', { class: 'sheet-p', text: reason ||
-        'הצמד את הסמן למסגרת והדבק — Ctrl+V במחשב, או לחיצה ארוכה והדבקה בנייד. ' +
-        'אפשר גם להדביק קובץ שהעתקת ממנהל הקבצים, או לגרור אותו לכאן.' }),
+        'הצמד את הסמן למסגרת והדבק — Ctrl+V במחשב, או לחיצה ארוכה והדבקה בנייד.' }),
       target,
+      U.el('p', { class: 'muted small', text:
+        'קובץ שהעתקת ממנהל הקבצים עובד כאן, ולא דרך הכפתור — הדפדפן מוסר ' +
+        'קבצים רק באירוע הדבקה אמיתי. אפשר גם לגרור קובץ לחלון.' }),
       pick
     ]);
 
