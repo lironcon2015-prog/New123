@@ -31,26 +31,55 @@
   /* מפת הכספת. עוברת דרך `DB.forSync` ולכן סוג עם `syncFields:false`
      יוצא ריק — DEC-13 חל על כל ערוץ שמוציא נתונים מהמכשיר, לא רק על
      הדרייב. גרסאות שנדחקו אינן נשלחות: העוזר עובד על העדכני. */
+  /* מסמך שפג לפני יותר מהחלון הזה מצטמצם לשורה, בלי שדות. זו המקבילה
+     שנאביגו הצביעה עליה: אצלם "טיול שהסתיים" מצטמצם לסיכום, ואצלנו
+     תעודה אינה מסתיימת — אבל תעודה שפגה לפני שנתיים כן. הצמצום הוא
+     **לפי זמן ולא לפי תוכן**: סינון לפי השאלה הוא בדיוק המנגנון שמסתיר
+     את מה שנשאלו עליו, כי "מה עם ההוא מהפעם הקודמת" אינו מילת מפתח. */
+  Chat.STALE_DAYS = 365;
+
   Chat.context = function (entities, docs) {
     var live = V.live((docs || []).filter(function (d) { return !d.deleted; }));
+    var counts = {};
+
+    var out = live.map(function (d) {
+      var safe = DB.forSync(d);
+      counts[safe.typeKey] = (counts[safe.typeKey] || 0) + 1;
+
+      /* מספרים מחושבים מראש. מודל שמחשב ימים עד תפוגה טועה בשקט, וכל
+         מספר שהמשתמש עשוי לצטט עדיף שיגיע מוכן. */
+      var days = safe.expiryDate ? window.Expiry.daysLeft(safe.expiryDate) : null;
+      var row = {
+        id: safe.id, entityId: safe.entityId, typeKey: safe.typeKey,
+        title: safe.title, expiryDate: safe.expiryDate || null
+      };
+      if (days != null) row.daysLeft = days;
+
+      if (days != null && days < -Chat.STALE_DAYS) {
+        row.stale = true;
+        return row;
+      }
+
+      var fields = {};
+      (safe.fields || []).forEach(function (f) { fields[f.key] = f.value; });
+      row.fields = fields;
+      row.issueDate = safe.issueDate || null;
+      row.notes = safe.notes || '';
+      return row;
+    });
+
     return {
       today: U.todayYmd(),
+      counts: counts,
       entities: (entities || []).map(function (e) {
         return { id: e.id, name: e.name, type: e.type };
       }),
-      docs: live.map(function (d) {
-        var safe = DB.forSync(d);
-        var fields = {};
-        (safe.fields || []).forEach(function (f) { fields[f.key] = f.value; });
-        return {
-          id: safe.id, entityId: safe.entityId, typeKey: safe.typeKey,
-          title: safe.title, fields: fields,
-          issueDate: safe.issueDate || null, expiryDate: safe.expiryDate || null,
-          notes: safe.notes || ''
-        };
-      })
+      docs: out
     };
   };
+
+  /* המספר שנאביגו אמרה שהם לא מדדו ושכדאי לי כן. מוצג במסך, לא בטלמטריה. */
+  Chat.contextSize = function (ctx) { return JSON.stringify(ctx).length; };
 
   Chat.OPS = [
     'setField — שינוי ערך שדה: {"op":"setField","docId":"..","key":"..","value":".."}',
@@ -90,8 +119,12 @@
       '- שאלה שאין בה בקשה לשינוי מקבלת actions ריק.',
       '- תאריכים תמיד YYYY-MM-DD.',
       '- מספר תעודת זהות ישראלי הוא תשע ספרות וספרת הביקורת אחרונה.',
-      '- מסמך שאין לו שדות בנתונים הוא מסמך שהפרטים שלו אינם עוזבים את המכשיר.',
-      '  אל תניח שהוא ריק, ואל תציע למלא אותו.',
+      '- מסמך שאין לו שדות בנתונים הוא מסמך שהפרטים שלו אינם עוזבים את המכשיר,',
+      '  או מסמך שפג מזמן ומוצג מקוצר (stale). אל תניח שהוא ריק ואל תציע למלא אותו.',
+      '- daysLeft כבר מחושב. אל תחשב ימים בעצמך ואל תסתור אותו.',
+      '- **אל תמציא מבנה בשדה טקסט חופשי.** בהערות אין כתובות, אין קישורים ואין',
+      '  פורמטים מומצאים — ערך שיש לו שדה משלו בטבלה הולך לשדה שלו, ולא להערות.',
+      '- אינך קובע אם ערך מאומת. האימות נעשה בוולידטור, לא על ידך.',
       '',
       'הנתונים:',
       JSON.stringify(ctx)
@@ -125,8 +158,18 @@
     return field;
   }
 
+  /* פעולות שסימון-כברירת-מחדל הוא הצהרה נכונה עליהן: "זה בטוח ואפשר
+     לתקן". מה שמחוץ לרשימה מגיע **לא מסומן** — ריקון שדה, העברת מסמך
+     לישות אחרת ושינוי שם ישות הם לא "אשר הכל", הם החלטה.
+     ההבחנה הזאת הגיעה מנאביגו, שאצלה אין תיבות סימון בכלל. */
+  Chat.SAFE = ['setField', 'setDate', 'setTitle', 'setNotes', 'createEntity', 'createDoc'];
+
+  function safeOp(op) { return Chat.SAFE.indexOf(op) !== -1; }
+
   /* טהורה. מקבלת פעולות ומצב, מחזירה מה ייכתב ומה נפסל.
-     כל פעולה יוצאת עם `text` בעברית — מה שהמשתמש מאשר הוא התיאור הזה. */
+     כל פעולה יוצאת עם `text` בעברית — מה שהמשתמש מאשר הוא התיאור הזה —
+     ועם `beforeText`, כדי שהכרטיס יראה **מה היה** ולא רק מה יהיה.
+     נאביגו סימנה את היעדר הערך הקודם ככרטיס הגרוע ביותר אצלה. */
   Chat.compile = function (actions, state) {
     var ops = [], errors = [];
     var newEntities = [];
@@ -150,7 +193,7 @@
             errors.push('ערך ריק ל' + def.label); return;
           }
           ops.push({
-            op: 'setField', docId: doc.id, key: def.key,
+            op: 'setField', docId: doc.id, key: def.key, kind: def.kind,
             field: buildField(def, String(a.value)),
             before: fieldValue(doc, def.key),
             text: doc.title + ' · ' + def.label + ': ' + KINDS.get(def.kind).format(a.value)
@@ -164,7 +207,7 @@
           if (!def) { errors.push('אין שדה ' + a.key + ' ב' + DT.label(doc.typeKey)); return; }
           if (def.required) { errors.push(def.label + ' הוא שדה חובה ואינו מרוקן'); return; }
           ops.push({
-            op: 'clearField', docId: doc.id, key: def.key,
+            op: 'clearField', docId: doc.id, key: def.key, kind: def.kind,
             before: fieldValue(doc, def.key),
             text: doc.title + ' · ריקון ' + def.label
           });
@@ -278,13 +321,41 @@
       }
     });
 
+    /* חותמת אחת בסוף במקום שדה שנשכח בתשע פקודות. `beforeText` נשאר
+       ריק כשאין ערך קודם — "עכשיו: (ריק)" הוא רעש, לא מידע. */
+    ops.forEach(function (o) {
+      o.safe = safeOp(o.op);
+      o.beforeText = beforeTextOf(o);
+    });
     return { ops: ops, errors: errors };
   };
+
+  function beforeTextOf(o) {
+    if (o.before == null || o.before === '') return '';
+    if (o.kind) return KINDS.get(o.kind).format(o.before);
+    if (o.op === 'setDate') return KINDS.get('date').format(o.before);
+    return String(o.before);
+  }
 
   function fieldValue(doc, key) {
     var f = (doc.fields || []).filter(function (x) { return x.key === key; })[0];
     return f ? f.value : '';
   }
+
+  /* מה שחוזר למודל אחרי האישור. **דחייה חוזרת כתור ולא כשתיקה** —
+     מודל שלא יודע שדחו אותו יציע שוב את אותו דבר בשאלה הבאה, ומודל
+     שכן יודע מציע חלופה. זו ההמלצה הזולה ביותר שהגיעה מנאביגו. */
+  Chat.outcomeText = function (applied, skipped) {
+    var parts = [];
+    if (applied && applied.length) {
+      parts.push('הוחל: ' + applied.map(function (o) { return o.text; }).join(' · '));
+    }
+    if (skipped && skipped.length) {
+      parts.push('נדחה על ידי המשתמש: ' + skipped.map(function (o) { return o.text; }).join(' · '));
+    }
+    if (!parts.length) parts.push('לא הוחל דבר.');
+    return '[מערכת] ' + parts.join('. ') + '.';
+  };
 
   /* ---------- הכתיבה ---------- */
   /* רצה **רק** אחרי אישור. סדרתית, כדי ששתי פעולות על אותו מסמך לא ידרסו

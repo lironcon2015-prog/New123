@@ -1038,30 +1038,42 @@
       tabindex: '0'
     }, U.el('span', { class: 'paste-hint', text: 'הדבק כאן' }));
 
-    /* מסלול שלישי, לקובץ שהועתק ממנהל הקבצים. הדבקה של קובץ מגיעה
-       כ-`DataTransfer.files` וזה עובד כאן; מה שאינה עוברת בכלל היא
-       קריאת הלוח בקוד, ולכן צריך גם כפתור בחירה שלא תלוי בלוח. */
-    var pick = U.el('button', { class: 'btn ghost wide', type: 'button' }, 'בחירת קובץ מהמכשיר');
+    /* המסלול שתמיד עובד, ולכן הוא הכפתור המלא ולא הרפאים. במחשב הדבקה
+       של קובץ למסגרת עובדת; **בנייד היא לרוב לא** — iOS אינו מדביק קובץ
+       לתוך contenteditable, ולכן בורר הקבצים הוא התשובה ולא הנסיגה. */
+    var pick = U.el('button', { class: 'btn wide', type: 'button' }, 'בחירת קובץ מהמכשיר');
     pick.addEventListener('click', function () {
       sheet.close();
       window.App.pickFiles(null, false);
     });
 
+    var err = U.el('p', { class: 'form-err', role: 'alert' });
+
     var sheet = UI.sheet('הדבקה מהלוח', [
       U.el('p', { class: 'sheet-p', text: reason ||
         'הצמד את הסמן למסגרת והדבק — Ctrl+V במחשב, או לחיצה ארוכה והדבקה בנייד.' }),
       target,
+      err,
       U.el('p', { class: 'muted small', text:
-        'קובץ שהעתקת ממנהל הקבצים עובד כאן, ולא דרך הכפתור — הדפדפן מוסר ' +
-        'קבצים רק באירוע הדבקה אמיתי. אפשר גם לגרור קובץ לחלון.' }),
+        'הדבקת קובץ למסגרת עובדת במחשב. בנייד המערכת לרוב אינה מוסרת קבצים ' +
+        'להדבקה — שם בחר את הקובץ מהמכשיר. אפשר גם לגרור קובץ לחלון.' }),
       pick
     ]);
 
+    /* **סוגרים רק כשנקלט משהו.** קודם הגיליון נסגר תמיד, וכשההדבקה לא
+       מסרה קובץ המשתמש נזרק חזרה למסך הישות בלי הסבר — ונראה לו שהוא
+       עשה משהו לא נכון. עכשיו הוא נשאר כאן ומקבל את השורה הבאה. */
     target.addEventListener('paste', function (e) {
       e.preventDefault();
       e.stopPropagation();
-      sheet.close();
-      window.App.ingestPaste(e.clipboardData);
+      err.textContent = '';
+      if (window.App.ingestPaste(e.clipboardData, { quiet: true })) {
+        sheet.close();
+        return;
+      }
+      U.clear(target).appendChild(U.el('span', { class: 'paste-hint', text: 'הדבק כאן' }));
+      err.textContent = 'ההדבקה לא מסרה קובץ. בחר את הקובץ מהמכשיר.';
+      if (navigator.vibrate) navigator.vibrate(40);
     });
 
     setTimeout(function () { target.focus(); }, 80);
@@ -1093,6 +1105,11 @@
     var log = U.el('div', { class: 'chat-log' });
     wrap.appendChild(log);
 
+    /* המספר שנאביגו אמרה שלא מדדו ושכדאי למדוד. הוא גדל עם הכספת,
+       והמשתמש הוא היחיד שיכול להחליט מתי הוא גדול מדי. */
+    var size = U.el('p', { class: 'muted small chat-size' });
+    wrap.appendChild(size);
+
     var input = U.el('textarea', {
       class: 'f-i f-multi chat-in', rows: '2',
       placeholder: 'לדוגמה: קח מהספח את הפרטים של איתמר והוסף לישות שלו',
@@ -1113,6 +1130,10 @@
           'אינו נשמר לפני שאתה מאשר אותו.' }));
       }
       Chat.log.forEach(function (m) {
+        if (m.system) {
+          log.appendChild(U.el('p', { class: 'muted small chat-sys', text: m.text }));
+          return;
+        }
         log.appendChild(bubble(m.role, m.text));
         if (m.ops && m.ops.length) log.appendChild(opsCard(m));
         if (m.errors && m.errors.length) {
@@ -1127,13 +1148,23 @@
 
     function opsCard(m) {
       var chosen = {};
-      m.ops.forEach(function (o, i) { chosen[i] = true; });
+      /* מסומן כברירת מחדל רק למה שבטוח להחיל. ריקון שדה והעברת מסמך
+         מגיעים לא מסומנים — סימון הוא הצהרה, ולא מקום לחסוך בו לחיצה. */
+      m.ops.forEach(function (o, i) { chosen[i] = !!o.safe; });
 
       var rows = m.ops.map(function (o, i) {
         var box = U.el('span', { class: 'box' });
-        var row = U.el('button', { class: 'chk on', type: 'button', 'aria-pressed': 'true' }, [
-          box, U.el('span', { text: o.text })
-        ]);
+        var lines = [U.el('span', { text: o.text })];
+        /* הערך הקודם לצד החדש. ההבדל בין "עדכון תאריך" לבין
+           "עכשיו 12/08 · אחרי 12/09" הוא ההבדל בין אישור אוטומטי לבדיקה. */
+        if (o.beforeText) {
+          lines.push(U.el('span', { class: 'chk-was' },
+            U.bidi('עכשיו: ' + o.beforeText)));
+        }
+        var row = U.el('button', {
+          class: 'chk' + (chosen[i] ? ' on' : ''), type: 'button',
+          'aria-pressed': String(chosen[i])
+        }, [box, U.el('span', { class: 'chk-b' }, lines)]);
         row.addEventListener('click', function () {
           chosen[i] = !chosen[i];
           row.setAttribute('aria-pressed', String(chosen[i]));
@@ -1144,14 +1175,22 @@
 
       var apply = U.el('button', { class: 'btn wide', type: 'button' }, 'החלה');
       apply.addEventListener('click', function () {
-        var picked = m.ops.filter(function (o, i) { return chosen[i]; });
-        if (!picked.length) { UI.toast('לא נבחר שינוי'); return; }
+        var picked = [], skipped = [];
+        m.ops.forEach(function (o, i) { (chosen[i] ? picked : skipped).push(o); });
+        if (!picked.length && !skipped.length) return;
         apply.disabled = true;
         window.Chat.apply(picked).then(function () {
           m.ops = null;
-          m.applied = picked.length;
-          m.text += '\n\n' + U.count(picked.length, 'שינוי אחד הוחל', 'שינויים הוחלו');
-          UI.toast(U.count(picked.length, 'שינוי אחד הוחל', 'שינויים הוחלו'));
+          /* התוצאה חוזרת למודל כתור. מודל שלא יודע שדחו אותו מציע שוב
+             את אותו דבר; מודל שכן יודע מציע חלופה. ההמלצה הזאת הגיעה
+             מנאביגו והיא הזולה מכולן ליישום. */
+          window.Chat.log.push({
+            role: 'user', system: true,
+            text: window.Chat.outcomeText(picked, skipped)
+          });
+          UI.toast(picked.length
+            ? U.count(picked.length, 'שינוי אחד הוחל', 'שינויים הוחלו')
+            : 'שום שינוי לא הוחל');
           return Screens.reload();
         }).then(paint);
       });
@@ -1174,6 +1213,7 @@
       sendB.disabled = true;
 
       var ctx = window.Chat.context(state.entities, state.docs);
+      size.textContent = 'ההקשר שנשלח: ' + U.bytes(window.Chat.contextSize(ctx));
       var turns = Chat.log
         .filter(function (m) { return m !== pending; })
         .slice(-Chat.HISTORY_MAX)

@@ -590,6 +590,61 @@ await page.evaluate(() => {
   if (b) b.remove();
 });
 
+/* הבאג שדווח מהמכשיר: הדבקה שלא מסרה קובץ — המצב הרגיל ב-iOS — סגרה
+   את הגיליון והחזירה את המשתמש למסך הישות בלי מילה. */
+const emptyPaste = await page.evaluate(async () => {
+  location.hash = '#/entities';
+  await window.App.render();
+  window.App.staged = [];
+  window.Screens.pasteSheet();
+  await new Promise(r => setTimeout(r, 200));
+  const target = document.querySelector('.paste-target');
+  const dt = new DataTransfer();   /* לוח ריק — בדיוק מה ש-iOS מוסר */
+  target.dispatchEvent(new ClipboardEvent('paste', {
+    clipboardData: dt, bubbles: true, cancelable: true
+  }));
+  await new Promise(r => setTimeout(r, 400));
+  return {
+    stillOpen: !!document.querySelector('.paste-target'),
+    err: (document.querySelector('.sheet .form-err') || {}).textContent || '',
+    hash: location.hash
+  };
+});
+t('הדבקה שלא מסרה קובץ אינה סוגרת את הגיליון', emptyPaste.stillOpen === true);
+t('ואומרת מה קרה במקום להיעלם', /לא מסרה קובץ/.test(emptyPaste.err), emptyPaste.err);
+t('והמשתמש לא נזרק מהזרימה', emptyPaste.hash === '#/entities', emptyPaste.hash);
+
+const primary = await page.evaluate(() => {
+  const b = [...document.querySelectorAll('.sheet .btn')]
+    .filter(x => x.textContent.indexOf('בחירת קובץ') !== -1)[0];
+  return b ? b.className : '';
+});
+t('בורר הקבצים הוא הפעולה הראשית, לא נסיגה',
+  primary.indexOf('ghost') === -1, primary);
+await page.evaluate(() => {
+  const b = document.querySelector('.backdrop');
+  if (b) b.remove();
+});
+
+/* וכשההדבקה כן מסרה קובץ — הגיליון נסגר, כמו קודם */
+const goodPaste = await page.evaluate(async () => {
+  location.hash = '#/entities';
+  await window.App.render();
+  window.App.staged = [];
+  window.Screens.pasteSheet();
+  await new Promise(r => setTimeout(r, 200));
+  const target = document.querySelector('.paste-target');
+  const dt = new DataTransfer();
+  dt.items.add(new File([new Uint8Array([37, 80, 68, 70])], 'ok.pdf', { type: 'application/pdf' }));
+  target.dispatchEvent(new ClipboardEvent('paste', {
+    clipboardData: dt, bubbles: true, cancelable: true
+  }));
+  await new Promise(r => setTimeout(r, 600));
+  return { closed: !document.querySelector('.paste-target'), staged: window.App.staged.length };
+});
+t('הדבקה שכן מסרה קובץ סוגרת וממשיכה',
+  goodPaste.closed === true && goodPaste.staged === 1, JSON.stringify(goodPaste));
+
 const nameFor = await page.evaluate(() => [
   window.Files.nameFor('application/pdf'),
   window.Files.nameFor('image/png'),
@@ -721,6 +776,66 @@ const applied = await page.evaluate(async () => {
     notes: after.notes
   };
 });
+/* ---------- מה שהתקבל מנאביגו ---------- */
+const navigo = await page.evaluate(async () => {
+  await window.Screens.reload();
+  const S = window.Screens.state;
+  const st = { entities: S.entities, docs: S.live };
+  const out = window.Chat.compile([
+    { op: 'setField', docId: 'f-1', key: 'issuer', value: 'משרד התחבורה' },
+    { op: 'clearField', docId: 'f-1', key: 'reference' },
+    { op: 'moveDoc', docId: 'f-1', entityId: 'e-dana' }
+  ], st);
+  return {
+    safe: out.ops.map(o => o.op + ':' + o.safe),
+    beforeText: out.ops[0].beforeText,
+    outcome: window.Chat.outcomeText([out.ops[0]], [out.ops[2]])
+  };
+});
+t('פעולות בטוחות מסומנות וכל השאר לא',
+  navigo.safe.join(',') === 'setField:true,clearField:false,moveDoc:false',
+  navigo.safe.join(','));
+t('והכרטיס יודע מה הערך הקודם', navigo.beforeText === 'משרד הפנים', navigo.beforeText);
+t('התוצאה שחוזרת למודל כוללת גם את מה שנדחה',
+  /הוחל:/.test(navigo.outcome) && /נדחה על ידי המשתמש:/.test(navigo.outcome),
+  navigo.outcome);
+
+const ctxShape = await page.evaluate(async () => {
+  const DB = window.DB;
+  await DB.saveDoc({
+    id: 'stale-1', entityId: 'e-car', typeKey: 'vehicle_test', title: 'טסט עתיק',
+    fields: [{ key: 'plate', label: 'מספר רישוי', value: '9998887', kind: 'plate', sensitive: false, verified: true }],
+    issueDate: null, expiryDate: '2019-01-01', files: [], source: 'upload', notes: 'סודי',
+    supersededBy: null, deleted: 0
+  }, []);
+  await window.Screens.reload();
+  const S = window.Screens.state;
+  const ctx = window.Chat.context(S.entities, S.docs);
+  const stale = ctx.docs.filter(d => d.id === 'stale-1')[0];
+  const fresh = ctx.docs.filter(d => d.expiryDate && !d.stale)[0];
+  return {
+    stale: stale, hasFields: !!(stale && stale.fields), counts: ctx.counts,
+    freshDays: fresh ? ('daysLeft' in fresh) : 'no-doc-with-expiry',
+    size: window.Chat.contextSize(ctx)
+  };
+});
+t('מסמך שפג מזמן מצטמצם לשורה', ctxShape.stale && ctxShape.stale.stale === true);
+t('ושדותיו והערותיו אינם נשלחים כלל', ctxShape.hasFields === false);
+t('אבל התפוגה שלו כן, כדי שאפשר יהיה לשאול עליו',
+  ctxShape.stale.expiryDate === '2019-01-01', String(ctxShape.stale.expiryDate));
+t('ההקשר נושא ספירה לפי סוג', ctxShape.counts && ctxShape.counts.vehicle_test >= 1,
+  JSON.stringify(ctxShape.counts));
+t('וימים עד תפוגה מחושבים מראש', ctxShape.freshDays === true, String(ctxShape.freshDays));
+t('וגודל ההקשר ניתן למדידה', ctxShape.size > 0, String(ctxShape.size));
+
+const rules = await page.evaluate(() => {
+  const S = window.Screens.state;
+  return window.Chat.prompt(window.Chat.context(S.entities, S.docs));
+});
+t('הפרומפט אוסר להמציא מבנה בשדה טקסט חופשי', /אל תמציא מבנה בשדה טקסט חופשי/.test(rules));
+t('ואומר שהאימות אינו בידי המודל', /אינך קובע אם ערך מאומת/.test(rules));
+t('ושלא לחשב ימים בעצמו', /daysLeft כבר מחושב/.test(rules));
+
 t('קימפול לבדו אינו כותב כלום', applied.untouched === true);
 t('ורק ההחלה כותבת', applied.issuer && applied.issuer.value === 'משרד הפנים',
   JSON.stringify(applied.issuer));

@@ -1,7 +1,7 @@
 /* sw.js — מעטפת אופליין.
    CACHE_VERSION חייב להיות זהה ל-version.json ול-_BUNDLE_VERSION ב-index.html.
    `node tools/bump.mjs` כותב את שלושתם, ו-tests/units.mjs נכשל אם הם נפרדו. */
-const CACHE_VERSION = '0.9.2';
+const CACHE_VERSION = '0.9.3';
 const CACHE_NAME = 'family-vault-' + CACHE_VERSION;
 
 /* המעטפת, הכתב, וצופה ה-PDF.

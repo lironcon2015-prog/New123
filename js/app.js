@@ -214,12 +214,17 @@
   /* הדבקה — שני מסלולי משנה. SPEC §7.1.
      שלושת הדרכים להגיע לכאן — Ctrl+V גלובלי, כפתור בגיליון ההוספה, ויעד
      ההדבקה — נשפכות לפונקציה אחת, כדי שלא יתפצלו בהתנהגות. */
-  App.ingestPaste = function (dt) {
+  /* מחזירה true רק כשמשהו באמת נקלט. הקורא **חייב** את זה: יעד ההדבקה
+     סגר את עצמו לפני שידע אם הגיע קובץ, וכשלא הגיע — וזה המצב הרגיל
+     ב-iOS, שאינו מדביק קבצים לתוך contenteditable — המשתמש נזרק מהזרימה
+     בלי מילה. גיליון שנסגר על כלום הוא הכישלון הגרוע ביותר: הוא נראה
+     כאילו הפעולה הצליחה. */
+  App.ingestPaste = function (dt, opts) {
     var files = Files.fromDataTransfer(dt);
     if (files.length) { ingest(files, 'paste', ''); return true; }
 
     var text = dt && dt.getData && dt.getData('text/plain');
-    return App.ingestText(text);
+    return App.ingestText(text, opts);
   };
 
   /* מחזירה true רק כשהיא באמת עשתה משהו. טקסט שאי אפשר לפרסר אינו
