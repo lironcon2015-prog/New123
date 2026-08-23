@@ -324,6 +324,30 @@ select.f-i { appearance: none; background-image: none; }
 .form-err { font-size: 13.5px; color: var(--exp-past-fg); margin-top: 10px; }
 .form-err:empty { display: none; }
 
+/* ============ בורר מסגרת ============ */
+.crop { display: flex; flex-direction: column; gap: 8px; }
+.crop-box {
+  position: relative; width: 100%; aspect-ratio: 16/10; overflow: hidden;
+  border-radius: var(--r-card); background: var(--surface-2);
+  cursor: grab; touch-action: none; box-shadow: var(--shadow);
+}
+.crop-box.crop-drag { cursor: grabbing; }
+.crop-box.crop-flat { cursor: default; }
+.crop-img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+
+/* קווי שליש — רומזים שהמסגרת ניתנת להזזה, בלי להתחרות בתמונה */
+.crop-box::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(to bottom, rgba(255,255,255,.5) 1px, transparent 1px) 0 33.33% / 100% 33.34%,
+    linear-gradient(to bottom, rgba(255,255,255,.5) 1px, transparent 1px) 0 66.66% / 100% 33.34%;
+  background-repeat: no-repeat; opacity: .55;
+}
+.crop-box.crop-flat::after { display: none; }
+
+.crop-range { width: 100%; accent-color: var(--accent); }
+.crop-range:disabled { opacity: .4; }
+
 .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 .sw { width: 34px; height: 34px; border-radius: var(--r-pill); border: 2px solid transparent; cursor: pointer; }
 .sw.on { border-color: var(--ink); }

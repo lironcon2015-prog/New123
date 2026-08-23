@@ -367,6 +367,103 @@ t('object-fit נשאר cover', anchorPos.fit === 'cover', anchorPos.fit);
 t('object-position בראש התמונה ולא במרכזה',
   /0(px|%)?$/.test(anchorPos.v.split(' ')[1] || ''), anchorPos.v);
 
+/* ---------- 8b · בחירת מסגרת לתצוגה המקדימה ---------- */
+console.log('\n— מסגרת התצוגה המקדימה —');
+await page.evaluate(async () => {
+  const DB = window.DB, U = window.U;
+  const c = new OffscreenCanvas(800, 2000), x = c.getContext('2d');
+  x.fillStyle = '#eee'; x.fillRect(0, 0, 800, 2000);
+  x.fillStyle = '#c00'; x.fillRect(0, 0, 800, 600);
+  const blob = await c.convertToBlob({ type: 'image/png' });
+  const bid = U.id();
+  await DB.saveDoc({
+    id: 'crop-1', entityId: 'e-itamar', typeKey: 'generic', title: 'תעודה גבוהה',
+    fields: [{ key: 'title', label: 'כותרת', value: 'תעודה גבוהה', kind: 'text', sensitive: false, verified: true }],
+    issueDate: null, expiryDate: null, source: 'upload', notes: '',
+    supersededBy: null, deleted: 0,
+    files: [{ blobId: bid, driveFileId: null, mime: 'image/png', name: 'tall.png', size: blob.size }]
+  }, [{ id: bid, docId: 'crop-1', data: blob, mime: 'image/png', size: blob.size }]);
+
+  const w = new OffscreenCanvas(2000, 400), wx = w.getContext('2d');
+  wx.fillStyle = '#0a0'; wx.fillRect(0, 0, 2000, 400);
+  const wblob = await w.convertToBlob({ type: 'image/png' });
+  const wid = U.id();
+  await DB.saveDoc({
+    id: 'crop-2', entityId: 'e-itamar', typeKey: 'generic', title: 'תעודה רחבה',
+    fields: [{ key: 'title', label: 'כותרת', value: 'תעודה רחבה', kind: 'text', sensitive: false, verified: true }],
+    issueDate: null, expiryDate: null, source: 'upload', notes: '',
+    supersededBy: null, deleted: 0,
+    files: [{ blobId: wid, driveFileId: null, mime: 'image/png', name: 'wide.png', size: wblob.size }]
+  }, [{ id: wid, docId: 'crop-2', data: wblob, mime: 'image/png', size: wblob.size }]);
+});
+
+await page.goto(BASE + '#/doc/crop-1');
+await page.waitForSelector('img.anchor');
+t('בלי בחירה, העוגן בראש התמונה',
+  (await page.evaluate(() => document.querySelector('img.anchor').style.objectPosition)) === '50% 0%');
+
+await page.goto(BASE + '#/doc/crop-1/edit');
+await page.waitForSelector('.crop-box');
+await page.waitForTimeout(250);
+t('בטופס העריכה יש בורר מסגרת', await page.isVisible('.crop-range'));
+t('והוא פעיל בתמונה גבוהה מהמסגרת',
+  (await page.evaluate(() => document.querySelector('.crop-range').disabled)) === false);
+
+/* גרירה כלפי מעלה מזיזה את החלון כלפי מטה בתמונה */
+const cbox = await page.locator('.crop-box').boundingBox();
+await page.mouse.move(cbox.x + cbox.width / 2, cbox.y + 20);
+await page.mouse.down();
+await page.mouse.move(cbox.x + cbox.width / 2, cbox.y - 60, { steps: 10 });
+await page.mouse.up();
+const dragged = await page.evaluate(() => Number(document.querySelector('.crop-range').value));
+t('גרירה מזיזה את המסגרת', dragged > 0, String(dragged));
+
+await page.evaluate(() => {
+  const s = document.querySelector('.crop-range');
+  s.value = '70';
+  s.dispatchEvent(new Event('input'));
+});
+t('והמחוון והתצוגה קשורים זה לזה',
+  (await page.evaluate(() => document.querySelector('.crop-img').style.objectPosition)) === '50% 70%');
+
+await page.click('#doc-save');
+await page.waitForSelector('.doc-head');
+await page.waitForTimeout(250);
+t('הבחירה נשמרת על הקובץ',
+  (await page.evaluate(async () => (await window.DB.get('docs', 'crop-1')).files[0].focusY)) === 70);
+t('והעוגן מצייר אותה',
+  (await page.evaluate(() => document.querySelector('img.anchor').style.objectPosition)) === '50% 70%');
+
+await page.goto(BASE + '#/doc/crop-1/edit');
+await page.waitForSelector('.crop-range');
+await page.waitForTimeout(250);
+t('פתיחה מחדש של העריכה מציגה את מה שנבחר',
+  (await page.evaluate(() => document.querySelector('.crop-range').value)) === '70');
+
+await page.goto(BASE + '#/doc/crop-2/edit');
+await page.waitForSelector('.crop-range');
+await page.waitForTimeout(300);
+const flat = await page.evaluate(() => ({
+  off: document.querySelector('.crop-range').disabled,
+  hint: document.querySelector('.crop .muted').textContent
+}));
+t('בתמונה רחבה מהמסגרת הבורר מושבת', flat.off === true);
+t('ואומר למה, במקום להזיז ולא לעשות כלום', /רחבה מהמסגרת/.test(flat.hint), flat.hint);
+
+const focusSync = await page.evaluate(async () => {
+  const doc = await window.DB.get('docs', 'crop-1');
+  const out = window.Sync.mergeRecords('docs', [
+    { id: 'crop-1', updatedAt: (doc.updatedAt || 0) + 1000, entityId: 'e-itamar',
+      typeKey: 'generic', title: 'תעודה גבוהה', fields: [], deleted: 0,
+      files: [{ driveFileId: 'g1', mime: 'image/png', name: 'tall.png', size: 9, focusY: 70 }] }
+  ], [doc]);
+  const exported = await window.Sync.exportDb();
+  const mine = exported.docs.filter(d => d.id === 'crop-1')[0];
+  return { merged: out.writes[0].files[0].focusY, exported: mine.files[0].focusY };
+});
+t('המסגרת נוסעת בייצוא לדרייב', focusSync.exported === 70, String(focusSync.exported));
+t('ושורדת מיזוג במקום להתאפס', focusSync.merged === 70, String(focusSync.merged));
+
 /* ---------- 1 · הדבקת קובץ ---------- */
 console.log('\n— הדבקת קובץ —');
 const paste = await page.evaluate(() => {

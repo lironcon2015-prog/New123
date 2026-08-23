@@ -241,6 +241,89 @@
     });
   };
 
+  /* ---------- בורר מסגרת לתצוגה המקדימה ----------
+     העוגן הוא חלון 16:10 לתוך תמונה שרובה בדרך כלל גבוהה ממנו. `50% 0`
+     הוא ברירת מחדל טובה — ראש המסמך הוא מה שמזהה אותו — אבל הוא ניחוש,
+     והוא שגוי בכל צילום שיש בו שוליים למעלה.
+
+     כאן המשתמש מחליט. גרירה אנכית על התצוגה עצמה, ולצידה מחוון שמגיע
+     גם למקלדת. שניהם כותבים את אותו מספר.
+
+     כשהתמונה **רחבה** מהמסגרת, `cover` חותך לרוחב ואין שום סרך אנכי
+     להזיז. במקרה הזה המחוון מושבת ואומר למה, במקום להזיז ולא לעשות כלום. */
+  UI.cropper = function (blob, focusY) {
+    var value = Math.max(0, Math.min(100, Number(focusY) || 0));
+    var slack = 0;
+
+    var url = URL.createObjectURL(blob);
+    var img = U.el('img', { class: 'crop-img', src: url, alt: 'תצוגה מקדימה' });
+    var box = U.el('div', { class: 'crop-box' }, img);
+    var slider = U.el('input', {
+      type: 'range', min: '0', max: '100', step: '1', value: String(value),
+      class: 'crop-range', 'aria-label': 'מיקום התצוגה המקדימה'
+    });
+    var hint = U.el('p', { class: 'muted small', text: 'גרור את התצוגה למעלה ולמטה' });
+
+    function paint() {
+      img.style.objectPosition = '50% ' + value + '%';
+      slider.value = String(value);
+    }
+    paint();
+
+    img.addEventListener('load', function () {
+      URL.revokeObjectURL(url);
+      /* הסרך האנכי בפיקסלים: גובה התמונה כשהיא נמתחת לרוחב המסגרת,
+         פחות גובה המסגרת. אפס או פחות = אין מה להזיז. */
+      var w = box.clientWidth || 1;
+      var shown = w * (img.naturalHeight / (img.naturalWidth || 1));
+      slack = shown - box.clientHeight;
+      if (slack <= 1) {
+        slider.disabled = true;
+        box.classList.add('crop-flat');
+        hint.textContent = 'התמונה רחבה מהמסגרת ונחתכת לרוחב — אין מה להזיז לאורך.';
+      }
+    });
+
+    slider.addEventListener('input', function () {
+      value = Number(slider.value);
+      paint();
+    });
+
+    /* גרירה: הזזת האצבע למטה מורידה את התמונה, כלומר חושפת יותר מהראש.
+       ההמרה לפי הסרך האמיתי בפיקסלים, כדי שהתנועה תהיה 1:1 ולא "בערך". */
+    var dragging = false, lastY = 0;
+
+    box.addEventListener('pointerdown', function (e) {
+      if (slack <= 1) return;
+      dragging = true;
+      lastY = e.clientY;
+      box.classList.add('crop-drag');
+      try { box.setPointerCapture(e.pointerId); } catch (err) { /* לא חוסם */ }
+    });
+
+    box.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      e.preventDefault();
+      var dy = e.clientY - lastY;
+      lastY = e.clientY;
+      value = Math.max(0, Math.min(100, value - (dy / slack) * 100));
+      paint();
+    });
+
+    function stop() {
+      if (!dragging) return;
+      dragging = false;
+      box.classList.remove('crop-drag');
+    }
+    box.addEventListener('pointerup', stop);
+    box.addEventListener('pointercancel', stop);
+
+    return {
+      element: U.el('div', { class: 'crop' }, [box, slider, hint]),
+      value: function () { return Math.round(value); }
+    };
+  };
+
   /* ---------- משטח זום ----------
      האפליקציה עצמה נעולה בקנה מידה אחד (`App.Zoom`), ולכן ההגדלה חייבת
      לחיות איפשהו — כאן, על המסמך בלבד.

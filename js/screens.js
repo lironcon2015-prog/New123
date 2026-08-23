@@ -439,6 +439,8 @@
         } else {
           var url = URL.createObjectURL(rec.data);
           var img = U.el('img', { class: 'anchor', src: url, alt: 'צילום המסמך' });
+          /* המסגרת שהמשתמש בחר בעריכה. ברירת המחדל היא ראש התמונה. */
+          img.style.objectPosition = '50% ' + (Number(first.focusY) || 0) + '%';
           img.addEventListener('click', function () { UI.viewer(rec, first.name); });
           img.addEventListener('load', function () { URL.revokeObjectURL(url); });
           headCard.insertBefore(img, headCard.firstChild);
@@ -699,6 +701,36 @@
       }))));
     }
 
+    /* ---------- מסגרת התצוגה המקדימה ----------
+       העוגן בכרטיס המסמך הוא חלון 16:10 לתוך הצילום, ובחירת החלון אינה
+       דבר שקוד יכול לנחש נכון: בתעודת זהות עם ספח החלק המזהה למעלה,
+       בקבלה הוא באמצע, ובצילום עם שוליים הוא נמוך יותר.
+
+       הבורר יושב בטופס העריכה — שם המשתמש כבר מסתכל על המסמך — והוא
+       חל על **הקובץ הראשון**, שהוא זה שמצויר בעוגן. */
+    var cropCtl = null;
+    /* **הקובץ הראשון בדיוק**, ולא הראשון שהוא תמונה. העוגן מצייר את
+       `files[0]`, ובורר שהיה מכוון לקובץ אחר היה מזיז מסגרת שאיש לא רואה. */
+    var cropFile = doc ? (doc.files || [])[0] : staged[0];
+    if (cropFile && cropFile.mime === 'application/pdf') cropFile = null;
+
+    if (cropFile) {
+      var cropHost = U.el('div');
+      wrap.appendChild(cropHost);
+
+      var blobP = doc
+        ? DB.blob(cropFile.blobId).then(function (rec) { return rec ? rec.data : null; })
+        : Promise.resolve(cropFile.blob);
+
+      blobP.then(function (blob) {
+        if (!blob) return;
+        cropCtl = UI.cropper(blob, cropFile.focusY);
+        U.clear(cropHost);
+        cropHost.appendChild(U.el('div', { class: 'files-h', text: 'תצוגה מקדימה' }));
+        cropHost.appendChild(cropCtl.element);
+      });
+    }
+
     /* ---------- פענוח לפי דרישה ----------
        הפרסינג האוטומטי רץ רק כשהוא מוגדר ורק פעם אחת. בלי הכפתור הזה,
        מסמך שלא זוהה — או שהמפתח הוגדר רק אחר כך — נשאר להזנה ידנית בלי
@@ -793,6 +825,10 @@
         };
       }));
       if (!doc && files.length) r.value.source = window.App.pendingSource || 'upload';
+
+      /* המסגרת נשמרת על הקובץ שמצויר בעוגן, ולא על המסמך — החלפת הקובץ
+         מחליפה גם את המסגרת שלו, וזה הדבר הנכון. */
+      if (cropCtl && r.value.files.length) r.value.files[0].focusY = cropCtl.value();
 
       /* ---------- זיהוי מסמך מעודכן ----------
          אותו סוג, אותה ישות, אותם שדות חובה — אותו מסמך. מה שקובע מי

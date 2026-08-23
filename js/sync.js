@@ -34,7 +34,12 @@
     var copy = {};
     Object.keys(out).forEach(function (k) { copy[k] = out[k]; });
     copy.files = (out.files || []).map(function (f) {
-      return { driveFileId: f.driveFileId || null, mime: f.mime, name: f.name, size: f.size };
+      /* `focusY` נוסע. הוא בחירה של המשתמש ולא ערך נגזר, ומכשיר שני
+         שמציג את אותו מסמך במסגרת אחרת נראה כמו באג. */
+      return {
+        driveFileId: f.driveFileId || null, mime: f.mime,
+        name: f.name, size: f.size, focusY: f.focusY || 0
+      };
     });
     return copy;
   }
@@ -66,7 +71,8 @@
       return {
         blobId: lf ? lf.blobId : null,
         driveFileId: rf.driveFileId || null,
-        mime: rf.mime, name: rf.name, size: rf.size
+        mime: rf.mime, name: rf.name, size: rf.size,
+        focusY: rf.focusY || 0
       };
     });
 
