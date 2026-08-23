@@ -209,10 +209,54 @@
       return out;
     }
 
+    /* סוג שההצעה מציעה ואינו קיים לישות הנבחרת. מוחזר גם למסלול האוטומטי,
+       שאחרת היה מציג "שדות מולאו" בזמן ששום שדה לא מולא. */
+    function mismatchFor(p) {
+      if (!p || !p.typeKey) return null;
+      var fits = typesFor(current.entityId).some(function (t) { return t.key === p.typeKey; });
+      return fits ? null : DT.get(p.typeKey);
+    }
+
+    /* מזרים הצעה לטופס שכבר על המסך. **ממלא רק שדות ריקים** — מי שכבר
+       הקליד משהו לא מאבד אותו לטובת ניחוש של מודל. */
+    function applyProposal(p) {
+      if (!p) return { filled: 0, mismatch: null };
+      proposal = p;   /* כדי ש-read() יכבד את unverified שלה */
+
+      /* המודל עשוי לזהות סוג שאינו מתאים לישות שנבחרה — ביטוח רכב על אדם.
+         נפילה שקטה לסוג אחר נראית למשתמש כמו "הפענוח לא עשה כלום", ולכן
+         זה חוזר כמידע ולא כשתיקה. */
+      var bad = mismatchFor(p);
+      if (bad) return { filled: 0, mismatch: bad };
+
+      var blank = Object.keys(inputs).every(function (k) {
+        return !inputs[k].input.value.trim();
+      });
+      if (p.typeKey && p.typeKey !== current.typeKey && blank) {
+        current.typeKey = p.typeKey;
+        typeS.value = p.typeKey;
+        renderFields();   /* renderFields כבר ממלא מההצעה */
+      }
+
+      var filled = 0;
+      Object.keys(p.values || {}).forEach(function (k) {
+        var rec = inputs[k];
+        if (!rec) return;
+        if (!rec.input.value.trim()) rec.input.value = p.values[k];
+        if (rec.input.value.trim() === String(p.values[k])) filled++;
+      });
+      if (p.expiryDate && expiryI && !expiryI.value) { expiryI.value = p.expiryDate; filled++; }
+      if (p.issueDate && issueI && !issueI.value) { issueI.value = p.issueDate; filled++; }
+      return { filled: filled, mismatch: null };
+    }
+
     return {
       element: host,
       typeKey: function () { return current.typeKey; },
+      entityId: function () { return current.entityId; },
+      mismatchFor: mismatchFor,
       values: currentValues,
+      applyProposal: applyProposal,
 
       /* verified = true אם ורק אם עבר את הוולידטור. SPEC §3.3 */
       read: function () {

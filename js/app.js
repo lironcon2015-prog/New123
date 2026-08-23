@@ -131,13 +131,15 @@
       var converted = r.files.filter(function (f) { return f.converted; })[0];
       if (converted) UI.toast('הומר · ' + Files.label(converted));
 
+      /* MRZ צריך תמונה; ג׳מיני מקבל גם PDF */
       var image = r.files.filter(function (f) { return f.mime !== 'application/pdf'; })[0];
       if (mode === 'mrz') {
         if (!image) return openForm();
         return runMrz(image).then(openForm);
       }
-      if (image && window.Gemini.ready('image')) {
-        return runGemini({ blob: image.blob, mime: image.mime }).then(openForm);
+      var any = r.files[0];
+      if (any && window.Gemini.ready('image')) {
+        return runGemini({ blob: any.blob, mime: any.mime }).then(openForm);
       }
       return openForm();
     });
@@ -295,19 +297,28 @@
 
   /* פרסינג בענן. רץ רק כששניהם קיימים — מפתח והסכמה — ולכן הוא אופציונלי
      בפועל ולא רק בהצהרה. */
-  function runGemini(input) {
+  /* מחזירה את ההצעה. מי שקרא מחליט מה לעשות בה — הצינור מציב אותה
+     ופותח טופס, והכפתור שבטופס מזרים אותה לשדות שכבר על המסך. */
+  App.runGemini = function (input) {
     var status = U.el('p', { class: 'sheet-p', text: 'שולח לפרסינג…' });
     var sheet = UI.sheet('קריאת המסמך', [
       status,
       U.el('p', { class: 'muted small', text:
-        input.blob ? 'הצילום נשלח לגוגל לצורך הפרסינג.' : 'הטקסט נשלח לגוגל לצורך הפרסינג.' })
+        input.blob ? 'הקובץ נשלח לגוגל לצורך הפרסינג.' : 'הטקסט נשלח לגוגל לצורך הפרסינג.' })
     ]);
-    return window.Parse.fromGemini(input, function (model) {
+    return window.Parse.fromGemini(input, function () {
       status.textContent = 'קורא…';
     }).then(function (proposal) {
-      App.proposal = proposal;
       sheet.close();
-    }).catch(function () { sheet.close(); });
+      return proposal;
+    }).catch(function (e) {
+      sheet.close();
+      return null;
+    });
+  };
+
+  function runGemini(input) {
+    return App.runGemini(input).then(function (p) { App.proposal = p; });
   }
 
   /* ---------- נעילה ---------- */

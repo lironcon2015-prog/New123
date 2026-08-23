@@ -89,7 +89,7 @@ t('נאמר במפורש שהצילום לא נשמר',
   (await page.textContent('.scr')).includes('לא נשמר'));
 t('אין קבצים מצורפים לדרכון', (await page.locator('.staged').count()) === 0);
 
-await page.click('.scr > .btn.wide');
+await page.click('#doc-save');
 await page.waitForSelector('.doc-head', { timeout: 8000 });
 const saved = await page.evaluate(async () => {
   const docs = await window.DB.listDocs();
@@ -134,7 +134,7 @@ await page.waitForSelector('#f-children');
 await page.fill('#f-idNumber', '123456782');
 await page.fill('#f-fullName', 'ליאור כהן');
 await page.fill('#f-children', 'נועם כהן 2016\nיעל כהן 2019');
-await page.click('.scr > .btn.wide');
+await page.click('#doc-save');
 await page.waitForSelector('.checks .chk');
 t('הצעת הישויות עולה לפני השמירה', (await page.locator('.chk').count()) === 2);
 t('ברירת המחדל אינה מסומנת',
@@ -159,7 +159,7 @@ await page.waitForSelector('#f-children');
 await page.fill('#f-idNumber', '123456782');
 await page.fill('#f-fullName', 'מיכל כהן');
 await page.fill('#f-children', 'דן כהן 2021');
-await page.click('.scr > .btn.wide');
+await page.click('#doc-save');
 await page.waitForSelector('.checks .chk');
 await page.click('.sheet-actions .btn.ghost');
 await page.waitForSelector('.doc-head', { timeout: 8000 });

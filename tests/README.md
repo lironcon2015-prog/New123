@@ -9,17 +9,17 @@
 ```bash
 npm i playwright                       # פעם אחת, בשורש הריפו (node_modules ב-.gitignore)
 python3 -m http.server 8777            # IndexedDB לא עובד מעל file://
-node tests/units.mjs                   # 65 — ולידטורים, נרמול, bidi, טוהר הטבלה
-node tests/e2e.mjs                     # 53 — זרימות מקצה לקצה
+node tests/units.mjs                   # 72 — ולידטורים, נרמול, bidi, טוהר הטבלה
+node tests/e2e.mjs                     # 63 — זרימות מקצה לקצה
 node tests/mrz.mjs                     # 33 — TD3, TD1, ספרות ביקורת, OCR אמיתי
 node tests/confirm.mjs                 # 25 — מסך האישור והצעת הישויות
-node tests/gemini.mjs                  # 37 — השער, המפל והכללים, מול API מזויף
+node tests/gemini.mjs                  # 57 — השער, המפל, הכללים והפענוח לפי דרישה
 node tests/sync.mjs                    # 40 — מיזוג, ושני מכשירים אמיתיים
 node tests/drive.mjs                   # 29 — דרייב, מול Google API מזויף
 node tests/pwa.mjs                     # 30 — גרסה, SW, אופליין אמיתי, PDF
 ```
 
-סה״כ **312 בדיקות**.
+סה״כ **349 בדיקות**.
 
 node מחפש את `playwright` מהתיקייה של הסקריפט כלפי מעלה, ולכן ההתקנה חייבת להיות
 בשורש הריפו ולא במקום אחר.

@@ -186,6 +186,100 @@ await page.waitForTimeout(300);
 const after = await page.evaluate(() => window.Settings.get(window.CONFIG.K.geminiConsentImage));
 t('ביטול לא מדליק את ההסכמה', after === before && !after, String(after));
 
+console.log('\n— פענוח לפי דרישה במסך המסמך —');
+/* צילום 1x1 אמיתי, כדי שהמסלול יעבור נרמול כמו קובץ רגיל */
+const png = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64');
+
+await page.evaluate(async () => {
+  const U = window.U;
+  await window.Settings.set(window.CONFIG.K.geminiKey, '');
+  await window.Settings.set(window.CONFIG.K.geminiConsentImage, false);
+  await window.DB.saveEntity({ id: U.id(), type: 'person', name: 'ליאור', color: '#4B6B7A', avatar: 'ל' });
+  await window.DB.saveEntity({ id: U.id(), type: 'vehicle', name: 'מאזדה 3', color: '#8B6F47', avatar: 'מ' });
+});
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+
+async function attach() {
+  await page.click('.fab');
+  await page.waitForSelector('.routes');
+  const [ch] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.click('.route:has-text("בחירת קובץ")')
+  ]);
+  await ch.setFiles({ name: 'doc.png', mimeType: 'image/png', buffer: png });
+  await page.waitForSelector('#d-type', { timeout: 10000 });
+}
+await attach();
+t('הכפתור מופיע כשיש קובץ', await page.isVisible('.scr > .btn.ghost.wide'));
+
+await page.click('.scr > .btn.ghost.wide');
+await page.waitForSelector('.sheet-actions');
+const miss = await page.textContent('.sheet:has(.sheet-actions)');
+t('בלי מפתח — מסביר מה חסר במקום כפתור מת', /מפתח Gemini/.test(miss), miss.slice(0, 70));
+await page.click('.sheet-actions .btn');
+await page.waitForSelector('.sect');
+t('ולוקח להגדרות', (await page.evaluate(() => location.hash)) === '#/settings');
+
+await page.evaluate(async () => {
+  await window.Settings.set(window.CONFIG.K.geminiKey, 'FAKE');
+  await window.Settings.set(window.CONFIG.K.geminiConsentImage, true);
+});
+plan = { '*': { text: '{"typeKey":"vehicle_insurance","fields":{"policyNumber":"PL2291043","insurer":"הראל"},"expiryDate":"2027-03-20"}' } };
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+await attach();
+/* ברירת המחדל של השיוך היא הישות הראשונה — אדם — וביטוח רכב אינו שייך לה */
+t('סוג שאינו מתאים לישות אינו נבלע בשקט',
+  (await page.textContent('.scr')).includes('אינו מתאים'),
+  (await page.textContent('.scr')).slice(0, 110));
+
+const vehId = await page.evaluate(() => {
+  const opts = [...document.querySelectorAll('#d-entity option')];
+  return (opts.find(o => o.textContent === 'מאזדה 3') || {}).value;
+});
+await page.selectOption('#d-entity', vehId);
+await page.click('.scr > .btn.ghost.wide');
+await page.waitForFunction(() => document.querySelector('#f-policyNumber')?.value === 'PL2291043',
+  null, { timeout: 15000 });
+t('אחרי שינוי השיוך הפענוח ממלא', (await page.inputValue('#f-policyNumber')) === 'PL2291043');
+t('וגם התפוגה', (await page.inputValue('#d-expiry')) === '2027-03-20',
+  await page.inputValue('#d-expiry'));
+
+/* עכשיו התרחיש שהתלוננת עליו: הפרסינג לא זיהה כלום, והמשתמש רוצה לנסות שוב */
+plan = { '*': { text: '{"typeKey":"generic","fields":{}}' } };
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+await attach();
+t('פענוח שלא מצא כלום משאיר טופס ריק', (await page.inputValue('#f-title')) === '');
+plan = { '*': { text: '{"typeKey":"generic","fields":{"title":"חוזה שכירות","issuer":"עורך דין"}}' } };
+await page.click('.scr > .btn.ghost.wide');
+await page.waitForFunction(() => document.querySelector('#f-title')?.value === 'חוזה שכירות',
+  null, { timeout: 15000 });
+t('לחיצה על הכפתור מפענחת שוב וממלאת', (await page.inputValue('#f-title')) === 'חוזה שכירות');
+t('גם שדה שני', (await page.inputValue('#f-issuer')) === 'עורך דין');
+
+/* מה שהמשתמש כבר הקליד לא נמחק לטובת ניחוש של מודל */
+await page.fill('#f-issuer', 'הוקלד ידנית');
+plan = { '*': { text: '{"typeKey":"generic","fields":{"issuer":"מהמודל","reference":"REF-9"}}' } };
+await page.click('.scr > .btn.ghost.wide');
+await page.waitForFunction(() => document.querySelector('#f-reference')?.value === 'REF-9',
+  null, { timeout: 15000 });
+t('שדה שהוקלד ידנית לא נדרס', (await page.inputValue('#f-issuer')) === 'הוקלד ידנית',
+  await page.inputValue('#f-issuer'));
+t('ושדה ריק כן מתמלא', (await page.inputValue('#f-reference')) === 'REF-9');
+
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+await page.click('.fab');
+await page.waitForSelector('.routes');
+await page.click('.route:has-text("הזנה ידנית")');
+await page.waitForSelector('#d-type');
+t('בהזנה ידנית בלי קובץ אין כפתור פענוח',
+  (await page.locator('.scr > .btn.ghost.wide').count()) === 0);
+
 t('אפס שגיאות', errs.length === 0, errs.slice(0, 2).join(' | '));
 await browser.close();
 console.log(`\nסה״כ: ${pass} עברו, ${fail} נכשלו`);

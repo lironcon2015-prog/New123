@@ -451,12 +451,18 @@
     var staged = (proposal && proposal.dropFiles) ? [] : window.App.staged;
     var wrap = U.el('div', { class: 'scr' }, backHead(doc ? 'עריכת מסמך' : 'מסמך חדש'));
 
-    if (proposal && proposal.notice) {
-      wrap.appendChild(U.el('div', { class: 'notice notice-' + proposal.notice.level }, [
-        U.icon(proposal.notice.level === 'ok' ? 'i-check' : 'i-bell', 20),
-        U.el('span', { text: proposal.notice.text })
+    var noticeBox = U.el('div');
+    wrap.appendChild(noticeBox);
+
+    function showNotice(n) {
+      U.clear(noticeBox);
+      if (!n) return;
+      noticeBox.appendChild(U.el('div', { class: 'notice notice-' + n.level }, [
+        U.icon(n.level === 'ok' ? 'i-check' : 'i-bell', 20),
+        U.el('span', { text: n.text })
       ]));
     }
+
 
     if (proposal && proposal.dropFiles && window.App.staged.length) {
       wrap.appendChild(U.el('p', { class: 'muted small', text:
@@ -475,6 +481,48 @@
       }))));
     }
 
+    /* ---------- פענוח לפי דרישה ----------
+       הפרסינג האוטומטי רץ רק כשהוא מוגדר ורק פעם אחת. בלי הכפתור הזה,
+       מסמך שלא זוהה — או שהמפתח הוגדר רק אחר כך — נשאר להזנה ידנית בלי
+       שום דרך לנסות שוב. יכולת שאין לה כפתור היא יכולת שאינה קיימת. */
+    var hasFile = staged.length > 0 || !!(doc && (doc.files || []).length);
+
+    if (hasFile) {
+      var parseBtn = U.el('button', { class: 'btn ghost wide', type: 'button' }, 'פענוח אוטומטי');
+      parseBtn.addEventListener('click', function () {
+        if (!window.Gemini.configured() || !window.Gemini.consented('image')) {
+          Screens.geminiMissingSheet();
+          return;
+        }
+        parseBtn.disabled = true;
+        fileToParse().then(function (input) {
+          if (!input) { UI.toast('אין קובץ לפענוח'); return null; }
+          return window.App.runGemini(input);
+        }).then(function (p) {
+          parseBtn.disabled = false;
+          if (!p) return;
+          var r = form.applyProposal(p);
+          if (r.mismatch) {
+            showNotice(mismatchNotice(r.mismatch));
+            UI.toast('הסוג שזוהה אינו מתאים לישות');
+            return;
+          }
+          showNotice(p.notice);
+          UI.toast(r.filled ? U.count(r.filled, 'מולא שדה אחד', 'מולאו שדות') : 'לא נמצאו שדות חדשים');
+        }).catch(function () { parseBtn.disabled = false; });
+      });
+      wrap.appendChild(parseBtn);
+    }
+
+    function fileToParse() {
+      if (staged.length) return Promise.resolve({ blob: staged[0].blob, mime: staged[0].mime });
+      var f = doc && (doc.files || [])[0];
+      if (!f) return Promise.resolve(null);
+      return DB.blob(f.blobId).then(function (rec) {
+        return rec ? { blob: rec.data, mime: rec.mime } : null;
+      });
+    }
+
     var form = Forms.doc({
       doc: doc,
       proposal: proposal,
@@ -483,10 +531,23 @@
     });
     wrap.appendChild(form.element);
 
+    function mismatchNotice(type) {
+      var ent = state.byId[form.entityId()];
+      return { level: 'warn', text:
+        'המסמך זוהה כ' + type.label + ', שאינו מתאים ל' +
+        (ent ? ent.name : 'ישות הזאת') + '. שנה את השיוך ונסה שוב.' };
+    }
+
+    /* שני המסלולים — אוטומטי ולפי דרישה — מציגים את אותה הודעה */
+    if (proposal) {
+      var initialBad = form.mismatchFor(proposal);
+      showNotice(initialBad ? mismatchNotice(initialBad) : proposal.notice);
+    }
+
     var err = U.el('p', { class: 'form-err', role: 'alert' });
     wrap.appendChild(err);
 
-    var save = U.el('button', { class: 'btn wide', type: 'button' }, 'שמירה');
+    var save = U.el('button', { class: 'btn wide', type: 'button', id: 'doc-save' }, 'שמירה');
     save.addEventListener('click', function () {
       err.textContent = '';
       var r = form.read();
@@ -586,6 +647,22 @@
         });
       });
     }
+  };
+
+  /* מסביר מה חסר ולוקח לשם, במקום כפתור שלא עושה כלום */
+  Screens.geminiMissingSheet = function () {
+    var noKey = !window.Gemini.configured();
+    var sheet = UI.sheet('פענוח אוטומטי', [
+      U.el('p', { class: 'sheet-p', text: noKey
+        ? 'הפענוח האוטומטי דורש מפתח Gemini. הוא אופציונלי — בלעדיו ממלאים ידנית, וסריקת דרכון ות״ז ממשיכה לעבוד על המכשיר.'
+        : 'הפענוח שולח את הצילום לגוגל, וזה דורש הסכמה מפורשת בהגדרות.' }),
+      U.el('div', { class: 'sheet-actions col' }, [
+        U.el('button', {
+          class: 'btn wide', type: 'button',
+          onClick: function () { sheet.close(); location.hash = '#/settings'; }
+        }, 'להגדרות')
+      ])
+    ]);
   };
 
   /* ---------- גיליון הצעת ישויות ---------- */

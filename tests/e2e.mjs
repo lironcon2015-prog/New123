@@ -69,7 +69,7 @@ async function newDoc(entityName, typeKey, fill, dates) {
     await page.fill('#d-expiry', dates.expiry);
   }
   if (dates?.issue) await page.fill('#d-issue', dates.issue);
-  await page.click('.scr > .btn.wide');
+  await page.click('#doc-save');
   await page.waitForSelector('.doc-head', { timeout: 4000 });
 }
 
