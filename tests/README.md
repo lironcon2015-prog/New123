@@ -7,7 +7,7 @@
 ## הרצה
 
 ```bash
-npm i playwright                       # פעם אחת, מחוץ לריפו
+npm i playwright                       # פעם אחת, בשורש הריפו (node_modules ב-.gitignore)
 python3 -m http.server 8777            # IndexedDB לא עובד מעל file://
 node tests/units.mjs                   # 65 — ולידטורים, נרמול, bidi, טוהר הטבלה
 node tests/e2e.mjs                     # 53 — זרימות מקצה לקצה
@@ -21,8 +21,12 @@ node tests/pwa.mjs                     # 30 — גרסה, SW, אופליין א�
 
 סה״כ **312 בדיקות**.
 
-משתני סביבה: `BASE` (ברירת מחדל `http://127.0.0.1:8777/index.html`), `CHROME` (נתיב לדפדפן),
-`FIXTURES` (תיקייה עם `shot.png` ל-`e2e.mjs`).
+node מחפש את `playwright` מהתיקייה של הסקריפט כלפי מעלה, ולכן ההתקנה חייבת להיות
+בשורש הריפו ולא במקום אחר.
+
+משתני סביבה: `BASE` (ברירת מחדל `http://127.0.0.1:8777/index.html`), `CHROME` (נתיב
+לדפדפן, אם אינו מותקן במקום הרגיל), `FIXTURES` (תיקייה לקבצי עזר; `e2e.mjs` צריך שם
+`shot.png`, ו-`pwa.mjs` צריך `policy.pdf`), `ROOT` (שורש הריפו ל-`pwa.mjs`).
 
 ## מה נבדק
 
