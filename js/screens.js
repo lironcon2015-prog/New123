@@ -305,12 +305,11 @@
       DB.blob(first.blobId).then(function (rec) {
         if (!rec) return;
         if (rec.mime === 'application/pdf') {
-          var ph = U.el('button', { class: 'anchor anchor-pdf', type: 'button' }, [
-            U.icon('i-file', 40),
-            U.el('span', { text: first.name })
-          ]);
-          ph.addEventListener('click', function () { UI.viewer(rec, first.name); });
-          headCard.insertBefore(ph, headCard.firstChild);
+          /* עמוד ראשון כתצוגה מקדימה — עוגן ויזואלי אמיתי במקום אייקון אפור */
+          var box = U.el('div', { class: 'anchor anchor-pdf' });
+          headCard.insertBefore(box, headCard.firstChild);
+          UI.renderPdf(rec.data, box);
+          box.addEventListener('click', function () { UI.viewer(rec, first.name); });
         } else {
           var url = URL.createObjectURL(rec.data);
           var img = U.el('img', { class: 'anchor', src: url, alt: 'צילום המסמך' });

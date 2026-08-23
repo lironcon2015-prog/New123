@@ -285,6 +285,85 @@
     }));
   }
 
+  /* ---------- עדכוני גרסה ----------
+     ported from Navigo: js/app.js:Updater. שלוש שכבות, וכולן נכתבו נגד באגים
+     אמיתיים של ספארי מול GitHub Pages — ואנחנו מוגשים מאותו מקום:
+       1. רישום עם updateViaCache:'none' — בלי HTTP cache לסקריפט ה-SW עצמו.
+       2. version.json (network-first) הוא מקור האמת. אם הוא חדש וה-SW לא
+          מתעדכן — רישום מחדש עם ./sw.js?v=<גרסה>, כתובת חדשה ששום קאש לא
+          יכול להגיש ממנה עותק ישן.
+       3. עדכון כפוי: ניקוי caches, רישום מחדש, טעינה.
+     הנתונים ב-IndexedDB לא נמחקים באף אחת מהן. */
+  var Updater = {
+    reg: null,
+
+    boot: function () {
+      if (!('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+        .then(function (reg) {
+          Updater.reg = reg;
+          reg.addEventListener('updatefound', function () {
+            var sw = reg.installing;
+            if (!sw) return;
+            sw.addEventListener('statechange', function () {
+              if (sw.state === 'installed' && navigator.serviceWorker.controller) Updater.offer();
+            });
+          });
+        })
+        .catch(function () { /* דפדפן בלי SW — האפליקציה עובדת בלעדיו */ });
+
+      /* בטעינה הראשונה אין controller, וה-SW תופס שליטה מיד — רענון שם הוא
+         הבהוב מיותר בפתיחה הראשונה של האפליקציה. מרעננים רק כשהוחלף
+         controller שכבר היה, כלומר עדכון אמיתי. */
+      var hadController = !!navigator.serviceWorker.controller;
+      var reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadController || reloading) { hadController = true; return; }
+        reloading = true;
+        location.reload();
+      });
+
+      Updater.check();
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') Updater.check();
+      });
+    },
+
+    check: function () {
+      if (Updater.reg) { try { Updater.reg.update(); } catch (e) { /* לא חוסם */ } }
+      fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var remote = j && j.version;
+          var current = window._BUNDLE_VERSION || '';
+          if (!remote || remote === current) return;
+          var reg = Updater.reg;
+          if (reg && !reg.waiting && !reg.installing) {
+            /* השרת חדש אבל שום התקנה לא בדרך — כתובת ייחודית עוקפת כל קאש */
+            navigator.serviceWorker
+              .register('sw.js?v=' + encodeURIComponent(remote), { updateViaCache: 'none' })
+              .then(function (r2) { Updater.reg = r2; })
+              .catch(function () { /* לא חוסם */ });
+          }
+          if (reg && reg.waiting) Updater.offer();
+        })
+        .catch(function () { /* אופליין — אין מה לבדוק */ });
+    },
+
+    offer: function () {
+      if (document.querySelector('.update-bar')) return;
+      var bar = U.el('div', { class: 'update-bar', role: 'status' }, [
+        U.el('span', { text: 'יש גרסה חדשה' }),
+        U.el('button', { class: 'btn', type: 'button', onClick: function () {
+          var w = Updater.reg && Updater.reg.waiting;
+          if (w) w.postMessage('skip-waiting');
+          else location.reload();
+        } }, 'רענון')
+      ]);
+      document.body.appendChild(bar);
+    }
+  };
+
   /* ---------- אתחול ---------- */
 
   function boot() {
@@ -300,6 +379,7 @@
     });
 
     Vault.watch(showLock);
+    Updater.boot();
 
     /* ---- סנכרון ---- */
     window.Sync.transport = window.Drive;

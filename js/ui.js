@@ -194,29 +194,107 @@
   };
 
   /* ---------- צופה מסמכים ---------- */
-  /* STUB pending Q8 — צופה ה-PDF של נאביגו טרם התקבל. תמונות מטופלות
-     במלואן. PDF מוצג ב-iframe עם blob URL, ובמכשירים שמסרבים להציג אותו
-     (iOS Safari) יש מסלול "פתיחה בכרטיסייה". זום ופאן בתמונה — ממתין ל-Q8. */
+  /* ported from Navigo: js/ui.js:viewer + renderPdf.
+     PDF מרונדר ל-<canvas> דרך pdf.js מקומי, לא ב-iframe. `blob:` ב-iframe
+     אינו אמין ב-iOS Safari, ו-<embed> מציג צופה מערכתי שאין עליו שליטה.
+     canvas עובד זהה בכל פלטפורמה וגם אופליין — וזה מה שמצדיק את המשקל. */
+
+  var PDF_OPTS = {
+    standardFontDataUrl: 'lib/pdfjs/standard_fonts/',
+    cMapUrl: 'lib/pdfjs/cmaps/',
+    cMapPacked: true
+  };
+
+  var _pdfP = null;
+
+  function loadPdfjs() {
+    if (_pdfP) return _pdfP;
+    _pdfP = new Promise(function (res, rej) {
+      if (window.pdfjsLib) return res();
+      var s = document.createElement('script');
+      s.src = 'lib/pdfjs/pdf.min.js';
+      s.onload = res;
+      s.onerror = function () { rej(new Error('צופה ה-PDF לא נטען')); };
+      document.head.appendChild(s);
+    }).then(function () {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdfjs/pdf.worker.min.js';
+      return window.pdfjsLib;
+    });
+    _pdfP.catch(function () { _pdfP = null; });
+    return _pdfP;
+  }
+
+  UI.renderPdf = function (blob, container) {
+    return loadPdfjs().then(function (lib) {
+      return blob.arrayBuffer().then(function (data) {
+        var opts = { data: data };
+        Object.keys(PDF_OPTS).forEach(function (k) { opts[k] = PDF_OPTS[k]; });
+        return lib.getDocument(opts).promise;
+      });
+    }).then(function (pdf) {
+      U.clear(container);
+      var pages = Math.min(pdf.numPages, 20);
+      var i = 1;
+
+      function page() {
+        if (i > pages) {
+          if (pdf.numPages > pages) {
+            container.appendChild(U.el('p', { class: 'muted small', text:
+              'מוצגים ' + pages + ' העמודים הראשונים מתוך ' + pdf.numPages }));
+          }
+          return null;
+        }
+        return pdf.getPage(i++).then(function (pg) {
+          var base = pg.getViewport({ scale: 1 });
+          var scale = Math.min(2, (container.clientWidth || 360) / base.width) *
+                      (window.devicePixelRatio || 1);
+          var vp = pg.getViewport({ scale: scale });
+          var canvas = U.el('canvas', { class: 'pdf-page' });
+          canvas.width = vp.width;
+          canvas.height = vp.height;
+          container.appendChild(canvas);
+          var ctx = canvas.getContext('2d');
+          /* ported from Navigo — והשורה הזאת עלתה להם שעות: ההקשר יורש RTL
+             מה-DOM, `fillText` מתעגן לצד ההפוך, ו-clip rects של ה-PDF חותכים
+             אותיות. הסימפטום נראה כמו PDF פגום ולא כמו באג RTL. */
+          ctx.direction = 'ltr';
+          return pg.render({ canvasContext: ctx, viewport: vp }).promise.then(page);
+        });
+      }
+      return page();
+    }).catch(function (e) {
+      U.clear(container).appendChild(UI.empty({
+        icon: 'i-file', title: 'לא הצלחתי לפתוח את ה-PDF',
+        sub: (e && e.message) || ''
+      }));
+    });
+  };
+
+  /* כל blob: URL שנוצר נרשם ומבוטל בסגירה. בנאביגו זו דליפה מוכרת —
+     `close()` מנקה את ה-DOM ולא מבטל את ה-URL, והזיכרון נשאר תפוס. */
   UI.viewer = function (blobRec, name) {
-    var url = URL.createObjectURL(blobRec.data);
-    var content;
+    var urls = [];
+    function objectUrl(b) { var u = URL.createObjectURL(b); urls.push(u); return u; }
 
-    if (blobRec.mime === 'application/pdf') {
-      content = U.el('div', { class: 'viewer-pdf' }, [
-        U.el('iframe', { src: url, title: name || 'מסמך' }),
-        U.el('a', {
-          class: 'btn ghost', href: url, target: '_blank', rel: 'noopener',
-          text: 'פתיחה בכרטיסייה חדשה'
-        })
-      ]);
-    } else {
-      content = U.el('img', { class: 'viewer-img', src: url, alt: name || 'צילום המסמך' });
-    }
+    var body = U.el('div', { class: 'viewer' });
 
-    var s = UI.sheet(name || 'מסמך', content, {
-      onClose: function () { URL.revokeObjectURL(url); }
+    var s = UI.sheet(name || 'מסמך', body, {
+      onClose: function () {
+        urls.forEach(function (u) { URL.revokeObjectURL(u); });
+        urls = [];
+      }
     });
     s.panel.classList.add('sheet-full');
+
+    if (blobRec.mime === 'application/pdf') {
+      body.appendChild(U.el('p', { class: 'muted small', text: 'טוען…' }));
+      UI.renderPdf(blobRec.data, body);
+    } else {
+      body.appendChild(U.el('img', {
+        class: 'viewer-img', src: objectUrl(blobRec.data), alt: name || 'צילום המסמך'
+      }));
+    }
+
     return s;
   };
 

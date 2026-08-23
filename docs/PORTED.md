@@ -9,6 +9,8 @@
 | 2026-08-22 | `js/db.js:DB.deleteDoc` · `DB.deleteEntity` | `js/db.js:remove` | tombstone מצומצם. `entityId` במקום `tripId`; `deleted: 1` במקום `true`, כי בוליאני אינו מפתח חוקי ב-IndexedDB ואנחנו כן מאנדקסים אותו. |
 | 2026-08-22 | `js/ui.js:UI.empty` | `js/app.js:renderHero` | כל המסגרת היא `<button>` אחד. ללא אימוג׳י — נאביגו עצמה מוציאה אותו בהדרגה. |
 | 2026-08-22 | `js/mrz.js` | `js/mrz.js` | `checkDigit`, `yyToDate`, `fixNum`, פרסר TD3 ומסלול ה-canvas פורטו כמעט כלשונם. נוסף TD1, נוסף תיקון מילוי מגודר בספרת ביקורת, הכשל נושא סיבה במקום `null`, ו-Tesseract מתארח עצמית same-origin. |
+| 2026-08-23 | `js/ui.js:UI.renderPdf` | `js/ui.js:renderPdf` | פורט כמעט כלשונו, כולל `ctx.direction = 'ltr'` ו-`PDF_OPTS`. נוסף ניהול `blob:` URL — אצלם זו דליפה מוכרת שאמרו במפורש לא לפורט. pdf.js מתארח עצמית. |
+| 2026-08-23 | `sw.js` · `js/app.js:Updater` | `sw.js` · `js/app.js:Updater` | שלוש שכבות ההגנה על העדכון, `cache:'no-cache'` ב-install, ו-precache מפורש לגופני התחליף. הרענון ב-`controllerchange` מותנה בכך שכבר היה controller. Tesseract ו-cmaps מחוץ ל-precache. |
 | 2026-08-22 | `js/sync.js:Sync.mergeRecords` | `js/db.js:mergeSync` | לוגיקת ההכרעה זהה. הוסר בלוק ה-shared settings (אצלנו `settings` מקומי לחלוטין). `files[]` ממוזג לפי `driveFileId` במקום חריג ה-blob בשורה אחת. התחבורה מוזרקת. |
 | 2026-08-22 | `js/sync.js:Sync.queue` · `Sync.run` | `js/google.js:Sync` | debounce של 4 שניות ומנעול `_syncing` זהים. נוסף טריגר `online`, שנאביגו ממליצה עליו ואין לה. |
 | 2026-08-22 | `js/util.js:U.bidi` | `js/ui.js` (דפוס, לא קוד) | **הרחבה, לא פורט.** לנאביגו אין `<bdi>` כלל, רק `dir="ltr"` ידני בנקודת השימוש, ולכן ערך מעורב נשבר שם. אצלנו: לטיני בלבד → `<bdi dir="ltr">`, מעורב → `<bdi>` בלי `dir`, עברית → `<span>`. ההמלצה הזאת הגיעה מנאביגו עצמה. |
@@ -44,11 +46,10 @@
 
 ---
 
-## STUBs שנותרו
+## STUBs
 
-| stub | קובץ | מצב |
-|---|---|---|
-| Q8 | `js/ui.js:UI.viewer` | תמונות עובדות. PDF ב-`iframe` — **התשובה אומרת שזה שגוי**: pdf.js על `<canvas>`, self-hosted. מתוכנן לשלב 6 יחד עם ה-precache, כולל `ctx.direction = 'ltr'` ו-precache מפורש ל-`standard_fonts/`. |
+**אין.** כל שלושת ה-STUBs נסגרו:
 
-זה ה-STUB היחיד שנותר. Q6 ו-Q9 נסגרו: ל-Q6 התברר שאין קנון בנאביגו כלל
-(`DECISIONS.md` DEC-07), ו-Q9 הוחלף במימוש שנגזר מהתשובה.
+- **Q6** — התברר שאין קנון בנאביגו כלל (`DECISIONS.md` DEC-07). המימוש עצמאי.
+- **Q8** — נסגר בשלב 6: pdf.js על `<canvas>`, self-hosted, עם `ctx.direction = 'ltr'`.
+- **Q9** — הוחלף במימוש שנגזר מהתשובה, והוא רחב ממה שיש בנאביגו.

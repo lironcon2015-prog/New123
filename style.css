@@ -263,7 +263,9 @@ body.dragging .empty { border-color: var(--accent); background: var(--accent-sof
 .scr-flush { }
 .doc-head { background: var(--surface); border-radius: var(--r-card); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 12px; }
 .anchor { display: block; width: 100%; aspect-ratio: 16/10; object-fit: cover; background: var(--surface-2); border: 0; cursor: pointer; }
-.anchor-pdf { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--ink-2); font-size: 13px; }
+.anchor-pdf { aspect-ratio: auto; max-height: 260px; overflow: hidden; background: var(--surface-2); }
+.anchor-pdf .pdf-page { border-radius: 0; box-shadow: none; }
+.anchor-pdf .empty { margin: 0; border: 0; }
 .anchor-none { height: 4px; background: var(--accent-soft); }
 .doc-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px; }
 
@@ -398,10 +400,12 @@ body.locked .nav, body.locked .fab { display: none; }
 .route-t { display: block; font-size: 15px; font-weight: 600; color: var(--ink); }
 .route-s { display: block; font-size: 13px; color: var(--ink-2); }
 
+.viewer { display: flex; flex-direction: column; gap: 10px; }
 .viewer-img { display: block; width: 100%; height: auto; border-radius: var(--r-row); }
-.viewer-pdf { display: flex; flex-direction: column; gap: 10px; }
-.viewer-pdf iframe { width: 100%; height: 66vh; border: 1px solid var(--line); border-radius: var(--r-row); background: var(--surface); }
-.viewer-pdf .btn { text-align: center; text-decoration: none; margin-top: 0; }
+.pdf-page {
+  display: block; width: 100%; height: auto;
+  border-radius: var(--r-row); box-shadow: var(--shadow); background: #fff;
+}
 
 /* ============ מסך נעילה ומקלדת ============ */
 .lock {
@@ -447,6 +451,18 @@ body.locked .nav, body.locked .fab { display: none; }
 .syncdot.error { background: var(--exp-past-fg); }
 @keyframes pulse { 50% { opacity: .35; } }
 body.locked .syncdot { display: none; }
+
+/* ============ באנר עדכון ============ */
+.update-bar {
+  position: fixed; inset-inline: 12px; z-index: 70;
+  bottom: calc(var(--nav-h) + 14px + env(safe-area-inset-bottom));
+  max-width: 536px; margin-inline: auto;
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-card); box-shadow: var(--shadow); padding: 12px 14px;
+}
+.update-bar span { flex: 1; font-size: 14.5px; font-weight: 500; }
+.update-bar .btn { margin-top: 0; padding: 9px 18px; font-size: 14px; }
 
 /* ============ toast ============ */
 .toast {

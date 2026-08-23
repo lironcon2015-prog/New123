@@ -4,7 +4,8 @@
 
   window.CONFIG = {
     APP_NAME: 'התיק המשפחתי',
-    VERSION: '0.5.0',
+    /* מקור אחד. index.html מציב אותו, `node tools/bump.mjs` כותב אותו. */
+    VERSION: window._BUNDLE_VERSION || '0.0.0',
 
     DB_NAME: 'DocVaultDB',
     DB_VERSION: 1,
