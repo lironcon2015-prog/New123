@@ -435,6 +435,8 @@
      הנתונים ב-IndexedDB לא נמחקים באף אחת מהן. */
   var Updater = {
     reg: null,
+    remote: '',
+    registered: '',
 
     boot: function () {
       if (!('serviceWorker' in navigator)) return;
@@ -459,13 +461,40 @@
       navigator.serviceWorker.addEventListener('controllerchange', function () {
         if (!hadController || reloading) { hadController = true; return; }
         reloading = true;
-        location.reload();
+        Updater.reload();
       });
 
       Updater.check();
       document.addEventListener('visibilitychange', function () {
         if (document.visibilityState === 'visible') Updater.check();
       });
+    },
+
+    /* בולם רענון.
+
+       השילוב שמייצר לולאה: `version.json` מכריז גרסה שאינה `_BUNDLE_VERSION`
+       — פריסה חלקית, או CDN שמגיש index.html ישן לצד version.json טרי.
+       אז כל בדיקה רושמת מחדש SW בכתובת אחרת, `skipWaiting` מפעיל
+       `controllerchange`, זה מרענן, ואחרי הרענון אי-ההתאמה עדיין שם. הדף
+       מהבהב בלי סוף.
+
+       הבולם: רענון אחד לכל צמד גרסאות, נזכר ב-sessionStorage. אם הרענון
+       לא סגר את הפער — הפער אינו ניתן לסגירה מהדפדפן, ובמקום עוד סיבוב
+       מוצג הפס עם כפתור. עדיף עדכון שדורש נגיעה על מסך שאי אפשר לקרוא. */
+    /* ההחלטה לחוד מהפעולה, כדי שאפשר יהיה לבדוק אותה בלי לרענן דף. */
+    shouldReload: function () {
+      var tag = (Updater.remote || '?') + '|' + (window._BUNDLE_VERSION || '?');
+      var prev = '';
+      try { prev = sessionStorage.getItem('fv-reload') || ''; } catch (e) { /* מצב פרטי */ }
+      if (prev === tag) return false;
+      try { sessionStorage.setItem('fv-reload', tag); } catch (e) { /* מצב פרטי */ }
+      return true;
+    },
+
+    reload: function () {
+      if (!Updater.shouldReload()) { Updater.offer(); return false; }
+      location.reload();
+      return true;
     },
 
     check: function () {
@@ -476,9 +505,13 @@
           var remote = j && j.version;
           var current = window._BUNDLE_VERSION || '';
           if (!remote || remote === current) return;
+          Updater.remote = remote;
           var reg = Updater.reg;
-          if (reg && !reg.waiting && !reg.installing) {
-            /* השרת חדש אבל שום התקנה לא בדרך — כתובת ייחודית עוקפת כל קאש */
+          if (reg && !reg.waiting && !reg.installing && Updater.registered !== remote) {
+            /* השרת חדש אבל שום התקנה לא בדרך — כתובת ייחודית עוקפת כל קאש.
+               פעם אחת לגרסה: רישום חוזר בכתובת מתחלפת הוא בעצמו משאבה
+               שמייצרת controllerchange, וזה הצד השני של אותה לולאה. */
+            Updater.registered = remote;
             navigator.serviceWorker
               .register('sw.js?v=' + encodeURIComponent(remote), { updateViaCache: 'none' })
               .then(function (r2) { Updater.reg = r2; })
@@ -558,6 +591,9 @@
         ]));
       });
   }
+
+  /* חשוף כדי שהבולם יהיה בר-בדיקה. אין לו קורא אחר. */
+  App.Updater = Updater;
 
   window.App = App;
 

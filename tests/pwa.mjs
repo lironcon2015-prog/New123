@@ -139,6 +139,34 @@ const banner = await page.evaluate(() => {
 });
 t('אין באנר כשאין עדכון', banner === 0, String(banner));
 
+console.log('\n— בולם הרענון —');
+/* הלולאה שדווחה: version.json הכריז 0.10.1 ו-index.html נשאר 0.10.0, ולכן כל
+   בדיקה רשמה SW בכתובת אחרת, skipWaiting החליף controller, זה רענן, ואחרי
+   הרענון הפער עדיין היה שם. הבדיקה מריצה בדיוק את התרחיש. */
+const loop = await page.evaluate(() => {
+  const U = window.App && window.App.Updater;
+  if (!U) return { missing: true };
+  sessionStorage.removeItem('fv-reload');
+  U.remote = '9.9.9';                       // השרת מכריז גרסה שאינה כאן
+  const first = U.shouldReload();           // רענון אחד — לגיטימי
+  const second = U.shouldReload();          // הפער לא נסגר: לא מרעננים שוב
+  U.remote = '9.9.10';                      // גרסה חדשה באמת
+  const third = U.shouldReload();
+  sessionStorage.removeItem('fv-reload');
+  return { first, second, third, reg: typeof U.registered };
+});
+t('הבולם קיים ונגיש', !loop.missing);
+t('רענון ראשון מותר', loop.first === true, String(loop.first));
+t('רענון שני על אותו פער נחסם', loop.second === false, String(loop.second));
+t('אבל גרסה חדשה מרעננת שוב', loop.third === true, String(loop.third));
+t('ורישום ה-SW מוגבל לגרסה', loop.reg === 'string', String(loop.reg));
+
+const appSrc = read('js/app.js');
+t('controllerchange עובר דרך הבולם ולא ישירות ל-reload',
+  /controllerchange[\s\S]{0,220}Updater\.reload\(\)/.test(appSrc));
+t('כשהבולם חוסם — מוצג פס עדכון במקום',
+  /shouldReload\(\)\)\s*\{\s*Updater\.offer\(\)/.test(appSrc));
+
 t('אפס שגיאות', errs.length === 0, errs.slice(0, 3).join(' | '));
 await browser.close();
 console.log(`\nסה״כ: ${pass} עברו, ${fail} נכשלו`);
