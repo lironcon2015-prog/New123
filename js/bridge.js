@@ -40,11 +40,17 @@
     var body = { token: secret(), action: action };
     Object.keys(params || {}).forEach(function (k) { body[k] = params[k]; });
 
-    return fetch(url(), { method: 'POST', body: JSON.stringify(body) })
+    var slow = action === 'upload' || action === 'download';
+    return window.U.fetchT(url(), { method: 'POST', body: JSON.stringify(body) },
+      slow ? C.NET_BLOB_TIMEOUT_MS : C.NET_TIMEOUT_MS,
+      'הגשר לא ענה בזמן — בדוק את הכתובת ואת הרשת')
       .then(function (r) {
         if (!r.ok) throw new Error('הגשר החזיר שגיאה (' + r.status + ')');
         return r.text();
-      }, function () {
+      }, function (e) {
+        /* תקרת הזמן כבר ניסחה הודעה משלה, ואסור להחליף אותה ב"אין חיבור" —
+           גשר שעונה לאט אינו גשר שאינו קיים. */
+        if (e && /לא ענה בזמן/.test(e.message || '')) throw e;
         throw new Error('אין חיבור לגשר — בדוק את הכתובת ואת הרשת');
       })
       .then(function (text) {

@@ -62,6 +62,38 @@
     return (n / 1048576).toFixed(1) + ' MB';
   };
 
+  /* fetch עם תקרת זמן.
+
+     `fetch` לבדו אינו נכשל לעולם: בקשה שנתקעת נשארת תלויה, וההבטחה
+     שמחזיקה אותה לא נפתרת ולא נדחית. בצינור הסנכרון זה קטלני — המנעול
+     `_syncing` אינו משתחרר, מחוון הסנכרון פועם בלי סוף, וכל סנכרון עתידי
+     יוצא מיד עם 'busy'. האפליקציה נראית חיה ואינה מסנכרנת יותר.
+
+     AbortController הופך "תקוע" ל"נכשל", וכישלון המערכת יודעת לטפל בו. */
+  U.fetchT = function (url, opts, ms, onTimeout) {
+    var ac = typeof AbortController === 'function' ? new AbortController() : null;
+    var o = {};
+    Object.keys(opts || {}).forEach(function (k) { o[k] = opts[k]; });
+    if (ac) o.signal = ac.signal;
+
+    var timedOut = false;
+    var timer = setTimeout(function () {
+      timedOut = true;
+      if (ac) ac.abort();
+    }, ms || 30000);
+
+    return fetch(url, o).then(function (r) {
+      clearTimeout(timer);
+      return r;
+    }, function (e) {
+      clearTimeout(timer);
+      /* הבחנה שחשובה למשתמש: "לא ענה בזמן" ו"אין רשת" הן תקלות שונות
+         עם פעולות שונות, ו-abort נראה כמו שגיאת רשת אם לא מסמנים אותו. */
+      if (timedOut) throw new Error(onTimeout || 'הבקשה לא נענתה בזמן');
+      throw e;
+    });
+  };
+
   /* ספירת ימים בעברית — "בעוד 1 ימים" הוא טקסט שבור */
   U.daysAhead = function (n) {
     if (n === 1) return 'מחר';

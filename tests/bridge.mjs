@@ -29,6 +29,9 @@ await ctx.route('https://script.google.com/**', async route => {
     return route.fulfill({ status: 200, contentType: 'text/html', body: '<html>Google</html>' });
   }
   if (mode === 'down') return route.abort('failed');
+  /* גשר שלא עונה לעולם — בדיוק מה ש-fetch לבדו אינו יודע להיחלץ ממנו.
+     ההשהיה ארוכה מהתקרה שהבדיקה מציבה, ולכן התקרה היא שמכריעה. */
+  if (mode === 'hang') { await new Promise(r => setTimeout(r, 8000)); return route.abort('failed'); }
   if (mode === 'http500') return route.fulfill({ status: 500, body: 'boom' });
 
   const body = JSON.parse(req.postData() || '{}');
@@ -181,6 +184,32 @@ const offline = await page.evaluate(() =>
 t('רשת נופלת מוסברת כרשת ולא כשגיאת גשר',
   /אין חיבור לגשר/.test(offline), offline);
 mode = 'ok';
+
+/* הדיווח: מחוון הסנכרון פועם בלי סוף. `fetch` שנתקע אינו נכשל, ולכן המנעול
+   ב-Sync לא משתחרר ומחוון הסנכרון נשאר במצב 'start' לתמיד. */
+mode = 'hang';
+const hung = await page.evaluate(async () => {
+  window.CONFIG.NET_TIMEOUT_MS = 400;          // התקרה, מוקטנת לבדיקה
+  const t0 = Date.now();
+  const msg = await window.Bridge.getDb().then(() => 'עבר', e => e.message);
+  return { msg, ms: Date.now() - t0 };
+});
+t('בקשה תקועה נכשלת ולא נתלית', hung.msg !== 'עבר', hung.msg);
+t('וההודעה אומרת שלא נענתה בזמן', /לא ענה בזמן/.test(hung.msg), hung.msg);
+t('והיא נכשלת בזמן התקרה, לא אחריה', hung.ms < 3000, hung.ms + 'ms');
+t('ולא מתחזה ל"אין חיבור"', !/אין חיבור/.test(hung.msg), hung.msg);
+
+/* וזה מה שבאמת חשוב: אחרי כישלון כזה הסנכרון משתחרר ורץ שוב. */
+const recovered = await page.evaluate(async () => {
+  const r1 = await window.Sync.run({ silent: true });
+  window.CONFIG.NET_TIMEOUT_MS = 30000;
+  return { failed: !!(r1 && r1.error), busy: window.Sync.busy() };
+});
+t('הסנכרון שנכשל מדווח שגיאה', recovered.failed, JSON.stringify(recovered));
+t('והמנעול משתחרר — האפליקציה מסנכרנת שוב', recovered.busy === false, String(recovered.busy));
+mode = 'ok';
+const after = await page.evaluate(() => window.Sync.run({ silent: true }));
+t('והריצה הבאה עוברת', !after.error && !after.skipped, JSON.stringify(after));
 
 /* ---------- החוזה מול הצינור ---------- */
 console.log('\n— אותו חוזה כמו OAuth —');

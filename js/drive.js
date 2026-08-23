@@ -103,11 +103,12 @@
     return token(false).then(function (tk) {
       var headers = opts.headers || {};
       headers.Authorization = 'Bearer ' + tk;
-      return fetch(url, {
+      return window.U.fetchT(url, {
         method: opts.method || 'GET',
         headers: headers,
         body: opts.body
-      });
+      }, opts.slow ? C.NET_BLOB_TIMEOUT_MS : C.NET_TIMEOUT_MS,
+        'גוגל דרייב לא ענה בזמן — בדוק את הרשת');
     }).then(function (r) {
       if (r.status === 401) {
         _token = null;
@@ -167,7 +168,7 @@
 
   /* ---------- multipart/related, בנייה ידנית ---------- */
 
-  function multipart(method, url, metadata, mime, blob) {
+  function multipart(method, url, metadata, mime, blob, slow) {
     var boundary = 'fv' + Date.now().toString(36) + Math.random().toString(36).slice(2);
     var head = '--' + boundary + '\r\n' +
       'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
@@ -180,7 +181,8 @@
     return call(url, {
       method: method,
       headers: { 'Content-Type': 'multipart/related; boundary=' + boundary },
-      body: body
+      body: body,
+      slow: slow
     }).then(function (j) { return j.id; });
   }
 
@@ -268,12 +270,13 @@
   D.uploadBlob = function (docId, name, mime, blob) {
     return filesFolder().then(function (parent) {
       return multipart('POST', UPLOAD + '/files?uploadType=multipart&fields=id',
-        { name: docId + '__' + name, parents: [parent] }, mime || 'application/octet-stream', blob);
+        { name: docId + '__' + name, parents: [parent] },
+        mime || 'application/octet-stream', blob, true);
     });
   };
 
   D.downloadBlob = function (fileId) {
-    return call(API + '/files/' + fileId + '?alt=media', { raw: true })
+    return call(API + '/files/' + fileId + '?alt=media', { raw: true, slow: true })
       .then(function (r) { return r.blob(); });
   };
 
