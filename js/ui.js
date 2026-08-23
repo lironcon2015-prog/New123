@@ -495,25 +495,70 @@
 
   /* ---------- גרירה לסידור ----------
      לחיצה ארוכה מפעילה, כדי שגלילה של רשימה לא תיהפך בטעות לגרירה.
-     אחרי הגרירה נבלעת קליק אחד — אחרת שחרור על כרטיס היה מנווט אליו. */
+
+     שלושה דברים שנדרשו כדי שזה יעבוד **בנייד**, ובלעדיהם הגרירה גללה
+     את הדף במקום להזיז את הכרטיס:
+
+     1. **`touch-action` נקבע בתחילת המחווה, לא באמצעה.** הוספת המחלקה
+        `.reordering` אחרי 320ms מגיעה מאוחר מדי — הדפדפן כבר החליט
+        שהמגע הזה עשוי לגלול. מה שכן עוצר אותו הוא `touchmove` **לא
+        פסיבי** עם `preventDefault`, וזה עובד כאן דווקא מפני שהלחיצה
+        הארוכה קודמת: בזמן ההמתנה האצבע לא זזה, גלילה עוד לא התחילה,
+        והביטול הראשון מונע אותה מלהתחיל.
+     2. **iOS מקפיץ בועת בחירה על לחיצה ארוכה** ומבטל את רצף המצביע.
+        `-webkit-touch-callout` ו-`user-select` ב-CSS סוגרים את זה.
+     3. **גלילה אוטומטית בקצוות.** בלעדיה אי אפשר לגרור אל מחוץ למסך,
+        וברשימה ארוכה מהמסך זה חצי מהמקרים.
+
+     אחרי הגרירה נבלע קליק אחד — אחרת שחרור על כרטיס היה מנווט אליו. */
   UI.reorder = function (container, opts) {
-    var HOLD_MS = 320, SLOP = 10;
+    var HOLD_MS = 320, SLOP = 10, EDGE = 76, MAX_STEP = 14;
     var timer = null, active = null, startY = 0, dragged = false;
+    var pointerY = 0, raf = null;
 
     function items() {
       return Array.prototype.slice.call(container.querySelectorAll(opts.itemSelector));
     }
 
-    function begin(el, e) {
+    /* מי גולל בפועל — האב הקרוב שאפשר לגלול בו, או החלון */
+    function scroller() {
+      var el = container.parentNode;
+      while (el && el.nodeType === 1) {
+        var st = getComputedStyle(el);
+        if (/(auto|scroll)/.test(st.overflowY) && el.scrollHeight > el.clientHeight) return el;
+        el = el.parentNode;
+      }
+      return null;
+    }
+
+    function scrollBy(dy) {
+      var el = scroller();
+      if (el) el.scrollTop += dy;
+      else window.scrollBy(0, dy);
+    }
+
+    function tick() {
+      if (!active) { raf = null; return; }
+      var top = pointerY - EDGE;
+      var bottom = (window.innerHeight - EDGE) - pointerY;
+      if (top < 0) scrollBy(-Math.min(MAX_STEP, Math.ceil(-top / 4)));
+      else if (bottom < 0) scrollBy(Math.min(MAX_STEP, Math.ceil(-bottom / 4)));
+      place(pointerY);
+      raf = requestAnimationFrame(tick);
+    }
+
+    function begin(el, pointerId) {
       active = el;
       dragged = true;
       el.classList.add('dragging');
       container.classList.add('reordering');
       if (navigator.vibrate) navigator.vibrate(15);
-      try { el.setPointerCapture(e.pointerId); } catch (err) { /* לא חוסם */ }
+      try { el.setPointerCapture(pointerId); } catch (err) { /* לא חוסם */ }
+      if (!raf) raf = requestAnimationFrame(tick);
     }
 
     function place(y) {
+      if (!active) return;
       var sibs = items().filter(function (x) { return x !== active; });
       var before = null;
       for (var i = 0; i < sibs.length; i++) {
@@ -531,12 +576,15 @@
       var el = e.target.closest ? e.target.closest(opts.itemSelector) : null;
       if (!el || !container.contains(el)) return;
       startY = e.clientY;
+      pointerY = e.clientY;
       dragged = false;
       clearTimeout(timer);
-      timer = setTimeout(function () { begin(el, e); }, HOLD_MS);
+      var id = e.pointerId;
+      timer = setTimeout(function () { begin(el, id); }, HOLD_MS);
     });
 
     container.addEventListener('pointermove', function (e) {
+      pointerY = e.clientY;
       if (!active) {
         if (timer && Math.abs(e.clientY - startY) > SLOP) { clearTimeout(timer); timer = null; }
         return;
@@ -545,8 +593,15 @@
       place(e.clientY);
     });
 
+    /* הבלם על הגלילה. חייב להיות לא-פסיבי, אחרת `preventDefault` מתעלם. */
+    container.addEventListener('touchmove', function (e) {
+      if (!active) return;
+      e.preventDefault();
+    }, { passive: false });
+
     function end() {
       clearTimeout(timer); timer = null;
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
       if (!active) return;
       active.classList.remove('dragging');
       container.classList.remove('reordering');
@@ -564,6 +619,249 @@
       e.preventDefault();
       e.stopPropagation();
     }, true);
+
+    /* ובנייד לא תמיד מגיע קליק אחרי גרירה, ולכן הדגל מתאפס גם בהרפיה —
+       אחרת הנגיעה הבאה על כרטיס נבלעת בלי סיבה. */
+    container.addEventListener('pointerup', function () {
+      setTimeout(function () { dragged = false; }, 350);
+    });
+  };
+
+  /* ---------- בורר מסגרת ----------
+     מסגרת היא חלון לתוך תמונה שאינה בצורתה: 16:10 לעוגן המסמך, עיגול
+     לאווטאר של ישות. באיזה חלק של התמונה החלון יושב אינו דבר שקוד יכול
+     לנחש נכון — ראש התמונה שגוי בצילום עם שוליים, והמרכז שגוי בפורטרט
+     שהפנים בו למעלה. לכן זו בחירה, ולא ברירת מחדל חכמה.
+
+     שני צירים, כי הצורה קובעת איזה מהם חי: `cover` משאיר סרך בציר אחד
+     בלבד, ובעיגול הוא יכול להיות כל אחד מהם. הגרירה מומרת **לפי הסרך
+     האמיתי בפיקסלים**, ולכן היא עוקבת אחרי האצבע ולא מקרבת.
+
+     `src` הוא Blob או data URL — האווטאר כבר שמור כמחרוזת, והמסמך יושב
+     בחנות ה-blobs. `URL.createObjectURL` נוצר ומבוטל רק במקרה הראשון. */
+  UI.cropper = function (src, focus, opts) {
+    opts = opts || {};
+    var def = opts.defaultFocus || { x: 50, y: 50 };
+    function clamp(v, d) {
+      var n = Number(v);
+      return isNaN(n) ? d : Math.max(0, Math.min(100, n));
+    }
+    var pos = { x: clamp(focus && focus.x, def.x), y: clamp(focus && focus.y, def.y) };
+    var slack = { x: 0, y: 0 };
+
+    var isBlob = typeof src !== 'string';
+    var url = isBlob ? URL.createObjectURL(src) : src;
+    var img = U.el('img', { class: 'crop-img', src: url, alt: opts.alt || 'תצוגה מקדימה' });
+    var box = U.el('div', {
+      class: 'crop-box' + (opts.shape === 'circle' ? ' crop-circle' : ''),
+      tabindex: '0', role: 'application',
+      'aria-label': opts.label || 'מיקום התצוגה המקדימה'
+    }, img);
+
+    var slider = opts.slider === false ? null : U.el('input', {
+      type: 'range', min: '0', max: '100', step: '1', value: String(pos.y),
+      class: 'crop-range', 'aria-label': opts.label || 'מיקום התצוגה המקדימה'
+    });
+    var hint = U.el('p', { class: 'muted small', text: opts.hint || 'גרור כדי לבחור מה יוצג' });
+
+    function paint() {
+      img.style.objectPosition = pos.x + '% ' + pos.y + '%';
+      if (slider) slider.value = String(Math.round(pos.y));
+    }
+    paint();
+
+    img.addEventListener('load', function () {
+      if (isBlob) URL.revokeObjectURL(url);
+      /* הסרך בכל ציר: גודל התמונה כשהיא מכסה את המסגרת, פחות המסגרת.
+         `cover` מותח לפי הציר הצר, ולכן רק אחד מהם יוצא חיובי. */
+      var bw = box.clientWidth || 1, bh = box.clientHeight || 1;
+      var iw = img.naturalWidth || 1, ih = img.naturalHeight || 1;
+      var scale = Math.max(bw / iw, bh / ih);
+      slack.x = iw * scale - bw;
+      slack.y = ih * scale - bh;
+
+      if (slack.x <= 1 && slack.y <= 1) {
+        if (slider) slider.disabled = true;
+        box.classList.add('crop-flat');
+        hint.textContent = opts.flatHint ||
+          'התמונה בדיוק בצורת המסגרת — אין מה להזיז.';
+        return;
+      }
+      if (slider && slack.y <= 1) {
+        slider.disabled = true;
+        hint.textContent = 'התמונה רחבה מהמסגרת ונחתכת לרוחב — אין מה להזיז לאורך.';
+      }
+    });
+
+    if (slider) {
+      slider.addEventListener('input', function () {
+        pos.y = Number(slider.value);
+        paint();
+      });
+    }
+
+    /* גרירה: האצבע מזיזה את **התמונה**. משיכה למעלה חושפת את מה שמתחת,
+       כלומר מגדילה את האחוז. זו המוסכמה בכל בורר תמונה. */
+    var dragging = false, last = null;
+
+    function move(dx, dy) {
+      if (slack.x > 1) pos.x = clamp(pos.x - (dx / slack.x) * 100, pos.x);
+      if (slack.y > 1) pos.y = clamp(pos.y - (dy / slack.y) * 100, pos.y);
+      paint();
+    }
+
+    box.addEventListener('pointerdown', function (e) {
+      if (slack.x <= 1 && slack.y <= 1) return;
+      dragging = true;
+      last = { x: e.clientX, y: e.clientY };
+      box.classList.add('crop-drag');
+      try { box.setPointerCapture(e.pointerId); } catch (err) { /* לא חוסם */ }
+    });
+
+    box.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      e.preventDefault();
+      move(e.clientX - last.x, e.clientY - last.y);
+      last = { x: e.clientX, y: e.clientY };
+    });
+
+    function stop() {
+      if (!dragging) return;
+      dragging = false;
+      box.classList.remove('crop-drag');
+    }
+    box.addEventListener('pointerup', stop);
+    box.addEventListener('pointercancel', stop);
+
+    /* מקשי החיצים — הדרך היחידה להגיע לזה בלי עכבר או מגע, ובעיגול
+       גם הדרך היחידה להזיז לרוחב כשאין מחוון. */
+    var STEP = 4;
+    box.addEventListener('keydown', function (e) {
+      var dx = 0, dy = 0;
+      if (e.key === 'ArrowUp') dy = -STEP;
+      else if (e.key === 'ArrowDown') dy = STEP;
+      else if (e.key === 'ArrowLeft') dx = -STEP;
+      else if (e.key === 'ArrowRight') dx = STEP;
+      else return;
+      e.preventDefault();
+      /* המקשים מזיזים את החלון, לא את התמונה — "למעלה" מראה מה שלמעלה */
+      if (dy) pos.y = clamp(pos.y + dy, pos.y);
+      if (dx) pos.x = clamp(pos.x + dx, pos.x);
+      paint();
+    });
+
+    return {
+      element: U.el('div', { class: 'crop' }, [box, slider, hint]),
+      value: function () { return { x: Math.round(pos.x), y: Math.round(pos.y) }; }
+    };
+  };
+
+  /* ---------- משטח זום ----------
+     האפליקציה עצמה נעולה בקנה מידה אחד (`App.Zoom`), ולכן ההגדלה חייבת
+     לחיות איפשהו — כאן, על המסמך בלבד.
+
+     הזום משנה **רוחב** ולא `transform`. ל-transform אין השפעה על הפריסה,
+     ולכן גלילה לתוך תמונה מוגדלת הייתה דורשת ריפוד מחושב; שינוי רוחב
+     מגדיל את התוכן באמת, והגלילה של הדפדפן מטפלת בהזזה בחינם.
+
+     `touch-action: none` על המשטח, ולכן שתי המחוות נכתבות כאן: אצבע
+     אחת גוררת, שתיים מקרבות. הדפדפן לא ייקח אף אחת מהן לעצמו. */
+  UI.zoomable = function (stage, inner) {
+    var MIN = 1, MAX = 5;
+    var scale = 1;
+    var pts = {}, lastDist = 0, lastTap = 0, moved = 0;
+
+    function apply(next, cx, cy) {
+      next = Math.max(MIN, Math.min(MAX, next));
+      if (Math.abs(next - scale) < 0.001) return;
+      var r = stage.getBoundingClientRect();
+      var px = (cx == null ? r.width / 2 : cx - r.left);
+      var py = (cy == null ? r.height / 2 : cy - r.top);
+      var ax = (stage.scrollLeft + px) / scale;
+      var ay = (stage.scrollTop + py) / scale;
+
+      scale = next;
+      inner.style.width = (scale * 100) + '%';
+      stage.classList.toggle('zoomed', scale > 1.001);
+
+      stage.scrollLeft = ax * scale - px;
+      stage.scrollTop = ay * scale - py;
+    }
+
+    function ids() { return Object.keys(pts); }
+    function dist() {
+      var k = ids();
+      var a = pts[k[0]], b = pts[k[1]];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+    function mid() {
+      var k = ids();
+      var a = pts[k[0]], b = pts[k[1]];
+      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+
+    stage.addEventListener('pointerdown', function (e) {
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+      moved = 0;
+      if (ids().length === 2) lastDist = dist();
+      try { stage.setPointerCapture(e.pointerId); } catch (err) { /* עכבר מחוץ למשטח */ }
+    });
+
+    stage.addEventListener('pointermove', function (e) {
+      var p = pts[e.pointerId];
+      if (!p) return;
+      var dx = e.clientX - p.x, dy = e.clientY - p.y;
+      p.x = e.clientX; p.y = e.clientY;
+      moved += Math.abs(dx) + Math.abs(dy);
+
+      var n = ids().length;
+      if (n >= 2) {
+        var d = dist();
+        if (lastDist > 0) {
+          var m = mid();
+          apply(scale * (d / lastDist), m.x, m.y);
+        }
+        lastDist = d;
+        e.preventDefault();
+        return;
+      }
+      if (scale > 1.001) {
+        stage.scrollLeft -= dx;
+        stage.scrollTop -= dy;
+        e.preventDefault();
+      }
+    });
+
+    function up(e) {
+      delete pts[e.pointerId];
+      if (ids().length < 2) lastDist = 0;
+      if (ids().length) return;
+      /* הקשה כפולה — שתי הקשות קצרות בלי תזוזה — מחליפה בין מלא למוגדל */
+      if (moved < 10) {
+        var now = Date.now();
+        if (now - lastTap < 320) {
+          apply(scale > 1.001 ? MIN : 2.5, e.clientX, e.clientY);
+          lastTap = 0;
+        } else {
+          lastTap = now;
+        }
+      }
+    }
+    stage.addEventListener('pointerup', up);
+    stage.addEventListener('pointercancel', up);
+
+    stage.addEventListener('wheel', function (e) {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      apply(scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX, e.clientY);
+    }, { passive: false });
+
+    return {
+      inc: function () { apply(scale * 1.4); },
+      dec: function () { apply(scale / 1.4); },
+      reset: function () { apply(MIN); },
+      scale: function () { return scale; }
+    };
   };
 
   /* ---------- צופה מסמכים ---------- */

@@ -422,6 +422,9 @@
             /* מצביע הגרסה שורד עריכה. בלעדיו, עריכה של גרסה קודמת
                הייתה מחזירה אותה לתצוגה ומציגה שני מסמכים נוכחיים. */
             supersededBy: (doc && doc.supersededBy) || null,
+            /* וכך גם סדר התצוגה שנבחר ביד — עריכת שדה אינה סיבה
+               להחזיר את המסמך למקומו הכרונולוגי. */
+            sortOrder: (doc && doc.sortOrder != null) ? doc.sortOrder : null,
             source: (doc && doc.source) || 'upload',
             notes: notesI ? notesI.value.trim() : '',
             deleted: 0

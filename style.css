@@ -131,11 +131,19 @@ body.locked .app { padding: 0; }
 .card-t { font-size: 15px; font-weight: 600; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-s { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
 .card-go { flex: none; color: var(--ink-3); display: grid; place-items: center; }
-.egroup { display: flex; flex-direction: column; }
-.egroup .card + .card { margin-top: 10px; }
+.egroup, .dgroup { display: flex; flex-direction: column; }
+.egroup .card + .card, .dgroup .card + .card { margin-top: 10px; }
 .card-grip { flex: none; color: var(--ink-3); display: grid; place-items: center; opacity: .4; }
-.egroup.reordering { touch-action: none; }
-.egroup.reordering .card-grip { opacity: 1; }
+
+/* לחיצה ארוכה על כרטיס היא מחווה של האפליקציה, ולכן המערכת לא מקבלת
+   אותה: בלי שתי השורות האלה iOS מקפיץ בועת בחירה ומבטל את הגרירה. */
+.egroup .card, .dgroup .card {
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.egroup.reordering, .dgroup.reordering { touch-action: none; }
+.egroup.reordering .card-grip, .dgroup.reordering .card-grip { opacity: 1; }
 .card.dragging {
   opacity: .92; box-shadow: 0 8px 24px rgba(18, 19, 24, .18);
   transform: scale(1.02); position: relative; z-index: 2;

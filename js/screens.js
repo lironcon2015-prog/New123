@@ -347,8 +347,20 @@
     var mine = state.live.filter(function (d) { return d.entityId === id; });
     var old = all.filter(function (d) { return V.isSuperseded(d, state.docs); });
 
-    mine.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
-    mine.forEach(function (doc) { wrap.appendChild(Screens.docTypeCard(doc)); });
+    /* ברירת המחדל היא האחרון שנגעו בו קודם. גרירה כותבת `sortOrder`
+       לכל הרשימה, ומאז הסדר הוא של המשתמש — אותו כלל כמו בישויות. */
+    mine.sort(Screens.docOrder);
+    var dbox = U.el('div', { class: 'dgroup' });
+    mine.forEach(function (doc) { dbox.appendChild(Screens.docTypeCard(doc)); });
+    UI.reorder(dbox, {
+      itemSelector: '.dcard',
+      onDrop: function (els) { Screens.saveDocOrder(els); }
+    });
+    wrap.appendChild(dbox);
+    if (mine.length > 1) {
+      wrap.appendChild(U.el('p', { class: 'muted small', text:
+        'לחיצה ארוכה על מסמך וגרירה משנה את סדר התצוגה.' }));
+    }
 
     /* גרסאות שנדחקו נשמרות ומוצגות מקופלות. "המסמך הקודם יישמר במערכת,
        אבל המסמך המוצג הוא תמיד העדכני" — שתי המחציות של אותו משפט. */
@@ -373,17 +385,42 @@
     return wrap;
   };
 
+  /* סדר המסמכים בתוך ישות. `sortOrder` כשיש, ואחרת האחרון שנגעו בו —
+       כך מי שלא גרר מעולם רואה בדיוק את מה שראה תמיד. */
+  Screens.docOrder = function (a, b) {
+    var sa = a.sortOrder == null ? Infinity : a.sortOrder;
+    var sb = b.sortOrder == null ? Infinity : b.sortOrder;
+    return (sa - sb) || ((b.updatedAt || 0) - (a.updatedAt || 0));
+  };
+
+  Screens.saveDocOrder = function (els) {
+    var ids = els.map(function (el) { return el.dataset.id; });
+    return Promise.all(ids.map(function (id, i) {
+      var doc = state.docs.filter(function (d) { return d.id === id; })[0];
+      if (!doc || doc.sortOrder === (i + 1) * 1000) return null;
+      doc.sortOrder = (i + 1) * 1000;
+      return DB.saveDoc(doc, []);
+    })).then(function () {
+      UI.toast('הסדר נשמר');
+      return Screens.reload();
+    });
+  };
+
   Screens.docTypeCard = function (doc, faded) {
     var days = doc.expiryDate ? E.daysLeft(doc.expiryDate) : null;
     var bucket = E.bucket(days);
-    var card = U.el('button', { class: 'card' + (faded ? ' card-old' : ''), type: 'button' }, [
+    var card = U.el('button', {
+      class: 'card dcard' + (faded ? ' card-old' : ''), type: 'button',
+      dataset: { id: doc.id }
+    }, [
       U.el('span', { class: 'card-ic' }, U.icon(DT.icon(doc.typeKey), 22)),
       U.el('span', { class: 'card-b' }, [
         U.el('span', { class: 'card-t', text: doc.title }),
         U.el('span', { class: 'card-s', text: DT.label(doc.typeKey) })
       ]),
       (bucket && !faded) ? UI.chip(bucket, E.label(days, doc.expiryDate)) : null,
-      faded ? U.el('span', { class: 'chip ok', text: 'גרסה קודמת' }) : null
+      faded ? U.el('span', { class: 'chip ok', text: 'גרסה קודמת' }) : null,
+      faded ? null : U.el('span', { class: 'card-grip', 'aria-hidden': 'true' }, U.icon('i-grip', 18))
     ]);
     card.addEventListener('click', function () { location.hash = '#/doc/' + doc.id; });
     return card;

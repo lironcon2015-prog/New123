@@ -88,6 +88,64 @@ const afterReload = await page.evaluate(() =>
 t('והוא שורד רענון — הגרירה דורסת את ברירת המחדל',
   afterReload.join(',') === 'איתמר,דנה', afterReload.join(','));
 
+/* ---------- 5b · מה שהפיל את הגרירה בנייד ---------- */
+/* `touch-action` נקבע בתחילת המחווה, ולכן הוספת `.reordering` באמצעה
+   אינה עוצרת גלילה. הבלם האמיתי הוא `touchmove` לא-פסיבי. */
+const touchGuard = await page.evaluate(async () => {
+  const box = document.querySelector('.egroup[data-type="person"]');
+  const card = box.querySelector('.ecard');
+  const r = card.getBoundingClientRect();
+
+  function ev(type, y) {
+    return new PointerEvent(type, {
+      pointerId: 1, pointerType: 'touch', bubbles: true, cancelable: true,
+      clientX: r.left + r.width / 2, clientY: y
+    });
+  }
+  card.dispatchEvent(ev('pointerdown', r.top + 10));
+  const before = new TouchEvent('touchmove', { bubbles: true, cancelable: true });
+  box.dispatchEvent(before);
+  const beforeStopped = before.defaultPrevented;
+
+  await new Promise(res => setTimeout(res, 450));   /* הלחיצה הארוכה מבשילה */
+  const during = new TouchEvent('touchmove', { bubbles: true, cancelable: true });
+  box.dispatchEvent(during);
+  const duringStopped = during.defaultPrevented;
+  const lifted = card.classList.contains('dragging');
+
+  card.dispatchEvent(ev('pointerup', r.top + 10));
+  await new Promise(res => setTimeout(res, 400));
+  return { beforeStopped, duringStopped, lifted };
+});
+t('לפני שהגרירה מבשילה, גלילה נשארת של הדפדפן', touchGuard.beforeStopped === false);
+t('הלחיצה הארוכה מרימה את הכרטיס', touchGuard.lifted === true);
+t('ומאותו רגע הגלילה נעצרת, אחרת הדף זז במקום הכרטיס',
+  touchGuard.duringStopped === true);
+
+/* `-webkit-touch-callout` הוא מאפיין של WebKit ו-Chromium אינו מדווח
+   עליו ב-getComputedStyle, ולכן הבדיקה על ה-CSS עצמו ולא על החישוב. */
+const calloutCss = await page.evaluate(() =>
+  fetch('/style.css').then(r => r.text()));
+t('בועת הבחירה של iOS מכובה על כרטיס נגרר',
+  /-webkit-touch-callout:\s*none/.test(calloutCss));
+t('וגם בחירת טקסט, שמבטלת את המחווה',
+  /user-select:\s*none/.test(calloutCss));
+t('והכלל חל גם על ישויות וגם על מסמכים',
+  /\.egroup \.card,\s*\.dgroup \.card/.test(calloutCss));
+
+/* המקור עצמו: היה בקובץ עותק ישן של UI.reorder שדרס את החדש, ולכן
+   הבלם על הגלילה כלל לא רץ במכשיר. בדיקה שנועלת את זה. */
+const reorderSrc = await page.evaluate(() => ({
+  touch: window.UI.reorder.toString().includes('touchmove'),
+  scroll: window.UI.reorder.toString().includes('scrollBy')
+}));
+t('UI.reorder שרץ בפועל הוא זה שיש בו בלם גלילה', reorderSrc.touch === true);
+t('וגם גלילה אוטומטית בקצוות', reorderSrc.scroll === true);
+const dupes = await page.evaluate(() =>
+  fetch('/js/ui.js').then(r => r.text())
+    .then(src => (src.match(/UI\.reorder = function/g) || []).length));
+t('ויש לו הגדרה אחת בלבד בקובץ', dupes === 1, String(dupes));
+
 /* ---------- 4 · אווטאר ---------- */
 console.log('\n— אווטאר של ישות —');
 const av = await page.evaluate(async () => {
@@ -163,6 +221,80 @@ const savedFocus = await page.evaluate(async () =>
   (await window.DB.listEntities()).filter(e => e.name === 'דנה')[0].avatarFocus);
 t('והבחירה נשמרת על הישות',
   savedFocus && savedFocus.x === 34 && savedFocus.y === 84, JSON.stringify(savedFocus));
+
+/* ---------- סידור מסמכים בתוך ישות ---------- */
+console.log('\n— סדר המסמכים בישות —');
+await page.evaluate(async () => {
+  const DB = window.DB;
+  const mk = (id, title) => DB.saveDoc({
+    id, entityId: 'e-order', typeKey: 'generic', title,
+    fields: [{ key: 'title', label: 'כותרת', value: title, kind: 'text', sensitive: false, verified: true }],
+    issueDate: null, expiryDate: null, files: [], source: 'upload', notes: '',
+    supersededBy: null, deleted: 0
+  }, []);
+  await DB.saveEntity({ id: 'e-order', type: 'other', name: 'סידור', color: '#4B6B7A', avatar: 'ס', sortOrder: 5 });
+  await mk('o-1', 'אלף');
+  await mk('o-2', 'בית');
+  await mk('o-3', 'גימל');
+});
+
+await page.goto(BASE + '#/entity/e-order');
+await page.waitForSelector('.dgroup');
+
+/* ברירת המחדל היא האחרון שנגעו בו. `DB.saveDoc` חותם `updatedAt` בעצמו,
+   ולכן הציפייה נגזרת מה-DB ולא מסדר הכתיבה — שתי שמירות באותה מילישנייה
+   הן תיקו, וזה בדיוק סוג הבדיקה שנשברת פעם בכמה הרצות. */
+const expected = await page.evaluate(async () => {
+  const docs = (await window.DB.listDocs())
+    .filter(d => d.entityId === 'e-order')
+    .sort(window.Screens.docOrder);
+  return docs.map(d => d.title);
+});
+const shown = await page.evaluate(() =>
+  [...document.querySelectorAll('.dcard .card-t')].map(x => x.textContent));
+t('סדר התצוגה נגזר מ-Screens.docOrder', shown.join(',') === expected.join(','),
+  shown.join(',') + ' vs ' + expected.join(','));
+t('ובלי סדר ידני הוא לפי האחרון שנגעו בו',
+  expected.length === 3 && shown.length === 3, shown.join(','));
+
+const reorderedDocs = await page.evaluate(async () => {
+  const box = document.querySelector('.dgroup');
+  const cards = [...box.querySelectorAll('.dcard')];
+  box.insertBefore(cards[2], cards[0]);          /* האחרון לראש */
+  const wanted = [...box.querySelectorAll('.dcard .card-t')].map(x => x.textContent);
+  await window.Screens.saveDocOrder([...box.querySelectorAll('.dcard')]);
+  const docs = await window.DB.listDocs();
+  const byOrder = docs.filter(d => d.entityId === 'e-order')
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(d => d.title);
+  return { wanted, byOrder };
+});
+t('הסדר החדש נשמר על המסמכים',
+  reorderedDocs.byOrder.join(',') === reorderedDocs.wanted.join(','),
+  reorderedDocs.byOrder.join(',') + ' vs ' + reorderedDocs.wanted.join(','));
+
+await page.reload();
+await page.waitForSelector('.dgroup');
+const afterDocs = await page.evaluate(() =>
+  [...document.querySelectorAll('.dcard .card-t')].map(x => x.textContent));
+t('והוא שורד רענון', afterDocs.join(',') === reorderedDocs.wanted.join(','),
+  afterDocs.join(','));
+
+const survives = await page.evaluate(async () => {
+  const doc = await window.DB.get('docs', 'o-3');
+  const was = doc.sortOrder;
+  doc.title = 'גימל ערוך';
+  await window.DB.saveDoc(doc, []);
+  return { was: was, now: (await window.DB.get('docs', 'o-3')).sortOrder };
+});
+t('סדר ידני שורד עריכת מסמך', survives.now === survives.was, JSON.stringify(survives));
+
+const formKeeps = await page.evaluate(() => {
+  /* הטופס בונה אובייקט חדש, ולכן `sortOrder` חייב להיות בו במפורש */
+  return fetch('/js/forms.js').then(r => r.text())
+    .then(src => /sortOrder: \(doc && doc\.sortOrder/.test(src));
+});
+t('וגם עריכה דרך הטופס, שבונה אובייקט חדש', formKeeps === true);
 
 /* ---------- 3 · מסמך מעודכן דוחק את הקודם ---------- */
 console.log('\n— גרסאות של אותו מסמך —');
