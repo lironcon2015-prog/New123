@@ -241,6 +241,15 @@ t('הורדה מאמתת שהקובץ בתוך DocVault', /_inVault\(file\)/.tes
 t('ואין בו פעולת מחיקה', !/\.setTrashed\(|removeFile\(/.test(gs));
 t('התיקייה מסומנת ב-description כדי שתימצא מחדש', /setDescription\(MARKER\)/.test(gs));
 
+/* התקלה שדווחה בהקמה בפועל: ריבוי חשבונות גוגל בדפדפן. היא אינה באג בקוד,
+   ולכן הדרך היחידה למנוע אותה היא שההסבר יהיה בשלושת המקומות שמסתכלים בהם. */
+const readme = await page.evaluate(() => fetch('/README.md').then(r => r.text()));
+const scr = await page.evaluate(() => fetch('/js/screens.js').then(r => r.text()));
+t('bridge.gs מסביר את תקלת authuser', /authuser/.test(gs));
+t('README מסביר את תקלת authuser', /authuser/.test(readme));
+t('וההסבר קיים גם בהגדרות באפליקציה', /authuser/.test(scr));
+t('שלושתם מזהירים ש-‎/dev אינה הכתובת', /\/dev/.test(gs) && /`\/dev`/.test(readme) && /\/dev/.test(scr));
+
 t('אפס שגיאות', errs.length === 0, errs.slice(0, 3).join(' | '));
 await browser.close();
 console.log(`\nסה״כ: ${pass} עברו, ${fail} נכשלו`);
