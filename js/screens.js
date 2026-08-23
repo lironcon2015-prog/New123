@@ -1501,6 +1501,76 @@
         });
       }));
 
+    /* ---------- מפל המודלים ----------
+       הסדר קובע איכות, ולא רק מהירות: המודל הראשון ברשימה הוא זה שקורא
+       את המסמך ברוב המכריע של הפעמים. לכן הוא גלוי, ניתן לעריכה, וניתן
+       לרענון מול ה-API — "המודל העדכני" הוא שאילתה, לא קבוע. */
+    var modelsI = U.el('textarea', {
+      class: 'f-i f-multi', id: 'g-models', rows: '4', dir: 'ltr',
+      spellcheck: 'false', autocomplete: 'off',
+      placeholder: 'ריק = אוטומטי'
+    });
+    modelsI.value = (S.get(C.K.geminiModels) || []).join('\n');
+    var modelsMsg = U.el('div', { class: 'f-err', role: 'status' });
+
+    function readModels() {
+      return modelsI.value.split('\n')
+        .map(function (n) { return n.trim(); })
+        .filter(Boolean);
+    }
+
+    gemKids.push(U.el('div', { class: 'set-row' }, [
+      U.el('span', { class: 'set-b' }, [
+        U.el('span', { class: 'set-l', text: 'המודל שענה אחרון' }),
+        U.el('span', { class: 'set-s' },
+          U.bidi(S.get(C.K.geminiLastModel) || 'עוד לא רץ'))
+      ])
+    ]));
+
+    gemKids.push(U.el('div', { class: 'f-g' }, [
+      U.el('label', { class: 'f-l', for: 'g-models', text: 'מפל המודלים — מודל בכל שורה' }),
+      modelsI, modelsMsg
+    ]));
+
+    gemKids.push(U.el('p', { class: 'muted small', text:
+      'הראשון ברשימה הוא שקורא את המסמך כמעט תמיד; מי שאחריו נכנס רק ' +
+      'כשקודמו נכשל או עמוס. ריק = אוטומטי, לפי הסדר pro · flash · flash-lite, ' +
+      'ובתוך כל שכבה הדור הגבוה קודם.' }));
+
+    gemKids.push(U.el('button', {
+      class: 'btn ghost wide', type: 'button',
+      onClick: function (e) {
+        var btn = e.currentTarget;
+        if (!window.Gemini.configured()) {
+          modelsMsg.textContent = 'צריך מפתח כדי לשאול אילו מודלים קיימים';
+          return;
+        }
+        btn.disabled = true;
+        modelsMsg.textContent = 'שואל את גוגל…';
+        window.Gemini.available().then(function (names) {
+          btn.disabled = false;
+          modelsI.value = names.join('\n');
+          modelsMsg.textContent = U.count(names.length,
+            'נמצא מודל אחד · שמור כדי לקבע', 'מודלים נמצאו · שמור כדי לקבע');
+        }, function (err) {
+          btn.disabled = false;
+          modelsMsg.textContent = err.message;
+        });
+      }
+    }, 'גילוי המודלים הקיימים'));
+
+    gemKids.push(U.el('button', {
+      class: 'btn ghost wide', type: 'button',
+      onClick: function () {
+        var list = readModels();
+        S.set(C.K.geminiModels, list).then(function () {
+          modelsMsg.textContent = list.length
+            ? U.count(list.length, 'מפל של מודל אחד נשמר', 'מודלים במפל')
+            : 'המפל חזר לאוטומטי';
+        });
+      }
+    }, 'שמירת המפל'));
+
     /* הסכמה שלישית, ורחבה מהשתיים: מפת הכספת ולא מסמך בודד. */
     gemKids.push(toggleRow('עוזר השיחה',
         'שמות, סוגים ושדות של כל הכספת נשלחים לגוגל בכל הודעה',

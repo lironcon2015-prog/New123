@@ -48,6 +48,7 @@
       geminiConsentImage: 'geminiConsentImage',
       geminiConsentChat: 'geminiConsentChat',
       geminiLastModel: 'geminiLastModel',
+      geminiModels: 'geminiModels',
       driveClientId: 'driveClientId',
       driveFolderId: 'driveFolderId',
       driveDbFileId: 'driveDbFileId',

@@ -76,17 +76,70 @@ hits = [];
 const first = await page.evaluate(() => window.Gemini.parse({ text: 'פוליסה' }));
 const used = hits.filter(u => u.includes(':generateContent'));
 t('מודל שאינו תומך generateContent מסונן', !used.some(u => u.includes('embed-only')));
-t('flash-lite נבחר לפני flash ולפני pro', used[0].includes('flash-lite'), used[0]);
+/* עד 0.9.4 flash-lite היה ראשון. זו הייתה בחירת מהירות ומחיר שהפכה
+   בשקט לבחירת דיוק — המודל החלש קרא את המסמכים כמעט תמיד. DEC-28. */
+t('pro נבחר לפני flash ולפני flash-lite', used[0].includes('-pro'), used[0]);
 t('התשובה נותחה', first.typeKey === 'vehicle_insurance', JSON.stringify(first).slice(0, 80));
 
 const remembered = await page.evaluate(() => window.Settings.get(window.CONFIG.K.geminiLastModel));
-t('המודל שהצליח נזכר', remembered === 'gemini-x-flash-lite', remembered);
+t('המודל שהצליח נזכר לתצוגה', remembered === 'gemini-x-pro', remembered);
 
 hits = [];
-plan = { 'gemini-x-flash-lite': { status: 429 } };   // רק הראשון נופל
+plan = { 'gemini-x-pro': { status: 429 } };   // רק הראשון נופל
 await page.evaluate(() => window.Gemini.parse({ text: 'פוליסה' }));
 const used2 = hits.filter(u => u.includes(':generateContent'));
 t('429 מפנה מקום למודל הבא', used2.length === 2 && used2[1].includes('flash'), used2.join(' → '));
+
+/* המודל שהצליח **אינו** מוקפץ לראש בקריאה הבאה. הקפצה כזאת נועלת 429
+   חד-פעמי על מודל חלש ומשאירה שם את כל הקריאות הבאות. */
+hits = [];
+plan = {};
+await page.evaluate(() => window.Gemini.parse({ text: 'פוליסה' }));
+const used2b = hits.filter(u => u.includes(':generateContent'));
+t('והמפל חוזר להתחיל מלמעלה, ולא מהמודל שהצליח',
+  used2b[0].includes('-pro'), used2b.join(' → '));
+
+console.log('\n— דירוג ומפל שהמשתמש מגדיר —');
+const ranked = await page.evaluate(() => {
+  const names = ['gemini-2.5-flash', 'gemini-3-pro-preview', 'gemini-2.5-pro',
+                 'gemini-3-flash-lite', 'gemini-3-flash'];
+  return names.slice().sort(window.Gemini.cmpRank);
+});
+t('שכבה גוברת על דור — pro של דור קודם לפני flash של הדור הבא',
+  ranked[0] === 'gemini-3-pro-preview' && ranked[1] === 'gemini-2.5-pro',
+  ranked.join(' → '));
+t('בתוך שכבה, הדור הגבוה קודם',
+  ranked.indexOf('gemini-3-flash') < ranked.indexOf('gemini-2.5-flash'),
+  ranked.join(' → '));
+t('flash-lite אחרון', ranked[ranked.length - 1] === 'gemini-3-flash-lite', ranked.join(' → '));
+
+const stable = await page.evaluate(() =>
+  ['gemini-3-pro-preview', 'gemini-3-pro'].sort(window.Gemini.cmpRank));
+t('יציב לפני preview באותו דור', stable[0] === 'gemini-3-pro', stable.join(' → '));
+
+hits = [];
+await page.evaluate(() => window.Settings.set(window.CONFIG.K.geminiModels,
+  ['gemini-x-flash', 'gemini-x-pro']));
+await page.evaluate(() => window.Gemini.parse({ text: 'פוליסה' }));
+const usedMine = hits.filter(u => u.includes(':generateContent'));
+t('מפל שהמשתמש הגדיר גובר על הדירוג', usedMine[0].includes('-flash'), usedMine[0]);
+t('ואינו שואל את ה-API אילו מודלים קיימים',
+  !hits.slice(-2).some(u => u.includes('/models?')), hits.slice(-2).join(' | '));
+
+hits = [];
+plan = { 'gemini-x-flash': { status: 404 } };   // שם שהתיישן
+await page.evaluate(() => window.Gemini.parse({ text: 'פוליסה' }));
+const used404 = hits.filter(u => u.includes(':generateContent'));
+t('שם מודל שאינו קיים נופל לבא אחריו ולא מפיל את הכל',
+  used404.length === 2 && used404[1].includes('-pro'), used404.join(' → '));
+
+plan = {};
+await page.evaluate(() => window.Settings.set(window.CONFIG.K.geminiModels, []));
+hits = [];
+const fresh = await page.evaluate(() => window.Gemini.available());
+t('גילוי מחזיר את הרשימה מדורגת', fresh[0].includes('-pro'), fresh.join(' → '));
+t('והוא שואל את ה-API מחדש ולא מהקאש',
+  hits.some(u => u.includes('/models?')), String(hits.length));
 
 hits = [];
 plan = { '*': { status: 400 } };

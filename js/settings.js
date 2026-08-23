@@ -16,6 +16,7 @@
   DEFAULTS[C.K.geminiConsentImage] = false;
   DEFAULTS[C.K.geminiConsentChat] = false;
   DEFAULTS[C.K.geminiLastModel] = '';
+  DEFAULTS[C.K.geminiModels] = [];
   DEFAULTS[C.K.driveClientId] = '';
   DEFAULTS[C.K.driveFolderId] = '';
   DEFAULTS[C.K.driveDbFileId] = '';

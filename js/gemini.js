@@ -10,16 +10,51 @@
   var C = window.CONFIG, S = window.Settings, DT = window.DOC_TYPES;
   var HOST = 'https://generativelanguage.googleapis.com/v1beta';
 
-  /* שמות מודלים מתיישנים. הרשימה כאן היא העדפה, לא אמת — הלקוח שואל את
-     ה-API אילו מודלים קיימים בפועל ומדרג אותם לפי ההעדפה. קידוד קשיח של
-     שם מודל הוא תקלה עתידית מובטחת. */
-  var PREFER = [/flash-lite/i, /flash/i, /pro/i];
+  /* ---------- מפל המודלים ----------
+     שמות מודלים מתיישנים, ולכן **אין כאן רשימה קשיחה**: הלקוח שואל את
+     ה-API אילו מודלים קיימים בפועל ומדרג אותם. כך "המודל העדכני" הוא
+     תוצאה של שאילתה ולא של קבוע שמישהו יצטרך לזכור לעדכן.
 
+     הדירוג, והסדר הזה הוא הכרעה ולא נוחות:
+
+       1. **שכבה**: pro לפני flash לפני flash-lite.
+       2. **דור**: בתוך שכבה, המספר הגבוה קודם.
+       3. **יציב לפני preview**, בתוך אותו דור.
+
+     השכבה גוברת על הדור מפני ש-pro של דור קודם קורא תעודת זהות מצולמת
+     טוב יותר מ-flash-lite של הדור הבא, והמשימה כאן היא קריאת מסמכים ולא
+     שיחה. עד 0.9.4 הסדר היה הפוך — flash-lite ראשון — וזו הייתה בחירת
+     מהירות ומחיר שהפכה בשקט לבחירת דיוק. DEC-28.
+
+     המשתמש יכול לדרוס את הכל ברשימה משלו (`geminiModels`). */
   var _models = null;
 
   function key() { return String(S.get(C.K.geminiKey) || '').trim(); }
 
   var G = {};
+
+  function tierOf(name) {
+    if (/flash-lite/i.test(name)) return 1;
+    if (/flash/i.test(name)) return 2;
+    if (/pro/i.test(name)) return 3;
+    return 0;
+  }
+
+  /* מפתח מיון לקסיקוגרפי. קטן יותר = מנוסה מוקדם יותר. */
+  G.rank = function (name) {
+    var n = String(name || '');
+    var gen = Number((n.match(/gemini-(\d+(?:\.\d+)?)/i) || [])[1] || 0);
+    return [-tierOf(n), -gen, /preview|exp\b|experimental/i.test(n) ? 1 : 0, n];
+  };
+
+  G.cmpRank = function (a, b) {
+    var ra = G.rank(a), rb = G.rank(b);
+    for (var i = 0; i < ra.length; i++) {
+      if (ra[i] < rb[i]) return -1;
+      if (ra[i] > rb[i]) return 1;
+    }
+    return 0;
+  };
 
   G.configured = function () { return !!key(); };
 
@@ -38,8 +73,8 @@
 
   /* ---------- גילוי מודלים ---------- */
 
-  function discover(signal) {
-    if (_models) return Promise.resolve(_models);
+  function discover(signal, force) {
+    if (_models && !force) return Promise.resolve(_models);
     return fetch(HOST + '/models?key=' + encodeURIComponent(key()), { signal: signal })
       .then(function (r) {
         if (!r.ok) throw httpError(r.status);
@@ -52,16 +87,26 @@
           })
           .map(function (m) { return String(m.name).replace(/^models\//, ''); });
 
-        names.sort(function (a, b) { return rank(a) - rank(b); });
+        names.sort(G.cmpRank);
         _models = names;
         return names;
       });
   }
 
-  function rank(name) {
-    for (var i = 0; i < PREFER.length; i++) if (PREFER[i].test(name)) return i;
-    return PREFER.length;
-  }
+  /* מה שמסך ההגדרות קורא לו: שאילתה טרייה, בלי קאש. זו הדרך של המשתמש
+     לראות מה קיים היום למפתח שלו ולבחור מתוכו. */
+  G.available = function () { return discover(null, true); };
+
+  /* המפל שירוץ בפועל. רשימה שהמשתמש הגדיר גוברת ואינה נשאלת מול ה-API —
+     היא הסדר שלו, כולל מודל שאינו ברשימת הגילוי. שם שאינו קיים נופל
+     ב-404 ומפנה מקום לבא אחריו, כמו כל כישלון אחר. */
+  G.cascade = function (signal) {
+    var chosen = (S.get(C.K.geminiModels) || [])
+      .map(function (n) { return String(n || '').trim(); })
+      .filter(Boolean);
+    if (chosen.length) return Promise.resolve(chosen);
+    return discover(signal);
+  };
 
   function httpError(status) {
     var e = new Error(
@@ -101,9 +146,16 @@
     });
   }
 
-  /* המודל האחרון שהצליח נשמר ומנוסה ראשון. מודל שנפל על 429 או על 5xx
-     מפנה מקום לבא אחריו; מפתח פסול עוצר את המפל כולו — אין טעם לנסות
-     חמישה מודלים עם אותו מפתח שגוי. */
+  /* מודל שנפל על 429 או על 5xx מפנה מקום לבא אחריו; 404 על שם שהתיישן
+     עושה אותו דבר. מפתח פסול עוצר את המפל כולו — אין טעם לנסות חמישה
+     מודלים עם אותו מפתח שגוי, וזה רק מסתיר תקלת קונפיגורציה מאחורי
+     שלוש קריאות איטיות.
+
+     **המפל רץ תמיד מלמעלה.** קודם המודל שהצליח לאחרונה הוקפץ לראש, וזה
+     נשמע כמו אופטימיזציה עד שהוא נועל 429 חד-פעמי על flash-lite ומשאיר
+     שם את כל הקריאות הבאות — כלומר הופך את הסדר שהמשתמש בחר להמלצה.
+     המחיר הוא קריאה כושלת אחת כשהמודל הראשון עמוס. `geminiLastModel`
+     עדיין נכתב, לתצוגה בלבד. */
   function request(parts, onStatus) {
     return send([{ role: 'user', parts: parts }], onStatus);
   }
@@ -112,13 +164,9 @@
     var ctrl = new AbortController();
     var timer = setTimeout(function () { ctrl.abort(); }, C.GEMINI_TIMEOUT_MS);
 
-    return discover(ctrl.signal).then(function (names) {
+    return G.cascade(ctrl.signal).then(function (names) {
       if (!names.length) throw new Error('לא נמצאו מודלים זמינים למפתח הזה');
-      var last = S.get(C.K.geminiLastModel);
       var order = names.slice();
-      if (last && order.indexOf(last) > 0) {
-        order = [last].concat(order.filter(function (n) { return n !== last; }));
-      }
 
       var i = 0;
       function next(err) {
