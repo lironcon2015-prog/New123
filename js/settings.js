@@ -12,7 +12,8 @@
   DEFAULTS[C.K.palette] = C.DEFAULT_PALETTE;
   DEFAULTS[C.K.typeface] = C.DEFAULT_TYPEFACE;
   DEFAULTS[C.K.geminiKey] = '';
-  DEFAULTS[C.K.geminiConsent] = false;
+    DEFAULTS[C.K.geminiConsentText] = false;
+  DEFAULTS[C.K.geminiConsentImage] = false;
   DEFAULTS[C.K.geminiLastModel] = '';
   DEFAULTS[C.K.driveFolderId] = '';
   DEFAULTS[C.K.driveDbFileId] = '';

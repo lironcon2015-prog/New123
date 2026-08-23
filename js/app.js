@@ -114,9 +114,14 @@
       if (converted) UI.toast('הומר · ' + Files.label(converted));
 
       var image = r.files.filter(function (f) { return f.mime !== 'application/pdf'; })[0];
-      if (mode !== 'mrz' || !image) return openForm();
-
-      return runMrz(image).then(openForm);
+      if (mode === 'mrz') {
+        if (!image) return openForm();
+        return runMrz(image).then(openForm);
+      }
+      if (image && window.Gemini.ready('image')) {
+        return runGemini({ blob: image.blob, mime: image.mime }).then(openForm);
+      }
+      return openForm();
     });
   }
 
@@ -202,9 +207,12 @@
       if (text && text.trim()) {
         e.preventDefault();
         App.staged = [];
-        App.pastedText = text.trim();
-        UI.toast('טקסט נקלט · הפרסינג יגיע בשלב 4');
-        location.hash = '#/doc/new';
+        App.proposal = null;
+        if (window.Gemini.ready('text')) {
+          runGemini({ text: text.trim() }).then(openForm);
+        } else {
+          UI.toast('הדבק תמונה, או הפעל פרסינג טקסט בהגדרות');
+        }
       }
     });
   }
@@ -231,6 +239,23 @@
       if (locked) return;
       ingest(Files.fromDataTransfer(e.dataTransfer), 'drop', '');
     });
+  }
+
+  /* פרסינג בענן. רץ רק כששניהם קיימים — מפתח והסכמה — ולכן הוא אופציונלי
+     בפועל ולא רק בהצהרה. */
+  function runGemini(input) {
+    var status = U.el('p', { class: 'sheet-p', text: 'שולח לפרסינג…' });
+    var sheet = UI.sheet('קריאת המסמך', [
+      status,
+      U.el('p', { class: 'muted small', text:
+        input.blob ? 'הצילום נשלח לגוגל לצורך הפרסינג.' : 'הטקסט נשלח לגוגל לצורך הפרסינג.' })
+    ]);
+    return window.Parse.fromGemini(input, function (model) {
+      status.textContent = 'קורא…';
+    }).then(function (proposal) {
+      App.proposal = proposal;
+      sheet.close();
+    }).catch(function () { sheet.close(); });
   }
 
   /* ---------- נעילה ---------- */

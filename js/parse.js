@@ -84,6 +84,40 @@
     });
   };
 
+  /* ---------- Gemini ---------- */
+  /* הפלט של מודל אינו נאמן יותר מפלט OCR: הוא עובר את אותו מסך אישור,
+     ואת אותם ולידטורים. מה שהמודל החזיר לשדה שאין לו מקום בטבלה — נזרק. */
+  P.fromGemini = function (input, onStatus) {
+    return window.Gemini.parse(input, onStatus).then(function (json) {
+      var type = DT.get(json && json.typeKey) || DT.get('generic');
+      var p = empty(type.key);
+      p.origin = 'gemini';
+
+      var allowed = {};
+      type.fields.forEach(function (f) { allowed[f.key] = f; });
+
+      Object.keys((json && json.fields) || {}).forEach(function (k) {
+        if (!allowed[k]) return;
+        var v = json.fields[k];
+        if (v == null || v === '') return;
+        p.values[k] = KINDS.get(allowed[k].kind).canonical(String(v));
+      });
+
+      if (json.issueDate && U.isRealDate(json.issueDate)) p.issueDate = json.issueDate;
+      if (json.expiryDate && U.isRealDate(json.expiryDate)) p.expiryDate = json.expiryDate;
+
+      var n = Object.keys(p.values).length;
+      p.notice = n
+        ? { level: 'ok', text: U.count(n, 'שדה אחד מולא · בדוק אותו לפני שמירה', 'שדות מולאו · בדוק אותם לפני שמירה') }
+        : { level: 'info', text: 'לא זוהו שדות במסמך. מלא ידנית.' };
+      return p;
+    }, function (e) {
+      var p = empty(null);
+      p.notice = { level: 'warn', text: 'הפרסינג נכשל: ' + e.message };
+      return p;
+    });
+  };
+
   /* ---------- הצעת ישויות מתוך שדה ---------- */
   /* DEC-04: מציעים, לא יוצרים. עובד על כל סוג שהטבלה מסמנת ב-peopleFrom,
      ולכן גם בהזנה ידנית ולא רק אחרי פרסינג. */

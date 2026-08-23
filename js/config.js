@@ -4,7 +4,7 @@
 
   window.CONFIG = {
     APP_NAME: 'התיק המשפחתי',
-    VERSION: '0.3.0',
+    VERSION: '0.4.0',
 
     DB_NAME: 'DocVaultDB',
     DB_VERSION: 1,
@@ -15,6 +15,8 @@
     JPEG_QUALITY: 0.85,
 
     RECENT_MAX: 6,
+
+    GEMINI_TIMEOUT_MS: 45000,
 
     DEFAULT_PALETTE: 'a',
     DEFAULT_TYPEFACE: 'assistant',
@@ -29,7 +31,8 @@
       palette: 'palette',
       typeface: 'typeface',
       geminiKey: 'geminiKey',
-      geminiConsent: 'geminiConsent',
+      geminiConsentText: 'geminiConsentText',
+      geminiConsentImage: 'geminiConsentImage',
       geminiLastModel: 'geminiLastModel',
       driveFolderId: 'driveFolderId',
       driveDbFileId: 'driveDbFileId',

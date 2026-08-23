@@ -703,7 +703,7 @@
       btn.addEventListener('click', function () {
         var next = btn.getAttribute('aria-checked') !== 'true';
         btn.setAttribute('aria-checked', String(next));
-        onChange(next);
+        onChange(next, btn);
       });
       return U.el('div', { class: 'set-row' }, [
         U.el('span', { class: 'set-b' }, [
@@ -779,6 +779,58 @@
       }, 'הפעלת שער PIN'));
     }
     wrap.appendChild(section('פרטיות', pinKids));
+
+    /* ---- פרסינג בענן ---- */
+    var keyInput = U.el('input', {
+      class: 'f-i', type: 'password', id: 'g-key', dir: 'ltr',
+      autocomplete: 'off', spellcheck: 'false',
+      placeholder: 'מפתח Gemini', value: S.get(C.K.geminiKey) || ''
+    });
+    var keyMsg = U.el('div', { class: 'f-err', role: 'status' });
+
+    var gemKids = [
+      U.el('p', { class: 'muted small', text:
+        'אופציונלי לגמרי. בלי מפתח, כל השדות ממולאים ידנית והאפליקציה עובדת במלואה. ' +
+        'סריקת דרכון ותעודת זהות רצה על המכשיר ואינה נוגעת בזה.' }),
+      U.el('div', { class: 'f-g' }, [
+        U.el('label', { class: 'f-l', for: 'g-key', text: 'מפתח' }),
+        keyInput, keyMsg
+      ]),
+      U.el('button', {
+        class: 'btn ghost wide', type: 'button',
+        onClick: function () {
+          var v = keyInput.value.trim();
+          S.set(C.K.geminiKey, v).then(function () {
+            keyMsg.textContent = v ? 'נשמר במכשיר הזה בלבד' : 'המפתח הוסר';
+            window.App.render();
+          });
+        }
+      }, 'שמירת המפתח')
+    ];
+
+    /* שתי הסכמות נפרדות. שליחת מחרוזת פוליסה היא ויתור אחר לגמרי
+       משליחת צילום של תעודת זהות, ולכן הן לא חולקות מתג. */
+    gemKids.push(toggleRow('שליחת טקסט מודבק',
+        'טקסט שהדבקת נשלח לגוגל לפרסינג',
+      S.get(C.K.geminiConsentText), function (v) { S.set(C.K.geminiConsentText, v); }));
+
+    gemKids.push(toggleRow('שליחת צילומי מסמכים',
+        'הצילום עצמו נשלח לגוגל — כולל תעודות זהות',
+      S.get(C.K.geminiConsentImage), function (v, btn) {
+        if (!v) { S.set(C.K.geminiConsentImage, false); return; }
+        UI.confirm({
+          title: 'שליחת צילומים לגוגל',
+          body: 'הצילום של המסמך — כולל תעודת זהות, רישיון או פוליסה — יישלח ' +
+                'לשרתי גוגל לצורך הפרסינג. סריקת דרכון ות״ז לא צריכה את זה: ' +
+                'היא רצה על המכשיר.',
+          ok: 'מאשר'
+        }).then(function (yes) {
+          if (yes) S.set(C.K.geminiConsentImage, true);
+          else btn.setAttribute('aria-checked', 'false');
+        });
+      }));
+
+    wrap.appendChild(section('פרסינג בענן', gemKids));
 
     wrap.appendChild(section('אודות', [
       U.el('div', { class: 'set-row' }, [
