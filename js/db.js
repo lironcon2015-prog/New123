@@ -59,6 +59,11 @@
 
   DB.open = open;
 
+  /* וו כתיבה. db.js אינו מכיר את הסנכרון — app.js מחבר אותו. כך שום מסלול
+     כתיבה לא יכול לשכוח לדחוף לתור, ושכבת האחסון נשארת בורה. */
+  DB.onWrite = null;
+  function wrote(x) { if (DB.onWrite) { try { DB.onWrite(); } catch (e) { /* לא חוסם */ } } return x; }
+
   DB.get = function (store, key) {
     return tx([store], 'readonly').then(function (t) {
       return wrap(t.objectStore(store).get(key));
@@ -91,7 +96,7 @@
     e.updatedAt = U.now();
     if (e.deleted == null) e.deleted = 0;
     if (e.sortOrder == null) e.sortOrder = Date.now();
-    return DB.put('entities', e);
+    return DB.put('entities', e).then(wrote);
   };
 
   /* מחיקת ישות מוחקת רכות את מסמכיה — מסמך בלי ישות אינו נגיש בשום מסך */
@@ -103,7 +108,7 @@
       return DB.get('entities', id);
     }).then(function (rec) {
       if (!rec) return null;
-      return DB.put('entities', { id: rec.id, deleted: 1, updatedAt: U.now() });
+      return DB.put('entities', { id: rec.id, deleted: 1, updatedAt: U.now() }).then(wrote);
     });
   };
 
@@ -124,7 +129,7 @@
       t.objectStore('docs').put(doc);
       var bs = t.objectStore('blobs');
       (newBlobs || []).forEach(function (b) { bs.put(b); });
-      return done(t).then(function () { return doc; });
+      return done(t).then(function () { return doc; }).then(wrote);
     });
   };
 
@@ -142,7 +147,7 @@
           var c = e.target.result;
           if (c) { c.delete(); c.continue(); }
         };
-        return done(t).then(function () { return d; });
+        return done(t).then(function () { return d; }).then(wrote);
       });
     });
   };
@@ -153,7 +158,7 @@
     return tx(['docs', 'blobs'], 'readwrite').then(function (t) {
       t.objectStore('docs').put(doc);
       t.objectStore('blobs').delete(blobId);
-      return done(t).then(function () { return doc; });
+      return done(t).then(function () { return doc; }).then(wrote);
     });
   };
 

@@ -54,6 +54,19 @@
     });
   };
 
+  /* מחוון סנכרון. שקט כשהכל בסדר — נקודה מופיעה רק כשיש מה לומר. */
+  var syncDot = null;
+
+  function paintSync(state) {
+    if (!syncDot) return;
+    syncDot.className = 'syncdot ' + state;
+    syncDot.setAttribute('aria-label',
+      state === 'start' ? 'מסנכרן' : state === 'error' ? 'הסנכרון נכשל' : 'מסונכרן');
+    if (state === 'done') setTimeout(function () {
+      if (syncDot.classList.contains('done')) syncDot.className = 'syncdot';
+    }, 1800);
+  }
+
   /* ---------- סרגל ---------- */
 
   function paintNav(parts) {
@@ -81,6 +94,8 @@
     }, U.icon('i-plus', 28));
     fab.addEventListener('click', function () { Screens.addSheet(); });
 
+    syncDot = U.el('span', { class: 'syncdot', role: 'status' });
+    document.body.appendChild(syncDot);
     document.body.appendChild(nav);
     document.body.appendChild(fab);
   }
@@ -286,6 +301,20 @@
 
     Vault.watch(showLock);
 
+    /* ---- סנכרון ---- */
+    window.Sync.transport = window.Drive;
+    DB.onWrite = function () { window.Sync.queue(); };
+
+    /* שלושה טריגרים: עלייה, חזרה לפוקוס, וחזרת רשת. האחרון הוא שורה אחת
+       שנאביגו ממליצה עליה ואין לה — visibilitychange מכסה את רוב המקרים
+       בנייד, אבל לא את מי שהאפליקציה פתוחה אצלו כשהרשת חוזרת. */
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') window.Sync.run({ silent: true });
+    });
+    window.addEventListener('online', function () { window.Sync.run({ silent: true }); });
+    document.addEventListener('fv-data', function () { App.render(); });
+    document.addEventListener('fv-sync', function (e) { paintSync(e.detail.state); });
+
     DB.open()
       .then(function () { return S.load(); })
       .then(function () {
@@ -294,6 +323,7 @@
           showLock();
         } else {
           App.render();
+          window.Sync.run({ silent: true });
         }
       })
       .catch(function (e) {

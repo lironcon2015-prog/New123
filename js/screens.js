@@ -780,6 +780,99 @@
     }
     wrap.appendChild(section('פרטיות', pinKids));
 
+    /* ---- גיבוי לדרייב ---- */
+    var idInput = U.el('input', {
+      class: 'f-i', type: 'text', id: 'd-client', dir: 'ltr',
+      autocomplete: 'off', spellcheck: 'false',
+      placeholder: '…apps.googleusercontent.com', value: S.get(C.K.driveClientId) || ''
+    });
+    var driveMsg = U.el('div', { class: 'f-err', role: 'status' });
+    var connected = window.Drive.connected();
+    var last = S.get(C.K.lastSync);
+
+    var driveKids = [
+      U.el('p', { class: 'muted small', text:
+        'אופציונלי. בלי חיבור הכל נשמר על המכשיר הזה בלבד, ואין גיבוי — ' +
+        'מחיקת נתוני האתר מוחקת הכל.' }),
+      U.el('div', { class: 'set-row' }, [
+        U.el('span', { class: 'set-b' }, [
+          U.el('span', { class: 'set-l', text: 'חיבור' }),
+          U.el('span', { class: 'set-s', text: connected ? 'מחובר' : 'לא מחובר' })
+        ])
+      ])
+    ];
+
+    if (last) {
+      driveKids.push(U.el('div', { class: 'set-row' }, [
+        U.el('span', { class: 'set-l', text: 'סנכרון אחרון' }),
+        U.el('span', { class: 'set-s' },
+          U.bidi(new Date(last).toLocaleString('he-IL')))
+      ]));
+    }
+
+    driveKids.push(U.el('div', { class: 'f-g' }, [
+      U.el('label', { class: 'f-l', for: 'd-client', text: 'מזהה לקוח של גוגל' }),
+      idInput, driveMsg
+    ]));
+
+    driveKids.push(U.el('button', {
+      class: 'btn ghost wide', type: 'button',
+      onClick: function () {
+        S.set(C.K.driveClientId, idInput.value.trim()).then(function () {
+          driveMsg.textContent = 'נשמר במכשיר הזה בלבד';
+        });
+      }
+    }, 'שמירת המזהה'));
+
+    driveKids.push(U.el('button', {
+      class: connected ? 'btn ghost danger wide' : 'btn wide', type: 'button',
+      onClick: function () {
+        if (connected) {
+          UI.confirm({
+            title: 'ניתוק מגוגל',
+            body: 'הנתונים יישארו במכשיר וגם בדרייב. הסנכרון פשוט ייעצר.',
+            ok: 'ניתוק', danger: true
+          }).then(function (yes) {
+            if (!yes) return;
+            window.Drive.disconnect().then(function () {
+              UI.toast('נותק');
+              window.App.render();
+            });
+          });
+          return;
+        }
+        driveMsg.textContent = 'מתחבר…';
+        window.Drive.connect().then(function () {
+          driveMsg.textContent = '';
+          UI.toast('מחובר');
+          return window.Sync.run({ silent: false });
+        }).then(function () {
+          window.App.render();
+        }).catch(function (e) {
+          driveMsg.textContent = e.message;
+        });
+      }
+    }, connected ? 'ניתוק' : 'חיבור לגוגל דרייב'));
+
+    if (connected) {
+      driveKids.push(U.el('button', {
+        class: 'btn ghost wide', type: 'button',
+        onClick: function () {
+          UI.toast('מסנכרן…');
+          window.Sync.run({ silent: false }).then(function (r) {
+            UI.toast(r.error ? 'הסנכרון נכשל: ' + r.error : 'הסנכרון הושלם');
+            window.App.render();
+          });
+        }
+      }, 'סנכרון עכשיו'));
+    }
+
+    driveKids.push(U.el('p', { class: 'muted small', text:
+      'צילומי תעודות זהות ורישיונות נשמרים בדרייב ללא הצפנה. הם מוגנים ' +
+      'בדיוק כמו כל קובץ אחר בחשבון הגוגל שלך — לא יותר. דרכונים אינם עולים.' }));
+
+    wrap.appendChild(section('גיבוי לדרייב', driveKids));
+
     /* ---- פרסינג בענן ---- */
     var keyInput = U.el('input', {
       class: 'f-i', type: 'password', id: 'g-key', dir: 'ltr',

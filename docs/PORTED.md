@@ -9,6 +9,8 @@
 | 2026-08-22 | `js/db.js:DB.deleteDoc` · `DB.deleteEntity` | `js/db.js:remove` | tombstone מצומצם. `entityId` במקום `tripId`; `deleted: 1` במקום `true`, כי בוליאני אינו מפתח חוקי ב-IndexedDB ואנחנו כן מאנדקסים אותו. |
 | 2026-08-22 | `js/ui.js:UI.empty` | `js/app.js:renderHero` | כל המסגרת היא `<button>` אחד. ללא אימוג׳י — נאביגו עצמה מוציאה אותו בהדרגה. |
 | 2026-08-22 | `js/mrz.js` | `js/mrz.js` | `checkDigit`, `yyToDate`, `fixNum`, פרסר TD3 ומסלול ה-canvas פורטו כמעט כלשונם. נוסף TD1, נוסף תיקון מילוי מגודר בספרת ביקורת, הכשל נושא סיבה במקום `null`, ו-Tesseract מתארח עצמית same-origin. |
+| 2026-08-22 | `js/sync.js:Sync.mergeRecords` | `js/db.js:mergeSync` | לוגיקת ההכרעה זהה. הוסר בלוק ה-shared settings (אצלנו `settings` מקומי לחלוטין). `files[]` ממוזג לפי `driveFileId` במקום חריג ה-blob בשורה אחת. התחבורה מוזרקת. |
+| 2026-08-22 | `js/sync.js:Sync.queue` · `Sync.run` | `js/google.js:Sync` | debounce של 4 שניות ומנעול `_syncing` זהים. נוסף טריגר `online`, שנאביגו ממליצה עליו ואין לה. |
 | 2026-08-22 | `js/util.js:U.bidi` | `js/ui.js` (דפוס, לא קוד) | **הרחבה, לא פורט.** לנאביגו אין `<bdi>` כלל, רק `dir="ltr"` ידני בנקודת השימוש, ולכן ערך מעורב נשבר שם. אצלנו: לטיני בלבד → `<bdi dir="ltr">`, מעורב → `<bdi>` בלי `dir`, עברית → `<span>`. ההמלצה הזאת הגיעה מנאביגו עצמה. |
 
 ---

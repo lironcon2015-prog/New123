@@ -436,6 +436,18 @@ body.locked .nav, body.locked .fab { display: none; }
 .key:active { transform: scale(.97); }
 .key.blank { background: transparent; box-shadow: none; cursor: default; }
 
+/* ============ מחוון סנכרון ============ */
+.syncdot {
+  position: fixed; top: 14px; inset-inline-start: 14px; z-index: 30;
+  width: 8px; height: 8px; border-radius: var(--r-pill);
+  background: transparent; transition: background var(--dur-base) var(--ease);
+}
+.syncdot.start { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+.syncdot.done  { background: var(--accent-soft); }
+.syncdot.error { background: var(--exp-past-fg); }
+@keyframes pulse { 50% { opacity: .35; } }
+body.locked .syncdot { display: none; }
+
 /* ============ toast ============ */
 .toast {
   position: fixed; inset-inline: 0; bottom: calc(var(--nav-h) + 14px + env(safe-area-inset-bottom));
