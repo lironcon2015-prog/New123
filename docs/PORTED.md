@@ -46,7 +46,7 @@
 
 | stub | קובץ | מצב |
 |---|---|---|
-| Q8 | `js/ui.js:UI.viewer` | תמונות עובדות. PDF ב-`iframe` — **התשובה אומרת שזה שגוי**: pdf.js על `<canvas>`, self-hosted. מתוכנן לשלב 6 יחד עם ה-precache. |
+| Q8 | `js/ui.js:UI.viewer` | תמונות עובדות. PDF ב-`iframe` — **התשובה אומרת שזה שגוי**: pdf.js על `<canvas>`, self-hosted. מתוכנן לשלב 6 יחד עם ה-precache, כולל `ctx.direction = 'ltr'` ו-precache מפורש ל-`standard_fonts/`. |
 
-Q6 ו-Q9 כבר אינם STUBs: ל-Q6 התברר שאין קנון בנאביגו כלל (ראה `DECISIONS.md` DEC-07),
-ו-Q9 הוחלף במימוש שנגזר מהתשובה.
+זה ה-STUB היחיד שנותר. Q6 ו-Q9 נסגרו: ל-Q6 התברר שאין קנון בנאביגו כלל
+(`DECISIONS.md` DEC-07), ו-Q9 הוחלף במימוש שנגזר מהתשובה.
