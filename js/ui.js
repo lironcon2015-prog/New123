@@ -256,243 +256,6 @@
     });
   };
 
-  /* ---------- בורר מסגרת ----------
-     מסגרת היא חלון לתוך תמונה שאינה בצורתה: 16:10 לעוגן המסמך, עיגול
-     לאווטאר של ישות. באיזה חלק של התמונה החלון יושב אינו דבר שקוד יכול
-     לנחש נכון — ראש התמונה שגוי בצילום עם שוליים, והמרכז שגוי בפורטרט
-     שהפנים בו למעלה. לכן זו בחירה, ולא ברירת מחדל חכמה.
-
-     שני צירים, כי הצורה קובעת איזה מהם חי: `cover` משאיר סרך בציר אחד
-     בלבד, ובעיגול הוא יכול להיות כל אחד מהם. הגרירה מומרת **לפי הסרך
-     האמיתי בפיקסלים**, ולכן היא עוקבת אחרי האצבע ולא מקרבת.
-
-     `src` הוא Blob או data URL — האווטאר כבר שמור כמחרוזת, והמסמך יושב
-     בחנות ה-blobs. `URL.createObjectURL` נוצר ומבוטל רק במקרה הראשון. */
-  UI.cropper = function (src, focus, opts) {
-    opts = opts || {};
-    var def = opts.defaultFocus || { x: 50, y: 50 };
-    function clamp(v, d) {
-      var n = Number(v);
-      return isNaN(n) ? d : Math.max(0, Math.min(100, n));
-    }
-    var pos = { x: clamp(focus && focus.x, def.x), y: clamp(focus && focus.y, def.y) };
-    var slack = { x: 0, y: 0 };
-
-    var isBlob = typeof src !== 'string';
-    var url = isBlob ? URL.createObjectURL(src) : src;
-    var img = U.el('img', { class: 'crop-img', src: url, alt: opts.alt || 'תצוגה מקדימה' });
-    var box = U.el('div', {
-      class: 'crop-box' + (opts.shape === 'circle' ? ' crop-circle' : ''),
-      tabindex: '0', role: 'application',
-      'aria-label': opts.label || 'מיקום התצוגה המקדימה'
-    }, img);
-
-    var slider = opts.slider === false ? null : U.el('input', {
-      type: 'range', min: '0', max: '100', step: '1', value: String(pos.y),
-      class: 'crop-range', 'aria-label': opts.label || 'מיקום התצוגה המקדימה'
-    });
-    var hint = U.el('p', { class: 'muted small', text: opts.hint || 'גרור כדי לבחור מה יוצג' });
-
-    function paint() {
-      img.style.objectPosition = pos.x + '% ' + pos.y + '%';
-      if (slider) slider.value = String(Math.round(pos.y));
-    }
-    paint();
-
-    img.addEventListener('load', function () {
-      if (isBlob) URL.revokeObjectURL(url);
-      /* הסרך בכל ציר: גודל התמונה כשהיא מכסה את המסגרת, פחות המסגרת.
-         `cover` מותח לפי הציר הצר, ולכן רק אחד מהם יוצא חיובי. */
-      var bw = box.clientWidth || 1, bh = box.clientHeight || 1;
-      var iw = img.naturalWidth || 1, ih = img.naturalHeight || 1;
-      var scale = Math.max(bw / iw, bh / ih);
-      slack.x = iw * scale - bw;
-      slack.y = ih * scale - bh;
-
-      if (slack.x <= 1 && slack.y <= 1) {
-        if (slider) slider.disabled = true;
-        box.classList.add('crop-flat');
-        hint.textContent = opts.flatHint ||
-          'התמונה בדיוק בצורת המסגרת — אין מה להזיז.';
-        return;
-      }
-      if (slider && slack.y <= 1) {
-        slider.disabled = true;
-        hint.textContent = 'התמונה רחבה מהמסגרת ונחתכת לרוחב — אין מה להזיז לאורך.';
-      }
-    });
-
-    if (slider) {
-      slider.addEventListener('input', function () {
-        pos.y = Number(slider.value);
-        paint();
-      });
-    }
-
-    /* גרירה: האצבע מזיזה את **התמונה**. משיכה למעלה חושפת את מה שמתחת,
-       כלומר מגדילה את האחוז. זו המוסכמה בכל בורר תמונה. */
-    var dragging = false, last = null;
-
-    function move(dx, dy) {
-      if (slack.x > 1) pos.x = clamp(pos.x - (dx / slack.x) * 100, pos.x);
-      if (slack.y > 1) pos.y = clamp(pos.y - (dy / slack.y) * 100, pos.y);
-      paint();
-    }
-
-    box.addEventListener('pointerdown', function (e) {
-      if (slack.x <= 1 && slack.y <= 1) return;
-      dragging = true;
-      last = { x: e.clientX, y: e.clientY };
-      box.classList.add('crop-drag');
-      try { box.setPointerCapture(e.pointerId); } catch (err) { /* לא חוסם */ }
-    });
-
-    box.addEventListener('pointermove', function (e) {
-      if (!dragging) return;
-      e.preventDefault();
-      move(e.clientX - last.x, e.clientY - last.y);
-      last = { x: e.clientX, y: e.clientY };
-    });
-
-    function stop() {
-      if (!dragging) return;
-      dragging = false;
-      box.classList.remove('crop-drag');
-    }
-    box.addEventListener('pointerup', stop);
-    box.addEventListener('pointercancel', stop);
-
-    /* מקשי החיצים — הדרך היחידה להגיע לזה בלי עכבר או מגע, ובעיגול
-       גם הדרך היחידה להזיז לרוחב כשאין מחוון. */
-    var STEP = 4;
-    box.addEventListener('keydown', function (e) {
-      var dx = 0, dy = 0;
-      if (e.key === 'ArrowUp') dy = -STEP;
-      else if (e.key === 'ArrowDown') dy = STEP;
-      else if (e.key === 'ArrowLeft') dx = -STEP;
-      else if (e.key === 'ArrowRight') dx = STEP;
-      else return;
-      e.preventDefault();
-      /* המקשים מזיזים את החלון, לא את התמונה — "למעלה" מראה מה שלמעלה */
-      if (dy) pos.y = clamp(pos.y + dy, pos.y);
-      if (dx) pos.x = clamp(pos.x + dx, pos.x);
-      paint();
-    });
-
-    return {
-      element: U.el('div', { class: 'crop' }, [box, slider, hint]),
-      value: function () { return { x: Math.round(pos.x), y: Math.round(pos.y) }; }
-    };
-  };
-
-  /* ---------- משטח זום ----------
-     האפליקציה עצמה נעולה בקנה מידה אחד (`App.Zoom`), ולכן ההגדלה חייבת
-     לחיות איפשהו — כאן, על המסמך בלבד.
-
-     הזום משנה **רוחב** ולא `transform`. ל-transform אין השפעה על הפריסה,
-     ולכן גלילה לתוך תמונה מוגדלת הייתה דורשת ריפוד מחושב; שינוי רוחב
-     מגדיל את התוכן באמת, והגלילה של הדפדפן מטפלת בהזזה בחינם.
-
-     `touch-action: none` על המשטח, ולכן שתי המחוות נכתבות כאן: אצבע
-     אחת גוררת, שתיים מקרבות. הדפדפן לא ייקח אף אחת מהן לעצמו. */
-  UI.zoomable = function (stage, inner) {
-    var MIN = 1, MAX = 5;
-    var scale = 1;
-    var pts = {}, lastDist = 0, lastTap = 0, moved = 0;
-
-    function apply(next, cx, cy) {
-      next = Math.max(MIN, Math.min(MAX, next));
-      if (Math.abs(next - scale) < 0.001) return;
-      var r = stage.getBoundingClientRect();
-      var px = (cx == null ? r.width / 2 : cx - r.left);
-      var py = (cy == null ? r.height / 2 : cy - r.top);
-      var ax = (stage.scrollLeft + px) / scale;
-      var ay = (stage.scrollTop + py) / scale;
-
-      scale = next;
-      inner.style.width = (scale * 100) + '%';
-      stage.classList.toggle('zoomed', scale > 1.001);
-
-      stage.scrollLeft = ax * scale - px;
-      stage.scrollTop = ay * scale - py;
-    }
-
-    function ids() { return Object.keys(pts); }
-    function dist() {
-      var k = ids();
-      var a = pts[k[0]], b = pts[k[1]];
-      return Math.hypot(a.x - b.x, a.y - b.y);
-    }
-    function mid() {
-      var k = ids();
-      var a = pts[k[0]], b = pts[k[1]];
-      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    }
-
-    stage.addEventListener('pointerdown', function (e) {
-      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
-      moved = 0;
-      if (ids().length === 2) lastDist = dist();
-      try { stage.setPointerCapture(e.pointerId); } catch (err) { /* עכבר מחוץ למשטח */ }
-    });
-
-    stage.addEventListener('pointermove', function (e) {
-      var p = pts[e.pointerId];
-      if (!p) return;
-      var dx = e.clientX - p.x, dy = e.clientY - p.y;
-      p.x = e.clientX; p.y = e.clientY;
-      moved += Math.abs(dx) + Math.abs(dy);
-
-      var n = ids().length;
-      if (n >= 2) {
-        var d = dist();
-        if (lastDist > 0) {
-          var m = mid();
-          apply(scale * (d / lastDist), m.x, m.y);
-        }
-        lastDist = d;
-        e.preventDefault();
-        return;
-      }
-      if (scale > 1.001) {
-        stage.scrollLeft -= dx;
-        stage.scrollTop -= dy;
-        e.preventDefault();
-      }
-    });
-
-    function up(e) {
-      delete pts[e.pointerId];
-      if (ids().length < 2) lastDist = 0;
-      if (ids().length) return;
-      /* הקשה כפולה — שתי הקשות קצרות בלי תזוזה — מחליפה בין מלא למוגדל */
-      if (moved < 10) {
-        var now = Date.now();
-        if (now - lastTap < 320) {
-          apply(scale > 1.001 ? MIN : 2.5, e.clientX, e.clientY);
-          lastTap = 0;
-        } else {
-          lastTap = now;
-        }
-      }
-    }
-    stage.addEventListener('pointerup', up);
-    stage.addEventListener('pointercancel', up);
-
-    stage.addEventListener('wheel', function (e) {
-      if (!e.ctrlKey) return;
-      e.preventDefault();
-      apply(scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX, e.clientY);
-    }, { passive: false });
-
-    return {
-      inc: function () { apply(scale * 1.4); },
-      dec: function () { apply(scale / 1.4); },
-      reset: function () { apply(MIN); },
-      scale: function () { return scale; }
-    };
-  };
-
   /* ---------- גרירה לסידור ----------
      לחיצה ארוכה מפעילה, כדי שגלילה של רשימה לא תיהפך בטעות לגרירה.
 
@@ -825,9 +588,16 @@
         e.preventDefault();
         return;
       }
-      if (scale > 1.001) {
-        stage.scrollLeft -= dx;
-        stage.scrollTop -= dy;
+      /* גלילה באצבע אחת **בכל קנה מידה**, ולא רק כשמוגדל.
+
+         `touch-action: none` על המשטח מבטל את הגלילה של הדפדפן, ולכן אם
+         לא נגלול כאן — אף אחד לא יגלול. במסמך בן עמוד אחד זה לא נראה,
+         ובמסמך רב-עמודים זה אומר שהעמוד הראשון הוא כל מה שיש. */
+      var canX = stage.scrollWidth - stage.clientWidth > 1;
+      var canY = stage.scrollHeight - stage.clientHeight > 1;
+      if (canX || canY) {
+        if (canX) stage.scrollLeft -= dx;
+        if (canY) stage.scrollTop -= dy;
         e.preventDefault();
       }
     });
@@ -895,44 +665,137 @@
     return _pdfP;
   }
 
-  UI.renderPdf = function (blob, container) {
+  /* כמה עמודים מוחזקים מרונדרים בו-זמנית. canvas של A4 בצפיפות של טלפון
+     הוא כמה מגה-בייט; מסמך של חמישים עמודים שכולם חיים מפיל את הדפדפן.
+     זו הסיבה שהייתה כאן תקרה של 20 עמודים — והיא פתרה את הזיכרון על חשבון
+     היכולת לראות את המסמך. */
+  var PDF_LIVE = 6;
+
+  /* מרנדר מסמך שלם, בלי תקרת עמודים.
+
+     שני שלבים, וההפרדה ביניהם היא העיקר:
+       א. לכל עמוד נוצר מקום ריק **במידות האמיתיות שלו**, מ-`getViewport`.
+          בלי זה כל עמוד שמסיים רינדור משנה את גובה המסמך והגלילה קופצת
+          תחת האצבע.
+       ב. עמוד מרונדר רק כשהוא מתקרב למסך, ומשוחרר כשהוא מתרחק.
+
+     `opts.root` הוא המשטח הנגלל (`.zoom-stage`) — בלעדיו ה-observer מודד
+     מול חלון הדפדפן, וב-sheet שגולל בתוך עצמו זה אומר שהכל "נראה". */
+  UI.renderPdf = function (blob, container, opts) {
+    opts = opts || {};
     return loadPdfjs().then(function (lib) {
       return blob.arrayBuffer().then(function (data) {
-        var opts = { data: data };
-        Object.keys(PDF_OPTS).forEach(function (k) { opts[k] = PDF_OPTS[k]; });
-        return lib.getDocument(opts).promise;
+        var o = { data: data };
+        Object.keys(PDF_OPTS).forEach(function (k) { o[k] = PDF_OPTS[k]; });
+        return lib.getDocument(o).promise;
       });
     }).then(function (pdf) {
       U.clear(container);
-      var pages = Math.min(pdf.numPages, 20);
-      var i = 1;
+      var total = opts.limit ? Math.min(pdf.numPages, opts.limit) : pdf.numPages;
+      var slots = new Array(total);
+      var live = [], busy = {}, seen = {};
 
-      function page() {
-        if (i > pages) {
-          if (pdf.numPages > pages) {
-            container.appendChild(U.el('p', { class: 'muted small', text:
-              'מוצגים ' + pages + ' העמודים הראשונים מתוך ' + pdf.numPages }));
-          }
-          return null;
-        }
-        return pdf.getPage(i++).then(function (pg) {
+      function draw(n) {
+        var el = slots[n - 1];
+        if (!el || el.firstChild) return Promise.resolve();
+        if (busy[n]) return busy[n];
+        busy[n] = pdf.getPage(n).then(function (pg) {
           var base = pg.getViewport({ scale: 1 });
-          var scale = Math.min(2, (container.clientWidth || 360) / base.width) *
-                      (window.devicePixelRatio || 1);
-          var vp = pg.getViewport({ scale: scale });
-          var canvas = U.el('canvas', { class: 'pdf-page' });
-          canvas.width = vp.width;
-          canvas.height = vp.height;
-          container.appendChild(canvas);
+          var w = el.clientWidth || container.clientWidth || 360;
+          /* צפיפות מוגבלת ל-2 גם במסך של 3x: ההבדל אינו נראה בקריאה,
+             וההבדל בזיכרון הוא פי שניים ורבע לכל עמוד. */
+          var vp = pg.getViewport({
+            scale: (w / base.width) * Math.min(2, window.devicePixelRatio || 1)
+          });
+          var canvas = U.el('canvas');
+          canvas.width = Math.round(vp.width);
+          canvas.height = Math.round(vp.height);
           var ctx = canvas.getContext('2d');
           /* ported from Navigo — והשורה הזאת עלתה להם שעות: ההקשר יורש RTL
              מה-DOM, `fillText` מתעגן לצד ההפוך, ו-clip rects של ה-PDF חותכים
              אותיות. הסימפטום נראה כמו PDF פגום ולא כמו באג RTL. */
           ctx.direction = 'ltr';
-          return pg.render({ canvasContext: ctx, viewport: vp }).promise.then(page);
-        });
+          return pg.render({ canvasContext: ctx, viewport: vp }).promise
+            .then(function () {
+              U.clear(el).appendChild(canvas);
+              live.push(n);
+              release(n);
+            });
+        }).catch(function () { /* עמוד פגום לא מפיל את השאר */ })
+          .then(function () { busy[n] = null; });
+        return busy[n];
       }
-      return page();
+
+      /* משחרר את העמוד הרחוק ביותר מזה שנצפה עכשיו. המקום נשאר, ולכן
+         הגלילה אינה זזה, והעמוד יצויר שוב אם חוזרים אליו. */
+      function release(near) {
+        while (live.length > PDF_LIVE) {
+          var far = -1, at = 0;
+          live.forEach(function (n, idx) {
+            var d = Math.abs(n - near);
+            if (d > far) { far = d; at = idx; }
+          });
+          var drop = live.splice(at, 1)[0];
+          if (slots[drop - 1]) U.clear(slots[drop - 1]);
+        }
+      }
+
+      function report() {
+        if (!opts.onPage) return;
+        var vis = Object.keys(seen).filter(function (k) { return seen[k]; })
+          .map(Number).sort(function (a, b) { return a - b; });
+        if (vis.length) opts.onPage(vis[0], total);
+      }
+
+      /* שני משקיפים ולא אחד, כי לשתי השאלות יש תשובות שונות:
+
+         "מה לצייר" רוצה שוליים נדיבים — עמוד שמצויר רק כשהוא כבר על המסך
+         מגיע ריק תחת האצבע. "באיזה עמוד אני" רוצה בדיוק את המסך, ואותם
+         שוליים היו אומרים שגם עמוד שגללנו הרחק מעליו עדיין "נראה". */
+      var obs = null, eye = null;
+      if (typeof IntersectionObserver === 'function') {
+        obs = new IntersectionObserver(function (entries) {
+          entries.forEach(function (en) {
+            var n = Number(en.target.dataset.page);
+            if (n && en.isIntersecting) draw(n);
+          });
+        }, { root: opts.root || null, rootMargin: '150% 0px' });
+
+        eye = new IntersectionObserver(function (entries) {
+          entries.forEach(function (en) {
+            var n = Number(en.target.dataset.page);
+            if (n) seen[n] = en.isIntersecting;
+          });
+          report();
+        }, { root: opts.root || null });
+      }
+
+      var chain = Promise.resolve();
+      for (var n = 1; n <= total; n++) chain = chain.then(place(n));
+
+      function place(n) {
+        return function () {
+          return pdf.getPage(n).then(function (pg) {
+            var vp = pg.getViewport({ scale: 1 });
+            var el = U.el('div', { class: 'pdf-page', dataset: { page: String(n) } });
+            el.style.aspectRatio = vp.width + ' / ' + vp.height;
+            slots[n - 1] = el;
+            container.appendChild(el);
+            if (obs) { obs.observe(el); eye.observe(el); }
+            /* בלי IntersectionObserver — הראשונים נצבעים מיד, וכל השאר
+               נשארים כמקום שמור. עדיף מסמך שנגלל מאשר דפדפן שנופל. */
+            else if (n <= PDF_LIVE) draw(n);
+          });
+        };
+      }
+
+      /* ההבטחה נפתרת כשיש **מה לראות**, ולא כשיש מקום שמור. עמוד ראשון
+         מצויר במפורש ולא דרך המשקיף: מיכל בגובה אפס לא יפעיל אותו לעולם,
+         והקורא היה מקבל מסמך ריק בלי שגיאה. */
+      return chain.then(function () {
+        if (opts.onPage) opts.onPage(1, total);
+        return total ? draw(1) : null;
+      }).then(function () { return { pages: total }; });
     }).catch(function (e) {
       U.clear(container).appendChild(UI.empty({
         icon: 'i-file', title: 'לא הצלחתי לפתוח את ה-PDF',
@@ -959,9 +822,20 @@
     });
     s.panel.classList.add('sheet-full');
 
+    /* הרמז מתחלף במונה עמודים ברגע שידוע שיש יותר מאחד — באותו מקום,
+       כי מסמך רב-עמודים צריך לומר קודם כל כמה עמודים יש בו. */
+    var hint = U.el('span', { class: 'viewer-hint', text: 'צביטה או הקשה כפולה' });
+
     if (blobRec.mime === 'application/pdf') {
       inner.appendChild(U.el('p', { class: 'muted small', text: 'טוען…' }));
-      UI.renderPdf(blobRec.data, inner);
+      UI.renderPdf(blobRec.data, inner, {
+        root: stage,
+        onPage: function (n, total) {
+          hint.textContent = total > 1
+            ? 'עמוד ' + n + ' מתוך ' + total
+            : 'צביטה או הקשה כפולה';
+        }
+      });
     } else {
       inner.appendChild(U.el('img', {
         class: 'viewer-img', src: objectUrl(blobRec.data), alt: name || 'צילום המסמך'
@@ -978,7 +852,7 @@
         class: 'iconbtn', type: 'button', 'aria-label': 'הגדלה',
         onClick: function () { zoom.inc(); }
       }, U.icon('i-zoom-in', 22)),
-      U.el('span', { class: 'viewer-hint', text: 'צביטה או הקשה כפולה' }),
+      hint,
       U.el('button', {
         class: 'iconbtn', type: 'button', 'aria-label': 'שיתוף',
         onClick: function () {

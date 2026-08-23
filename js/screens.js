@@ -471,7 +471,7 @@
           /* עמוד ראשון כתצוגה מקדימה — עוגן ויזואלי אמיתי במקום אייקון אפור */
           var box = U.el('div', { class: 'anchor anchor-pdf' });
           headCard.insertBefore(box, headCard.firstChild);
-          UI.renderPdf(rec.data, box);
+          UI.renderPdf(rec.data, box, { limit: 1 });
           box.addEventListener('click', function () { UI.viewer(rec, first.name); });
         } else {
           var url = URL.createObjectURL(rec.data);

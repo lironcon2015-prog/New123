@@ -506,10 +506,13 @@ body.locked .nav, body.locked .fab { display: none; }
   background: var(--bg); padding-top: 6px;
 }
 .viewer-hint { flex: 1; font-size: 12.5px; color: var(--ink-3); text-align: center; }
+/* המקום השמור לעמוד. `aspect-ratio` נכתב בקוד מהמידות האמיתיות של העמוד,
+   ולכן הגובה נכון עוד לפני שהעמוד צויר — והגלילה אינה קופצת כשהוא נצבע. */
 .pdf-page {
-  display: block; width: 100%; height: auto;
+  display: block; width: 100%; overflow: hidden;
   border-radius: var(--r-row); box-shadow: var(--shadow); background: #fff;
 }
+.pdf-page canvas { display: block; width: 100%; height: auto; }
 
 /* ============ מסך נעילה ומקלדת ============ */
 .lock {

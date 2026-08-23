@@ -141,10 +141,18 @@ const reorderSrc = await page.evaluate(() => ({
 }));
 t('UI.reorder שרץ בפועל הוא זה שיש בו בלם גלילה', reorderSrc.touch === true);
 t('וגם גלילה אוטומטית בקצוות', reorderSrc.scroll === true);
-const dupes = await page.evaluate(() =>
-  fetch('/js/ui.js').then(r => r.text())
-    .then(src => (src.match(/UI\.reorder = function/g) || []).length));
-t('ויש לו הגדרה אחת בלבד בקובץ', dupes === 1, String(dupes));
+/* הבדיקה נכתבה על UI.reorder אחרי שהגדרה כפולה דרסה אותו בשקט. היא הורחבה
+   לכל הקובץ אחרי ש-UI.cropper ו-UI.zoomable הוכפלו בדיוק באותה דרך: מספר
+   אחד לפונקציה אחת אינו שומר על הקובץ, הוא שומר על השורה שכבר נכווינו בה. */
+const dupes = await page.evaluate(() => fetch('/js/ui.js').then(r => r.text()).then(src => {
+  const seen = {}, dup = [];
+  (src.match(/^  UI\.[A-Za-z]+ = function/gm) || []).forEach(l => {
+    const k = l.trim();
+    if (seen[k]) dup.push(k); else seen[k] = 1;
+  });
+  return dup;
+}));
+t('אף פונקציה ב-ui.js אינה מוגדרת פעמיים', dupes.length === 0, dupes.join(' | '));
 
 /* ---------- 4 · אווטאר ---------- */
 console.log('\n— אווטאר של ישות —');
@@ -1048,6 +1056,90 @@ const expiries = await p2.evaluate(() => {
 t('מנוע התפוגה רואה רק את העדכני', expiries.ok === 1 && expiries.past === 0,
   JSON.stringify(expiries));
 t('אפס שגיאות במסלול הטופס', errs2.length === 0, errs2.slice(0, 3).join(' | '));
+
+/* ---------- מסמך רב-עמודים ---------- */
+console.log('\n— מסמך רב-עמודים —');
+/* הדיווח: "רואים חלקית". שתי סיבות נפרדות היו לזה — תקרה של 20 עמודים,
+   ומשטח שאי אפשר היה לגלול בו באצבע כשאינו מוגדל. הבדיקה תופסת את שתיהן. */
+
+/* PDF אמיתי, נבנה כאן ולא נשמר כקובץ: בדיקה שתלויה בפיקסצ׳ר שאבד היא
+   בדיקה שלא רצה, וזה כבר קרה בסוויטה הזאת. */
+function makePdf(n) {
+  const objs = [];
+  const kids = Array.from({ length: n }, (_, i) => `${3 + 2 * i} 0 R`).join(' ');
+  objs.push('<< /Type /Catalog /Pages 2 0 R >>');
+  objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${n} >>`);
+  for (let i = 0; i < n; i++) {
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] ` +
+      `/Resources << /Font << /F1 ${3 + 2 * n} 0 R >> >> /Contents ${4 + 2 * i} 0 R >>`);
+    const st = `BT /F1 48 Tf 60 700 Td (Page ${i + 1}) Tj ET`;
+    objs.push(`<< /Length ${st.length} >>\nstream\n${st}\nendstream`);
+  }
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  let out = '%PDF-1.4\n';
+  const offs = [];
+  objs.forEach((body, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${body}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  offs.forEach(o => { out += String(o).padStart(10, '0') + ' 00000 n \n'; });
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return out;
+}
+
+const PAGES = 7;
+await page.evaluate(src => { window.__pdf = src; }, makePdf(PAGES));
+await page.evaluate(() => {
+  const bytes = new Uint8Array(window.__pdf.length);
+  for (let i = 0; i < window.__pdf.length; i++) bytes[i] = window.__pdf.charCodeAt(i);
+  window.__blob = new Blob([bytes], { type: 'application/pdf' });
+  window.UI.viewer({ mime: 'application/pdf', data: window.__blob }, 'multi.pdf');
+});
+await page.waitForFunction(() => document.querySelectorAll('.pdf-page').length > 1, null, { timeout: 15000 });
+await page.waitForTimeout(900);
+
+const shape = await page.evaluate(() => {
+  const st = document.querySelector('.zoom-stage');
+  return {
+    slots: document.querySelectorAll('.pdf-page').length,
+    drawn: document.querySelectorAll('.pdf-page canvas').length,
+    ratio: document.querySelector('.pdf-page').style.aspectRatio,
+    hint: document.querySelector('.viewer-hint').textContent,
+    over: st.scrollHeight - st.clientHeight
+  };
+});
+t('כל העמודים קיימים, בלי תקרה', shape.slots === PAGES, JSON.stringify(shape));
+t('אבל לא כולם מצוירים בבת אחת', shape.drawn > 0 && shape.drawn < PAGES, String(shape.drawn));
+t('לכל עמוד שמור מקום במידות האמיתיות שלו', shape.ratio === '595 / 842', shape.ratio);
+t('המונה אומר כמה עמודים יש', /1 מתוך 7/.test(shape.hint), shape.hint);
+t('והמסמך ארוך מהמשטח — כלומר יש מה לגלול', shape.over > 500, String(shape.over));
+
+/* גרירה באצבע אחת, בקנה מידה 1. זה מה שלא עבד: `touch-action: none`
+   מבטל את הגלילה של הדפדפן, והקוד גלל רק כשהיה מוגדל. */
+const stBox = await page.locator('.zoom-stage').boundingBox();
+const cx = stBox.x + stBox.width / 2, cy = stBox.y + stBox.height / 2;
+await page.mouse.move(cx, cy);
+await page.mouse.down();
+for (let i = 1; i <= 10; i++) await page.mouse.move(cx, cy - i * 28);
+await page.mouse.up();
+await page.waitForTimeout(300);
+const scrolled = await page.evaluate(() => Math.round(document.querySelector('.zoom-stage').scrollTop));
+t('גרירה באצבע אחת גוללת גם בלי להגדיל', scrolled > 100, String(scrolled));
+
+const deep = await page.evaluate(async () => {
+  const st = document.querySelector('.zoom-stage');
+  st.scrollTop = st.scrollHeight;
+  await new Promise(r => setTimeout(r, 900));
+  return {
+    hint: document.querySelector('.viewer-hint').textContent,
+    last: !!document.querySelector('.pdf-page[data-page="7"] canvas'),
+    drawn: document.querySelectorAll('.pdf-page canvas').length
+  };
+});
+t('העמוד האחרון מצויר כשמגיעים אליו', deep.last, JSON.stringify(deep));
+t('והמונה עוקב אחרי המיקום', /מתוך 7/.test(deep.hint) && !/^עמוד 1 /.test(deep.hint), deep.hint);
+t('ומספר העמודים החיים נשאר חסום', deep.drawn <= 6, String(deep.drawn));
+
+await page.evaluate(() => { document.querySelector('.backdrop').remove(); });
 
 await browser.close();
 console.log(`\nסה״כ: ${pass} עברו, ${fail} נכשלו`);
