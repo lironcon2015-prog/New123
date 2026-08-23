@@ -1468,7 +1468,7 @@
         U.el('ol', { class: 'steps' }, [
           U.el('li', { text: 'script.google.com → New project' }),
           U.el('li', { text: 'הדבק את tools/bridge.gs מהריפו במקום התוכן' }),
-          U.el('li', { text: 'שנה את SECRET למחרוזת אקראית ארוכה' }),
+          U.el('li', { text: 'שנה את SECRET למחרוזת אקראית — 16 תווים לפחות, מומלץ 32' }),
           U.el('li', { text: 'Deploy → New deployment → Web app' }),
           U.el('li', { text: 'Execute as: Me · Who has access: Anyone' }),
           U.el('li', { text: 'אשר את ההרשאות, והעתק את הכתובת שמסתיימת ב-‎/exec' })
@@ -1493,9 +1493,15 @@
           U.el('li', { text: 'היכנס מחדש ל-script.google.com מאותו חלון' }),
           U.el('li', { text: 'חלופה מהירה: החלף בכתובת authuser=3 ל-authuser=0' })
         ]),
+        U.el('p', { class: 'small', text:
+          'הודעה על סוד קצר מדי מגיעה מהגשר עצמו: הכתובת חשופה, ולכן הסוד ' +
+          'הוא כל ההגנה, ופחות מ-16 תווים נדחה. אורך שונה בשני הצדדים ייתן ' +
+          '"סוד שגוי" — הם חייבים להיות זהים תו בתו.' }),
         U.el('p', { class: 'muted small', text:
+          'ואחרי כל שינוי בקובץ הסקריפט: Deploy → Manage deployments → עריכה ' +
+          '→ New version. בלי זה הכתובת ממשיכה להריץ את הקוד הישן. ' +
           'בחשבון ארגוני (Workspace) ייתכן שמדיניות המנהל חוסמת ' +
-          '"Who has access: Anyone". במקרה כזה הקם את הגשר בחשבון פרטי. ' +
+          '"Who has access: Anyone", ואז יש להקים את הגשר בחשבון פרטי. ' +
           'ובדוק שהכתובת שהעתקת מסתיימת ב-‎/exec ולא ב-‎/dev.' })
       ]));
 

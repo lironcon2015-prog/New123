@@ -34,6 +34,9 @@
     /* תקרת קובץ בגשר. base64 מנפח בשליש, ולתשובת Apps Script יש גבול —
        קובץ שחורג נעצר בצד הלקוח עם מספר, ולא נכשל אצל גוגל בלי הודעה. */
     BRIDGE_MAX_BYTES: 12 * 1024 * 1024,
+    /* חייב להיות זהה ל-MIN_SECRET ב-tools/bridge.gs. הכתובת חשופה, ולכן
+       הסוד הוא כל ההגנה, וסוד קצר נשבר בניחוש. */
+    BRIDGE_MIN_SECRET: 16,
 
     DEFAULT_PALETTE: 'a',
     DEFAULT_TYPEFACE: 'assistant',

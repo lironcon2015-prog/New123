@@ -30,6 +30,13 @@
     if (!B.connected()) {
       return Promise.reject(new Error('הגשר לא הוגדר — הדבק כתובת וסוד בהגדרות'));
     }
+    /* נעצר כאן ולא אחרי סיבוב לגשר: התשובה תהיה אותה תשובה, והמשתמש
+       שהגדיר סוד קצר צריך לדעת שהמספר הוא הבעיה ולא הכתובת. */
+    if (secret().length < C.BRIDGE_MIN_SECRET) {
+      return Promise.reject(new Error(
+        'הסוד קצר מדי — ' + secret().length + ' תווים, נדרשים ' +
+        C.BRIDGE_MIN_SECRET + ' לפחות. שנה אותו גם בגשר וגם כאן.'));
+    }
     var body = { token: secret(), action: action };
     Object.keys(params || {}).forEach(function (k) { body[k] = params[k]; });
 

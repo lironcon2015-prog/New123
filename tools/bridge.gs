@@ -21,7 +21,9 @@
  * ---------- התקנה, פעם אחת ----------
  *
  *   1. script.google.com → New project → הדבק את הקובץ הזה במקום התוכן.
- *   2. שנה את SECRET למחרוזת אקראית ארוכה משלך.
+ *   2. שנה את SECRET למחרוזת אקראית משלך — 16 תווים לפחות, ורצוי 32.
+ *      הכתובת חשופה ("Anyone"), ולכן הסוד הוא כל ההגנה. סוד קצר נשבר
+ *      בניחוש, ולכן הגשר מסרב לרוץ איתו.
  *   3. Deploy → New deployment → סוג: Web app.
  *        Execute as:      Me
  *        Who has access:  Anyone
@@ -45,20 +47,27 @@
  * /dev היא הפריסה הזמנית, והיא דורשת התחברות.
  */
 
-/** שנה אותי. מחרוזת אקראית, לפחות 32 תווים. */
+/** שנה אותי. מחרוזת אקראית: 16 תווים זה המינימום שהגשר מקבל, 32 זה המומלץ. */
 var SECRET = 'שנה-אותי-למחרוזת-אקראית-ארוכה';
 
 var ROOT_NAME = 'DocVault';
 var FILES_NAME = 'files';
 var DB_NAME = 'docvault-db.json';
 var MARKER = 'family-vault-root';
+var MIN_SECRET = 16;
 
 /* ---------- הכניסה ---------- */
 
 function doPost(e) {
   try {
     var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    if (!SECRET || SECRET.length < 16) throw new Error('SECRET לא הוגדר בגשר');
+    /* שתי הודעות ולא אחת: "לא הוגדר" ו"קצר מדי" הן תקלות שונות, והודעה
+       אחת לשתיהן שולחת את מי שהגדיר סוד קצר לחפש במקום הלא נכון. */
+    if (!SECRET) throw new Error('SECRET לא הוגדר בגשר');
+    if (SECRET.length < MIN_SECRET) {
+      throw new Error('הסוד בגשר קצר מדי — ' + SECRET.length + ' תווים, ' +
+                      'נדרשים ' + MIN_SECRET + ' לפחות');
+    }
     if (String(req.token || '') !== SECRET) throw new Error('סוד שגוי');
     return _json({ ok: true, result: _handle(req) });
   } catch (err) {

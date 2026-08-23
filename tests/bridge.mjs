@@ -147,10 +147,21 @@ t('קובץ מעל התקרה נעצר בצד הלקוח', /גדול מדי לג
 t('וההודעה אומרת גם את הגודל וגם את התקרה',
   /MB/.test(tooBig), tooBig);
 
-await set(URL_EXEC, 'סוד-שגוי');
+/* סוד באורך תקין אבל לא הנכון — כדי שהבדיקה תגיע לגשר ולא תיעצר ברצפה. */
+await set(URL_EXEC, 'סוד-אחר-באותו-אורך-בדיוק');
 const badSecret = await page.evaluate(() =>
   window.Bridge.getDb().then(() => 'עבר', e => e.message));
 t('סוד שגוי מוחזר כשגיאת גשר', /סוד שגוי/.test(badSecret), badSecret);
+
+/* הדיווח: סוד קצר, וההודעה שחזרה שלחה לחפש במקום הלא נכון. */
+await set(URL_EXEC, 'קצר');
+const shortSecret = await page.evaluate(() =>
+  window.Bridge.getDb().then(() => 'עבר', e => e.message));
+t('סוד קצר נדחה בצד הלקוח, בלי סיבוב לגשר',
+  /קצר מדי/.test(shortSecret), shortSecret);
+t('וההודעה אומרת את האורך שנמצא ואת הנדרש',
+  /3 תווים/.test(shortSecret) && /16/.test(shortSecret), shortSecret);
+t('ולא מבלבלת עם "לא הוגדר"', !/לא הוגדר/.test(shortSecret), shortSecret);
 await set(URL_EXEC, SECRET);
 
 mode = 'html';
@@ -234,7 +245,13 @@ console.log('\n— bridge.gs —');
 const gs = await page.evaluate(() => fetch('/tools/bridge.gs').then(r => r.text()));
 t('קיים בריפו', gs.length > 500, String(gs.length));
 t('בודק את הסוד לפני כל פעולה', /String\(req\.token \|\| ''\) !== SECRET/.test(gs));
-t('מסרב לרוץ עם SECRET שלא הוחלף', /SECRET\.length < 16/.test(gs));
+t('מסרב לרוץ עם SECRET ריק', /if \(!SECRET\) throw/.test(gs));
+t('ומסרב לסוד קצר, בהודעה נפרדת עם האורך',
+  /SECRET\.length < MIN_SECRET/.test(gs) && /קצר מדי/.test(gs));
+/* מספר אחד בשני צדדים. אם הם ייפרדו, אחד הצדדים ידחה מה שהשני קיבל. */
+t('הרצפה זהה בגשר ובאפליקציה',
+  (gs.match(/MIN_SECRET = (\d+)/) || [])[1] === '16' &&
+  /BRIDGE_MIN_SECRET: 16/.test(await page.evaluate(() => fetch('/js/config.js').then(r => r.text()))));
 /* ההקשחה מול נאביגו: הורדה מאמתת שהקובץ בתיקייה שלנו, אחרת הסוד היה
    מפתח לכל קובץ בדרייב לפי מזהה. */
 t('הורדה מאמתת שהקובץ בתוך DocVault', /_inVault\(file\)/.test(gs));
