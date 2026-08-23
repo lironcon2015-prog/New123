@@ -23,8 +23,15 @@
 
   G.configured = function () { return !!key(); };
 
+  /* הסכמה לכל סוג שליחה בנפרד. שליחת מחרוזת פוליסה, שליחת צילום תעודת זהות
+     ושליחת מפת הכספת כולה הן שלושה ויתורים שונים, ולכן שלושה מפתחות. */
+  var CONSENT = {};
+  CONSENT.image = C.K.geminiConsentImage;
+  CONSENT.chat = C.K.geminiConsentChat;
+  CONSENT.text = C.K.geminiConsentText;
+
   G.consented = function (kind) {
-    return !!S.get(kind === 'image' ? C.K.geminiConsentImage : C.K.geminiConsentText);
+    return !!S.get(CONSENT[kind] || CONSENT.text);
   };
 
   G.ready = function (kind) { return G.configured() && G.consented(kind); };
@@ -69,9 +76,9 @@
 
   /* ---------- בקשה אחת, עם מפל מודלים ---------- */
 
-  function callModel(model, parts, signal) {
+  function callModel(model, contents, signal) {
     var body = {
-      contents: [{ role: 'user', parts: parts }],
+      contents: contents,
       generationConfig: {
         temperature: 0.1,
         responseMimeType: 'application/json'
@@ -98,6 +105,10 @@
      מפנה מקום לבא אחריו; מפתח פסול עוצר את המפל כולו — אין טעם לנסות
      חמישה מודלים עם אותו מפתח שגוי. */
   function request(parts, onStatus) {
+    return send([{ role: 'user', parts: parts }], onStatus);
+  }
+
+  function send(contents, onStatus) {
     var ctrl = new AbortController();
     var timer = setTimeout(function () { ctrl.abort(); }, C.GEMINI_TIMEOUT_MS);
 
@@ -114,7 +125,7 @@
         if (i >= order.length) throw err || new Error('כל המודלים נכשלו');
         var model = order[i++];
         if (onStatus) onStatus(model);
-        return callModel(model, parts, ctrl.signal).then(function (text) {
+        return callModel(model, contents, ctrl.signal).then(function (text) {
           S.set(C.K.geminiLastModel, model);
           return text;
         }, function (e) {
@@ -207,6 +218,22 @@
     return partsP
       .then(function (parts) { return request(parts, onStatus); })
       .then(extractJson);
+  };
+
+  /* ---------- שיחה ---------- */
+  /* `system` הוא ההנחיה ומפת הכספת. `turns` הוא ההיסטוריה, ומגיע מהקורא —
+     ל-gemini.js אין זיכרון משלו, בדיוק כמו שאין לו רשימת שדות משלו.
+     אותו מפל מודלים ואותו טיימאאוט. */
+  G.chat = function (system, turns, onStatus) {
+    if (!G.configured()) return Promise.reject(new Error('לא הוגדר מפתח'));
+    if (!G.consented('chat')) return Promise.reject(new Error('לא ניתנה הסכמה לשליחה'));
+
+    var contents = [{ role: 'user', parts: [{ text: system }] },
+                    { role: 'model', parts: [{ text: '{"reply":"מוכן.","actions":[]}' }] }];
+    (turns || []).forEach(function (t) {
+      contents.push({ role: t.role === 'model' ? 'model' : 'user', parts: [{ text: t.text }] });
+    });
+    return send(contents, onStatus).then(extractJson);
   };
 
   window.Gemini = G;

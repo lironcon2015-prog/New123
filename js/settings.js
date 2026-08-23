@@ -14,6 +14,7 @@
   DEFAULTS[C.K.geminiKey] = '';
     DEFAULTS[C.K.geminiConsentText] = false;
   DEFAULTS[C.K.geminiConsentImage] = false;
+  DEFAULTS[C.K.geminiConsentChat] = false;
   DEFAULTS[C.K.geminiLastModel] = '';
   DEFAULTS[C.K.driveClientId] = '';
   DEFAULTS[C.K.driveFolderId] = '';
@@ -21,6 +22,7 @@
   DEFAULTS[C.K.lastSync] = 0;
   DEFAULTS[C.K.recentFields] = [];
   DEFAULTS[C.K.lastNoticeDay] = '';
+  DEFAULTS[C.K.lastNoticeSig] = '';
   DEFAULTS[C.K.pinHash] = '';
 
   var S = {};

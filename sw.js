@@ -1,7 +1,7 @@
 /* sw.js — מעטפת אופליין.
    CACHE_VERSION חייב להיות זהה ל-version.json ול-_BUNDLE_VERSION ב-index.html.
    `node tools/bump.mjs` כותב את שלושתם, ו-tests/units.mjs נכשל אם הם נפרדו. */
-const CACHE_VERSION = '0.8.0';
+const CACHE_VERSION = '0.9.0';
 const CACHE_NAME = 'family-vault-' + CACHE_VERSION;
 
 /* המעטפת, הכתב, וצופה ה-PDF.
@@ -13,6 +13,7 @@ const CORE = [
   './fonts/assistant-hebrew.woff2', './fonts/assistant-latin.woff2',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',
   './js/config.js', './js/util.js', './js/kinds.js', './js/doctypes.js',
+  './js/versions.js', './js/share.js', './js/chat.js',
   './js/db.js', './js/settings.js', './js/vault.js', './js/files.js',
   './js/mrz.js', './js/gemini.js', './js/parse.js', './js/expiry.js',
   './js/drive.js', './js/sync.js', './js/search.js', './js/ui.js',

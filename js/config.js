@@ -19,6 +19,12 @@
     IMAGE_PASS_BYTES: 800 * 1024,
     JPEG_QUALITY: 0.85,
 
+    /* אווטאר של ישות — נשמר כ-data URL על הרשומה עצמה ולא
+       כ-blob נפרד, כדי שהוא יצויר בפריים הראשון ויסתנכרן עם הישות. */
+    AVATAR_EDGE: 192,
+    AVATAR_QUALITY: 0.82,
+    AVATAR_MAX_BYTES: 120 * 1024,
+
     RECENT_MAX: 6,
 
     GEMINI_TIMEOUT_MS: 45000,
@@ -38,13 +44,15 @@
       geminiKey: 'geminiKey',
       geminiConsentText: 'geminiConsentText',
       geminiConsentImage: 'geminiConsentImage',
+      geminiConsentChat: 'geminiConsentChat',
       geminiLastModel: 'geminiLastModel',
       driveClientId: 'driveClientId',
       driveFolderId: 'driveFolderId',
       driveDbFileId: 'driveDbFileId',
       lastSync: 'lastSync',
       recentFields: 'recentFields',
-      lastNoticeDay: 'lastNoticeDay'
+      lastNoticeDay: 'lastNoticeDay',
+      lastNoticeSig: 'lastNoticeSig'
     },
 
     /* המפתחות היחידים שממורים ל-localStorage — SPEC §3.5 */

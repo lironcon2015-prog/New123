@@ -40,6 +40,7 @@
       case 'expiries': return Screens.expiries();
       case 'entity':   return Screens.entity(parts[1]);
       case 'settings': return Screens.settings();
+      case 'chat':     return Screens.chat();
       case 'doc':
         if (parts[1] === 'new') return Screens.docForm(null);
         if (parts[2] === 'edit') return Screens.docForm(parts[1]);
@@ -75,7 +76,7 @@
   function paintNav(parts) {
     var active = '#/' + (parts[0] || C.HOME);
     /* מסך פנימי משאיר את הלשון הראשית מודגשת */
-    if (parts[0] === 'entity' || parts[0] === 'doc') active = '#/entities';
+    if (['entity', 'doc', 'chat'].indexOf(parts[0]) !== -1) active = '#/entities';
     nav.querySelectorAll('.nav-i').forEach(function (b) {
       b.classList.toggle('on', b.dataset.hash === active);
     });
@@ -244,16 +245,21 @@
     }
     nav.read().then(function (items) {
       for (var i = 0; i < items.length; i++) {
-        var imgType = items[i].types.filter(function (t) { return t.indexOf('image/') === 0; })[0];
-        if (imgType) {
-          return items[i].getType(imgType).then(function (blob) {
-            ingest([new File([blob], 'הדבקה', { type: blob.type })], 'paste', '');
+        /* כל טיפוס שאינו טקסט הוא קובץ בעינינו — תמונה או PDF. הגבלה
+           ל-`image/` בלבד הפכה הדבקה של PDF ל"אין תמונה או טקסט בלוח",
+           שזאת הודעה שקרית על לוח שיש בו בדיוק את מה שביקשו. */
+        var fileType = items[i].types.filter(function (t) {
+          return t.indexOf('text/') !== 0;
+        })[0];
+        if (fileType) {
+          return items[i].getType(fileType).then(function (blob) {
+            ingest([new File([blob], Files.nameFor(blob.type), { type: blob.type })], 'paste', '');
           });
         }
       }
       return (nav.readText ? nav.readText() : Promise.resolve('')).then(function (txt) {
         if (!App.ingestText(txt)) {
-          Screens.pasteSheet('אין תמונה או טקסט בלוח.');
+          Screens.pasteSheet('אין קובץ, תמונה או טקסט בלוח.');
         }
       });
     }).catch(function () {
@@ -320,6 +326,66 @@
   function runGemini(input) {
     return App.runGemini(input).then(function (p) { App.proposal = p; });
   }
+
+  /* ---------- קנה מידה קבוע ----------
+     האפליקציה נועלת את הזום שלה. הסיבה אינה אסתטית: מסך שגדל וקטן בטעות
+     בזמן שגוררים ישות או לוחצים על שורה הופך כל מחווה למפוקפקת, והמשתמש
+     מפסיק לסמוך על מה שהאצבע שלו עושה.
+
+     מה שכן מתקרב ומתרחק הוא **המסמך**, בצופה, עם משטח משלו (`UI.zoomable`).
+     ה-`meta` לבדו אינו מספיק — iOS Safari מתעלם מ-`user-scalable=no` מאז
+     iOS 10 — ולכן שלוש המחוות נחסמות בקוד, וכולן נעצרות בגבול `.zoom-stage`.
+
+     בחזרה לאפליקציה קנה המידה נאכף מחדש: כתיבה מחדש של ה-meta היא הדרך
+     היחידה לבקש מהדפדפן לאפס זום שנתפס איכשהו. */
+  var Zoom = {
+    meta: null,
+    VIEW: 'width=device-width, initial-scale=1, maximum-scale=1, ' +
+          'minimum-scale=1, user-scalable=no, viewport-fit=cover',
+
+    inViewer: function (el) {
+      return !!(el && el.closest && el.closest('.zoom-stage'));
+    },
+
+    boot: function () {
+      Zoom.meta = document.querySelector('meta[name="viewport"]');
+
+      ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (name) {
+        document.addEventListener(name, function (e) {
+          if (Zoom.inViewer(e.target)) return;
+          e.preventDefault();
+        }, { passive: false });
+      });
+
+      document.addEventListener('wheel', function (e) {
+        if (!e.ctrlKey || Zoom.inViewer(e.target)) return;
+        e.preventDefault();
+      }, { passive: false });
+
+      /* הקשה כפולה מגדילה בספארי גם כשה-meta אוסר. שתי הקשות בתוך 320ms
+         באותו אזור — הראשונה עוברת, השנייה נבלעת. */
+      var last = 0;
+      document.addEventListener('touchend', function (e) {
+        if (Zoom.inViewer(e.target)) return;
+        var now = Date.now();
+        if (now - last < 320) e.preventDefault();
+        last = now;
+      }, { passive: false });
+
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') Zoom.reset();
+      });
+      window.addEventListener('pageshow', Zoom.reset);
+    },
+
+    reset: function () {
+      if (!Zoom.meta) return;
+      Zoom.meta.setAttribute('content', Zoom.VIEW + ', maximum-scale=1.0001');
+      requestAnimationFrame(function () { Zoom.meta.setAttribute('content', Zoom.VIEW); });
+    }
+  };
+
+  App.Zoom = Zoom;
 
   /* ---------- נעילה ---------- */
 
@@ -420,6 +486,7 @@
     buildFileInput();
     bindPaste();
     bindDrop();
+    Zoom.boot();
 
     window.addEventListener('hashchange', function () {
       if (locked) return;

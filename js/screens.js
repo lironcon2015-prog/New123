@@ -5,10 +5,14 @@
   var U = window.U, UI = window.UI, DB = window.DB, DT = window.DOC_TYPES,
       KINDS = window.KINDS, E = window.Expiry, S = window.Settings,
       C = window.CONFIG, Search = window.Search, Forms = window.Forms,
-      Files = window.Files, Vault = window.Vault;
+      Files = window.Files, Vault = window.Vault, V = window.Versions,
+      Share = window.Share;
 
   var Screens = {};
-  var state = { entities: [], docs: [], byId: {} };
+  /* `docs` הוא הכל, `live` הוא הגרסאות הנוכחיות בלבד. כל מסך שמציג
+     נתונים או שדות קורא `live` — מסמך שנדחקה גרסתו אינו מקור לפרטים,
+     אינו נספר בתפוגות ואינו מופיע בהעתקה המהירה. SPEC §6.6 */
+  var state = { entities: [], docs: [], live: [], byId: {} };
 
   Screens.state = state;
 
@@ -16,6 +20,7 @@
     return Promise.all([DB.listEntities(), DB.listDocs()]).then(function (r) {
       state.entities = r[0];
       state.docs = r[1];
+      state.live = V.live(r[1]);
       state.byId = {};
       state.entities.forEach(function (e) { state.byId[e.id] = e; });
       return state;
@@ -65,7 +70,7 @@
   Screens.expiries = function () {
     var home = C.HOME === 'expiries';
     var wrap = U.el('div', { class: 'scr' }, head(home ? C.APP_NAME : 'תפוגות'));
-    var grouped = E.group(state.docs);
+    var grouped = E.group(state.live);
     var total = grouped.past.length + grouped.d30.length + grouped.d90.length + grouped.ok.length;
 
     if (home) {
@@ -125,22 +130,44 @@
     return wrap;
   };
 
-  /* באנר פעם ביום למכשיר. אין push, ואין הבטחה שיש. SPEC §6.5 */
+  /* באנר פעם ביום למכשיר. אין push, ואין הבטחה שיש. SPEC §6.5
+
+     הדחייה נזכרת לפי **מה** נדחה ולא רק לפי מתי: החתימה היא רשימת
+     המסמכים הדורשים טיפול ותאריכי התפוגה שלהם. מסמך שטופל יוצא מהחתימה,
+     ולכן הבאנר הבא כבר לא סופר אותו; מסמך חדש שנכנס מחזיר את הבאנר
+     גם באותו יום. באנר שנשאר אחרי הטיפול הוא באנר שמאמן להתעלם ממנו.
+
+     הבאנר עצמו לחיץ — מסמך אחד לוקח אליו, כמה לוקחים לרשימה. */
+  Screens.noticeSignature = function (grouped) {
+    return E.notifiable(grouped).map(function (it) {
+      return it.doc.id + '@' + (it.doc.expiryDate || '');
+    }).sort().join(',');
+  };
+
   Screens.noticeBanner = function (grouped) {
     if (!E.needsNotice(grouped)) return null;
     var today = U.todayYmd();
-    if (S.get(C.K.lastNoticeDay) === today) return null;
+    var sig = Screens.noticeSignature(grouped);
+    if (S.get(C.K.lastNoticeDay) === today && S.get(C.K.lastNoticeSig) === sig) return null;
 
-    var n = E.notifiable(grouped).length;
-    var bar = U.el('div', { class: 'notice' }, [
+    var items = E.notifiable(grouped);
+    var bar = U.el('div', { class: 'notice' });
+    var go = U.el('button', { class: 'notice-go', type: 'button' }, [
       U.icon('i-bell', 20),
-      U.el('span', { text: U.count(n, 'מסמך אחד דורש טיפול', 'מסמכים דורשים טיפול') }),
-      U.el('button', { class: 'iconbtn', type: 'button', 'aria-label': 'סגירה' }, U.icon('i-x', 18))
+      U.el('span', { text: U.count(items.length, 'מסמך אחד דורש טיפול', 'מסמכים דורשים טיפול') })
     ]);
-    bar.querySelector('button').addEventListener('click', function () {
-      S.set(C.K.lastNoticeDay, today);
+    go.addEventListener('click', function () {
+      location.hash = items.length === 1 ? '#/doc/' + items[0].doc.id : '#/expiries';
+    });
+    var x = U.el('button', { class: 'iconbtn', type: 'button', 'aria-label': 'סגירה' },
+      U.icon('i-x', 18));
+    x.addEventListener('click', function () {
+      S.set(C.K.lastNoticeDay, today).then(function () {
+        return S.set(C.K.lastNoticeSig, sig);
+      });
       bar.remove();
     });
+    U.add(bar, [go, x]);
     return bar;
   };
 
@@ -148,7 +175,7 @@
 
   Screens.quick = function () {
     var wrap = U.el('div', { class: 'scr' }, head('העתקה מהירה'));
-    var rows = Search.rows(state.docs, state.byId);
+    var rows = Search.rows(state.live, state.byId);
 
     var input = U.el('input', {
       class: 'search-i', type: 'search', inputmode: 'search',
@@ -209,13 +236,17 @@
       U.el('button', {
         class: 'iconbtn', type: 'button', 'aria-label': 'ישות חדשה',
         onClick: function () { Screens.entitySheet(null); }
-      }, U.icon('i-plus', 22))
+      }, U.icon('i-plus', 22)),
+      U.el('button', {
+        class: 'iconbtn', type: 'button', 'aria-label': 'עוזר',
+        onClick: function () { location.hash = '#/chat'; }
+      }, U.icon('i-chat', 22))
     ]));
 
     /* הבאנר היומי חי במסך הבית, לא במסך התפוגות. מנוע התפוגה חייב משטח
        בפתיחת האפליקציה — בלעדיו הוא קיים רק למי שנכנס אליו במיוחד. */
     if (home) {
-      var notice = Screens.noticeBanner(E.group(state.docs));
+      var notice = Screens.noticeBanner(E.group(state.live));
       if (notice) wrap.appendChild(notice);
     }
 
@@ -230,24 +261,64 @@
       return wrap;
     }
 
-    state.entities.forEach(function (e) {
-      var n = state.docs.filter(function (d) { return d.entityId === e.id; }).length;
-      var meta = C.ENTITY_TYPES.filter(function (t) { return t.key === e.type; })[0];
-      var card = U.el('button', { class: 'card', type: 'button' }, [
-        UI.avatar(e),
-        U.el('span', { class: 'card-b' }, [
-          U.el('span', { class: 'card-t', text: e.name }),
-          U.el('span', { class: 'card-s', text: (meta ? meta.label : '') + ' · ' + U.count(n, 'מסמך אחד', 'מסמכים') })
-        ]),
-        /* שברון שמצביע שמאלה — "היכנס". השברון היורד קורא כ"הרחב",
-           והשורה הזאת מנווטת למסך אחר. */
-        U.el('span', { class: 'card-go' }, U.icon('i-back', 18))
-      ]);
-      card.addEventListener('click', function () { location.hash = '#/entity/' + e.id; });
-      wrap.appendChild(card);
+    /* ---------- קיבוץ וסידור ----------
+       הסדר בין הקבוצות נגזר מ-`CONFIG.ENTITY_TYPES`, שאדם ראשון בו.
+       זו שורה בטבלה, לא סדר שכתוב כאן.
+
+       בתוך קבוצה הסדר הוא `sortOrder`, וגרירה כותבת אותו מחדש. זו
+       הדריסה: ברירת המחדל היא סדר היצירה, וגרירה גוברת עליה לתמיד. */
+    C.ENTITY_TYPES.forEach(function (meta) {
+      var mine = state.entities.filter(function (e) { return e.type === meta.key; });
+      if (!mine.length) return;
+
+      wrap.appendChild(U.el('div', { class: 'bucket-h', text: meta.label }));
+      var box = U.el('div', { class: 'egroup', dataset: { type: meta.key } });
+
+      mine.forEach(function (e) {
+        var n = state.live.filter(function (d) { return d.entityId === e.id; }).length;
+        var card = U.el('button', {
+          class: 'card ecard', type: 'button', dataset: { id: e.id }
+        }, [
+          UI.avatar(e),
+          U.el('span', { class: 'card-b' }, [
+            U.el('span', { class: 'card-t', text: e.name }),
+            U.el('span', { class: 'card-s', text: U.count(n, 'מסמך אחד', 'מסמכים') })
+          ]),
+          U.el('span', { class: 'card-grip', 'aria-hidden': 'true' }, U.icon('i-grip', 18)),
+          /* שברון שמצביע שמאלה — "היכנס". השברון היורד קורא כ"הרחב",
+             והשורה הזאת מנווטת למסך אחר. */
+          U.el('span', { class: 'card-go' }, U.icon('i-back', 18))
+        ]);
+        card.addEventListener('click', function () { location.hash = '#/entity/' + e.id; });
+        box.appendChild(card);
+      });
+
+      UI.reorder(box, {
+        itemSelector: '.ecard',
+        onDrop: function (els) { Screens.saveOrder(els); }
+      });
+      wrap.appendChild(box);
     });
 
+    wrap.appendChild(U.el('p', { class: 'muted small', text:
+      'לחיצה ארוכה על ישות וגרירה משנה את סדר התצוגה בתוך הקבוצה.' }));
+
     return wrap;
+  };
+
+  /* כותב `sortOrder` לכל הקבוצה, ולא רק לזו שזזה — מרווח קבוע מונע
+     התנגשות אחרי כמה גרירות, ורשומה בלי `sortOrder` מקבלת אחד. */
+  Screens.saveOrder = function (els) {
+    var ids = els.map(function (el) { return el.dataset.id; });
+    return Promise.all(ids.map(function (id, i) {
+      var e = state.byId[id];
+      if (!e || e.sortOrder === (i + 1) * 1000) return null;
+      e.sortOrder = (i + 1) * 1000;
+      return DB.saveEntity(e);
+    })).then(function () {
+      UI.toast('הסדר נשמר');
+      return Screens.reload();
+    });
   };
 
   Screens.entity = function (id) {
@@ -261,8 +332,8 @@
       }, U.icon('i-edit', 22))
     ]));
 
-    var mine = state.docs.filter(function (d) { return d.entityId === id; });
-    if (!mine.length) {
+    var all = state.docs.filter(function (d) { return d.entityId === id; });
+    if (!all.length) {
       wrap.appendChild(UI.empty({
         icon: 'i-folder',
         title: 'אין מסמכים ל' + e.name,
@@ -273,23 +344,49 @@
       return wrap;
     }
 
+    var mine = state.live.filter(function (d) { return d.entityId === id; });
+    var old = all.filter(function (d) { return V.isSuperseded(d, state.docs); });
+
     mine.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
-    mine.forEach(function (doc) {
-      var days = doc.expiryDate ? E.daysLeft(doc.expiryDate) : null;
-      var bucket = E.bucket(days);
-      var card = U.el('button', { class: 'card', type: 'button' }, [
-        U.el('span', { class: 'card-ic' }, U.icon(DT.icon(doc.typeKey), 22)),
-        U.el('span', { class: 'card-b' }, [
-          U.el('span', { class: 'card-t', text: doc.title }),
-          U.el('span', { class: 'card-s', text: DT.label(doc.typeKey) })
-        ]),
-        bucket ? UI.chip(bucket, E.label(days, doc.expiryDate)) : null
+    mine.forEach(function (doc) { wrap.appendChild(Screens.docTypeCard(doc)); });
+
+    /* גרסאות שנדחקו נשמרות ומוצגות מקופלות. "המסמך הקודם יישמר במערכת,
+       אבל המסמך המוצג הוא תמיד העדכני" — שתי המחציות של אותו משפט. */
+    if (old.length) {
+      var open = false;
+      var list = U.el('div');
+      var fold = U.el('button', { class: 'fold', type: 'button', 'aria-expanded': 'false' }, [
+        U.el('span', { text: 'גרסאות קודמות · ' + U.count(old.length, 'מסמך אחד', 'מסמכים') }),
+        U.icon('i-chevron', 18)
       ]);
-      card.addEventListener('click', function () { location.hash = '#/doc/' + doc.id; });
-      wrap.appendChild(card);
-    });
+      fold.addEventListener('click', function () {
+        open = !open;
+        fold.setAttribute('aria-expanded', String(open));
+        fold.classList.toggle('open', open);
+        U.clear(list);
+        if (open) old.forEach(function (d) { list.appendChild(Screens.docTypeCard(d, true)); });
+      });
+      wrap.appendChild(fold);
+      wrap.appendChild(list);
+    }
 
     return wrap;
+  };
+
+  Screens.docTypeCard = function (doc, faded) {
+    var days = doc.expiryDate ? E.daysLeft(doc.expiryDate) : null;
+    var bucket = E.bucket(days);
+    var card = U.el('button', { class: 'card' + (faded ? ' card-old' : ''), type: 'button' }, [
+      U.el('span', { class: 'card-ic' }, U.icon(DT.icon(doc.typeKey), 22)),
+      U.el('span', { class: 'card-b' }, [
+        U.el('span', { class: 'card-t', text: doc.title }),
+        U.el('span', { class: 'card-s', text: DT.label(doc.typeKey) })
+      ]),
+      (bucket && !faded) ? UI.chip(bucket, E.label(days, doc.expiryDate)) : null,
+      faded ? U.el('span', { class: 'chip ok', text: 'גרסה קודמת' }) : null
+    ]);
+    card.addEventListener('click', function () { location.hash = '#/doc/' + doc.id; });
+    return card;
   };
 
   /* ---------- כרטיס מסמך ---------- */
@@ -301,6 +398,10 @@
     var t = DT.get(doc.typeKey);
     var wrap = U.el('div', { class: 'scr scr-flush' }, backHead(doc.title, [
       U.el('button', {
+        class: 'iconbtn', type: 'button', 'aria-label': 'שיתוף',
+        onClick: function () { Screens.shareSheet(doc); }
+      }, U.icon('i-share', 22)),
+      U.el('button', {
         class: 'iconbtn', type: 'button', 'aria-label': 'עריכת מסמך',
         onClick: function () { location.hash = '#/doc/' + id + '/edit'; }
       }, U.icon('i-edit', 22))
@@ -308,6 +409,18 @@
 
     var body = U.el('div', { class: 'scr-body' });
     wrap.appendChild(body);
+
+    /* ---------- שתי הודעות הגרסה ---------- */
+    var successor = V.successor(doc, state.docs);
+    if (successor) {
+      var toNew = U.el('button', { class: 'notice notice-warn notice-go', type: 'button' }, [
+        U.icon('i-history', 20),
+        U.el('span', { text: 'זו גרסה קודמת. הגרסה העדכנית היא ' + successor.title + '.' })
+      ]);
+      toNew.addEventListener('click', function () { location.hash = '#/doc/' + successor.id; });
+      body.appendChild(toNew);
+    }
+    var prev = V.previous(doc, state.docs);
 
     /* עוגן ויזואלי. מסמך ללא קובץ מקבל פס אקסנט-רך, לא placeholder אפור */
     var headCard = U.el('div', { class: 'doc-head' });
@@ -375,6 +488,22 @@
         'לסוג הזה לא נשמרות סריקות. מקור האמת לצילום נמצא בנאביגו.' }));
     }
 
+    if (prev.length) {
+      var pbox = U.el('div', { class: 'files' },
+        U.el('div', { class: 'files-h', text: 'גרסאות קודמות' }));
+      prev.forEach(function (p) {
+        var row = U.el('div', { class: 'file-row' }, [
+          U.icon('i-history', 20),
+          U.el('span', { class: 'file-n', text: p.title }),
+          U.el('span', { class: 'file-s' },
+            U.bidi(p.expiryDate ? KINDS.get('date').format(p.expiryDate) : ''))
+        ]);
+        row.addEventListener('click', function () { location.hash = '#/doc/' + p.id; });
+        pbox.appendChild(row);
+      });
+      body.appendChild(pbox);
+    }
+
     body.appendChild(U.el('button', {
       class: 'btn ghost danger wide', type: 'button',
       onClick: function () {
@@ -406,10 +535,37 @@
       row.addEventListener('click', function () {
         DB.blob(f.blobId).then(function (rec) { if (rec) UI.viewer(rec, f.name); });
       });
-      var del = U.el('button', { class: 'iconbtn', type: 'button', 'aria-label': 'הסרת קובץ' },
-        U.icon('i-trash', 18));
-      del.addEventListener('click', function (ev) {
-        ev.stopPropagation();
+
+      function act(label, icon, fn) {
+        var b = U.el('button', { class: 'iconbtn', type: 'button', 'aria-label': label },
+          U.icon(icon, 18));
+        b.addEventListener('click', function (ev) { ev.stopPropagation(); fn(); });
+        row.appendChild(b);
+      }
+
+      act('שיתוף הקובץ', 'i-share', function () {
+        DB.blob(f.blobId).then(function (rec) {
+          if (!rec) { UI.toast('הקובץ לא נמצא'); return; }
+          return Share.file(rec.data, f.name, f.mime).then(function (mode) {
+            if (mode === 'download') UI.toast('הקובץ הורד');
+          });
+        });
+      });
+
+      act('שינוי שם הקובץ', 'i-rename', function () {
+        UI.prompt({
+          title: 'שינוי שם הקובץ', label: 'שם', value: f.name,
+          empty: 'צריך שם לקובץ'
+        }).then(function (name) {
+          if (name == null || name === f.name) return;
+          return DB.renameFile(doc, f.blobId, name).then(function () {
+            UI.toast('השם שונה');
+            window.App.render();
+          });
+        });
+      });
+
+      act('הסרת קובץ', 'i-trash', function () {
         UI.confirm({ title: 'הסרת קובץ', body: f.name, ok: 'הסרה', danger: true })
           .then(function (yes) {
             if (!yes) return;
@@ -419,7 +575,7 @@
             });
           });
       });
-      row.appendChild(del);
+
       box.appendChild(row);
     });
 
@@ -427,6 +583,68 @@
     add.addEventListener('click', function () { window.App.pickFiles(doc); });
     box.appendChild(add);
     return box;
+  };
+
+  /* ---------- ייצוא ----------
+     שני דברים שונים לגמרי יוצאים מכאן: הקובץ עצמו, ופרטי המסמך כטקסט.
+     הבחירה מפורשת, כי שליחת צילום של תעודת זהות בוואטסאפ אינה אותה
+     פעולה כמו שליחת מספר הפוליסה. */
+  Screens.shareSheet = function (doc) {
+    var files = doc.files || [];
+
+    function lines() {
+      var out = [doc.title, DT.label(doc.typeKey)];
+      var ent = state.byId[doc.entityId];
+      if (ent) out.push(ent.name);
+      out.push('');
+      (doc.fields || []).forEach(function (f) {
+        out.push(f.label + ': ' + KINDS.copyValue(f));
+      });
+      if (doc.issueDate) out.push('תאריך הנפקה: ' + KINDS.get('date').format(doc.issueDate));
+      if (doc.expiryDate) out.push('בתוקף עד: ' + KINDS.get('date').format(doc.expiryDate));
+      return out.join('\n');
+    }
+
+    var items = files.map(function (f) {
+      return {
+        icon: f.mime === 'application/pdf' ? 'i-file' : 'i-image',
+        t: f.name, s: U.bytes(f.size),
+        go: function () {
+          DB.blob(f.blobId).then(function (rec) {
+            if (!rec) { UI.toast('הקובץ לא נמצא'); return; }
+            return Share.file(rec.data, f.name, f.mime).then(function (mode) {
+              if (mode === 'download') UI.toast('הקובץ הורד');
+            });
+          });
+        }
+      };
+    });
+
+    items.push({
+      icon: 'i-paste', t: 'הפרטים כטקסט',
+      s: 'בלי הצילום · כולל ערכים רגישים',
+      go: function () {
+        Share.text(doc.title, lines()).then(function (mode) {
+          if (mode === 'copy') UI.toast('הועתק ללוח');
+        });
+      }
+    });
+
+    var sheet = UI.sheet('שיתוף', [
+      U.el('div', { class: 'routes' }, items.map(function (it) {
+        var b = U.el('button', { class: 'route', type: 'button' }, [
+          U.icon(it.icon, 24),
+          U.el('span', {}, [
+            U.el('span', { class: 'route-t', text: it.t }),
+            U.el('span', { class: 'route-s', text: it.s })
+          ])
+        ]);
+        b.addEventListener('click', function () { sheet.close(); it.go(); });
+        return b;
+      })),
+      U.el('p', { class: 'muted small', text:
+        'מה שיוצא מכאן יוצא מהאפליקציה. אין דרך לבטל שליחה.' })
+    ]);
   };
 
   /* ---------- טופס מסמך ---------- */
@@ -576,7 +794,15 @@
       }));
       if (!doc && files.length) r.value.source = window.App.pendingSource || 'upload';
 
-      DB.saveDoc(r.value, blobs).then(function () {
+      /* ---------- זיהוי מסמך מעודכן ----------
+         אותו סוג, אותה ישות, אותם שדות חובה — אותו מסמך. מה שקובע מי
+         הגרסה הנוכחית הוא התוקף, לא סדר ההעלאה. `updatedAt` נחתם כאן
+         כי הוא שובר התיקו האחרון בדירוג. SPEC §6.6 */
+      r.value.updatedAt = U.now();
+      var plan = V.plan(r.value, state.docs);
+      if (plan.supersededBy) r.value.supersededBy = plan.supersededBy;
+
+      DB.supersede(r.value, plan.supersede, blobs).then(function () {
         return Promise.all(people.map(function (p) {
           return DB.saveEntity({
             id: U.id(), type: 'person', name: p.name,
@@ -591,6 +817,12 @@
           ? U.count(r.unverified, 'נשמר · שדה אחד לאימות', 'נשמר · שדות לאימות')
           : 'נשמר';
         if (people.length) msg += ' · ' + U.count(people.length, 'ישות נוצרה', 'ישויות נוצרו');
+        if (plan.supersede.length) {
+          msg = U.count(plan.supersede.length,
+            'נשמר · הגרסה הקודמת נשמרה בצד', 'נשמר · הגרסאות הקודמות נשמרו בצד');
+        } else if (plan.supersededBy) {
+          msg = 'נשמר כגרסה קודמת — יש מסמך עדכני יותר';
+        }
         UI.toast(msg);
         location.hash = '#/doc/' + r.value.id;
       });
@@ -766,10 +998,21 @@
       tabindex: '0'
     }, U.el('span', { class: 'paste-hint', text: 'הדבק כאן' }));
 
+    /* מסלול שלישי, לקובץ שהועתק ממנהל הקבצים. הדבקה של קובץ מגיעה
+       כ-`DataTransfer.files` וזה עובד כאן; מה שאינה עוברת בכלל היא
+       קריאת הלוח בקוד, ולכן צריך גם כפתור בחירה שלא תלוי בלוח. */
+    var pick = U.el('button', { class: 'btn ghost wide', type: 'button' }, 'בחירת קובץ מהמכשיר');
+    pick.addEventListener('click', function () {
+      sheet.close();
+      window.App.pickFiles(null, false);
+    });
+
     var sheet = UI.sheet('הדבקה מהלוח', [
       U.el('p', { class: 'sheet-p', text: reason ||
-        'הצמד את הסמן למסגרת והדבק — Ctrl+V במחשב, או לחיצה ארוכה והדבקה בנייד.' }),
-      target
+        'הצמד את הסמן למסגרת והדבק — Ctrl+V במחשב, או לחיצה ארוכה והדבקה בנייד. ' +
+        'אפשר גם להדביק קובץ שהעתקת ממנהל הקבצים, או לגרור אותו לכאן.' }),
+      target,
+      pick
     ]);
 
     target.addEventListener('paste', function (e) {
@@ -780,6 +1023,141 @@
     });
 
     setTimeout(function () { target.focus(); }, 80);
+  };
+
+  /* ---------- עוזר ----------
+     שיחה שיש לה גישה לנתונים ויכולת לשנות אותם — אבל לא לכתוב בעצמה.
+     כל שינוי מגיע ככרטיס לאישור, ורק כפתור "החלה" נוגע ב-DB. זה אותו
+     כלל של מסך האישור: פלט מודל אינו נשמר בשקט. */
+
+  Screens.chat = function () {
+    var Chat = window.Chat;
+    var wrap = U.el('div', { class: 'scr' }, backHead('עוזר'));
+
+    if (!Chat.ready()) {
+      var noKey = !window.Gemini.configured();
+      wrap.appendChild(UI.empty({
+        icon: 'i-chat',
+        title: noKey ? 'העוזר דורש מפתח Gemini' : 'העוזר דורש הסכמה',
+        sub: noKey
+          ? 'הוא אופציונלי. כל השאר באפליקציה עובד בלעדיו.'
+          : 'השיחה שולחת לגוגל את השמות, הסוגים והשדות של הכספת. צריך לאשר זאת בהגדרות.',
+        action: 'להגדרות',
+        onAction: function () { location.hash = '#/settings'; }
+      }));
+      return wrap;
+    }
+
+    var log = U.el('div', { class: 'chat-log' });
+    wrap.appendChild(log);
+
+    var input = U.el('textarea', {
+      class: 'f-i f-multi chat-in', rows: '2',
+      placeholder: 'לדוגמה: קח מהספח את הפרטים של איתמר והוסף לישות שלו',
+      'aria-label': 'הודעה לעוזר'
+    });
+    var sendB = U.el('button', { class: 'btn', type: 'button' }, 'שליחה');
+    wrap.appendChild(U.el('div', { class: 'chat-bar' }, [input, sendB]));
+
+    function bubble(role, text) {
+      return U.el('div', { class: 'bub bub-' + role }, U.el('span', { text: text }));
+    }
+
+    function paint() {
+      U.clear(log);
+      if (!Chat.log.length) {
+        log.appendChild(U.el('p', { class: 'muted small', text:
+          'העוזר רואה את הישויות והשדות שלך, ויכול להציע שינויים. שום שינוי ' +
+          'אינו נשמר לפני שאתה מאשר אותו.' }));
+      }
+      Chat.log.forEach(function (m) {
+        log.appendChild(bubble(m.role, m.text));
+        if (m.ops && m.ops.length) log.appendChild(opsCard(m));
+        if (m.errors && m.errors.length) {
+          log.appendChild(U.el('div', { class: 'notice notice-warn' }, [
+            U.icon('i-bell', 20),
+            U.el('span', { text: m.errors.join(' · ') })
+          ]));
+        }
+      });
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function opsCard(m) {
+      var chosen = {};
+      m.ops.forEach(function (o, i) { chosen[i] = true; });
+
+      var rows = m.ops.map(function (o, i) {
+        var box = U.el('span', { class: 'box' });
+        var row = U.el('button', { class: 'chk on', type: 'button', 'aria-pressed': 'true' }, [
+          box, U.el('span', { text: o.text })
+        ]);
+        row.addEventListener('click', function () {
+          chosen[i] = !chosen[i];
+          row.setAttribute('aria-pressed', String(chosen[i]));
+          row.classList.toggle('on', chosen[i]);
+        });
+        return row;
+      });
+
+      var apply = U.el('button', { class: 'btn wide', type: 'button' }, 'החלה');
+      apply.addEventListener('click', function () {
+        var picked = m.ops.filter(function (o, i) { return chosen[i]; });
+        if (!picked.length) { UI.toast('לא נבחר שינוי'); return; }
+        apply.disabled = true;
+        window.Chat.apply(picked).then(function () {
+          m.ops = null;
+          m.applied = picked.length;
+          m.text += '\n\n' + U.count(picked.length, 'שינוי אחד הוחל', 'שינויים הוחלו');
+          UI.toast(U.count(picked.length, 'שינוי אחד הוחל', 'שינויים הוחלו'));
+          return Screens.reload();
+        }).then(paint);
+      });
+
+      return U.el('div', { class: 'checks' }, rows.concat([
+        U.el('div', { class: 'sheet-actions col' }, [apply])
+      ]));
+    }
+
+    function send() {
+      var q = input.value.trim();
+      if (!q) return;
+      input.value = '';
+      Chat.log.push({ role: 'user', text: q });
+      paint();
+
+      var pending = { role: 'model', text: 'חושב…' };
+      Chat.log.push(pending);
+      paint();
+      sendB.disabled = true;
+
+      var ctx = window.Chat.context(state.entities, state.docs);
+      var turns = Chat.log
+        .filter(function (m) { return m !== pending; })
+        .slice(-Chat.HISTORY_MAX)
+        .map(function (m) { return { role: m.role, text: m.text }; });
+
+      window.Gemini.chat(window.Chat.prompt(ctx), turns).then(function (json) {
+        var out = window.Chat.compile((json && json.actions) || [],
+          { entities: state.entities, docs: state.live });
+        pending.text = (json && json.reply) || 'אין לי תשובה.';
+        pending.ops = out.ops;
+        pending.errors = out.errors;
+      }, function (e) {
+        pending.text = 'הבקשה נכשלה: ' + e.message;
+      }).then(function () {
+        sendB.disabled = false;
+        paint();
+      });
+    }
+
+    sendB.addEventListener('click', send);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+    });
+
+    paint();
+    return wrap;
   };
 
   /* ---------- הגדרות ---------- */
@@ -1037,6 +1415,23 @@
           ok: 'מאשר'
         }).then(function (yes) {
           if (yes) S.set(C.K.geminiConsentImage, true);
+          else btn.setAttribute('aria-checked', 'false');
+        });
+      }));
+
+    /* הסכמה שלישית, ורחבה מהשתיים: מפת הכספת ולא מסמך בודד. */
+    gemKids.push(toggleRow('עוזר השיחה',
+        'שמות, סוגים ושדות של כל הכספת נשלחים לגוגל בכל הודעה',
+      S.get(C.K.geminiConsentChat), function (v, btn) {
+        if (!v) { S.set(C.K.geminiConsentChat, false); return; }
+        UI.confirm({
+          title: 'שליחת נתוני הכספת לגוגל',
+          body: 'העוזר צריך לראות את הנתונים כדי לענות עליהם. בכל הודעה נשלחות ' +
+                'הישויות והשדות של כל המסמכים — כולל מספרי תעודת זהות ופוליסות. ' +
+                'שדות הדרכון אינם נשלחים.',
+          ok: 'מאשר'
+        }).then(function (yes) {
+          if (yes) S.set(C.K.geminiConsentChat, true);
           else btn.setAttribute('aria-checked', 'false');
         });
       }));

@@ -131,12 +131,29 @@ body.locked .app { padding: 0; }
 .card-t { font-size: 15px; font-weight: 600; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-s { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
 .card-go { flex: none; color: var(--ink-3); display: grid; place-items: center; }
+.egroup { display: flex; flex-direction: column; }
+.egroup .card + .card { margin-top: 10px; }
+.card-grip { flex: none; color: var(--ink-3); display: grid; place-items: center; opacity: .4; }
+.egroup.reordering { touch-action: none; }
+.egroup.reordering .card-grip { opacity: 1; }
+.card.dragging {
+  opacity: .92; box-shadow: 0 8px 24px rgba(18, 19, 24, .18);
+  transform: scale(1.02); position: relative; z-index: 2;
+}
+.card-old { opacity: .72; }
 .card-ic { flex: none; width: 40px; height: 40px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--ink-2); display: grid; place-items: center; }
 
 .av {
   flex: none; width: 40px; height: 40px; border-radius: var(--r-pill);
   display: grid; place-items: center; color: #fff; font-size: 15px; font-weight: 600;
+  overflow: hidden;
 }
+.av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.av-lg { width: 64px; height: 64px; font-size: 24px; }
+
+.av-row { display: flex; align-items: center; gap: 14px; }
+.av-acts { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.av-acts .btn { margin-top: 0; padding: 8px 16px; font-size: 13.5px; }
 
 /* ============ צ׳יפ ============ */
 .chip {
@@ -211,6 +228,12 @@ body.privacy .sens { filter: blur(6px); user-select: none; }
   border-radius: var(--r-row); font-size: 13.5px; font-weight: 500; margin-bottom: 14px;
 }
 .notice span { flex: 1; }
+.notice-go {
+  display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+  background: transparent; border: 0; padding: 0; text-align: start;
+  color: inherit; font: inherit; font-weight: 500; cursor: pointer;
+}
+button.notice { width: 100%; border: 0; text-align: start; font: inherit; font-weight: 500; cursor: pointer; }
 .notice-warn { background: var(--exp-d30-bg); color: var(--exp-d30-fg); }
 .notice-info { background: var(--surface-2); color: var(--ink-2); }
 
@@ -263,7 +286,10 @@ body.dragging .empty { border-color: var(--accent); background: var(--accent-sof
 /* ============ מסמך ============ */
 .scr-flush { }
 .doc-head { background: var(--surface); border-radius: var(--r-card); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 12px; }
-.anchor { display: block; width: 100%; aspect-ratio: 16/10; object-fit: cover; background: var(--surface-2); border: 0; cursor: pointer; }
+/* `object-position` בראש התמונה ולא במרכזה. תעודת זהות עם ספח מצולמת
+   כמלבן גבוה, והמרכז שלו הוא הספח — כלומר בדיוק החלק שאינו התעודה.
+   העוגן הוויזואלי אמור להראות את מה שמזהה את המסמך. */
+.anchor { display: block; width: 100%; aspect-ratio: 16/10; object-fit: cover; object-position: 50% 0; background: var(--surface-2); border: 0; cursor: pointer; }
 .anchor-pdf { aspect-ratio: auto; max-height: 260px; overflow: hidden; background: var(--surface-2); }
 .anchor-pdf .pdf-page { border-radius: 0; box-shadow: none; }
 .anchor-pdf .empty { margin: 0; border: 0; }
@@ -413,6 +439,23 @@ body.locked .nav, body.locked .fab { display: none; }
 
 .viewer { display: flex; flex-direction: column; gap: 10px; }
 .viewer-img { display: block; width: 100%; height: auto; border-radius: var(--r-row); }
+
+/* משטח הזום. `touch-action: none` — שתי המחוות נכתבות ב-UI.zoomable,
+   כדי שהדפדפן לא ייקח לעצמו את הגלילה באמצע צביטה. */
+.zoom-stage {
+  overflow: auto; max-height: 74vh; touch-action: none; overscroll-behavior: contain;
+  border-radius: var(--r-row); background: var(--surface-2);
+  -webkit-overflow-scrolling: touch;
+}
+.zoom-stage.zoomed { cursor: grab; }
+.zoom-inner { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.zoom-inner > * { flex: none; }
+
+.viewer-bar {
+  display: flex; align-items: center; gap: 6px; position: sticky; bottom: 0;
+  background: var(--bg); padding-top: 6px;
+}
+.viewer-hint { flex: 1; font-size: 12.5px; color: var(--ink-3); text-align: center; }
 .pdf-page {
   display: block; width: 100%; height: auto;
   border-radius: var(--r-row); box-shadow: var(--shadow); background: #fff;
@@ -496,3 +539,19 @@ body.locked .syncdot { display: none; }
     scroll-behavior: auto !important;
   }
 }
+
+/* ============ עוזר ============ */
+.chat-log { display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
+.bub {
+  max-width: 88%; padding: 10px 14px; border-radius: var(--r-card);
+  font-size: 14.5px; white-space: pre-wrap; box-shadow: var(--shadow);
+}
+.bub-user { align-self: flex-start; background: var(--accent); color: var(--accent-on); }
+.bub-model { align-self: flex-end; background: var(--surface); color: var(--ink); }
+.chat-bar {
+  position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  display: flex; gap: 8px; align-items: flex-end;
+  background: var(--bg); padding: 10px 0 4px;
+}
+.chat-in { flex: 1; min-height: 48px; }
+.chat-bar .btn { margin-top: 0; flex: none; padding: 13px 18px; }

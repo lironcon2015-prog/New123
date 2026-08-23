@@ -51,11 +51,66 @@
       return b;
     }));
 
+    /* ---------- אווטאר ----------
+       תמונה גוברת על האות. כל עוד אין תמונה, האות והצבע נשארים —
+       ולכן ישות בלי תמונה נראית בדיוק כמו קודם. */
+    var avatarImage = e.avatarImage || '';
+    var preview = U.el('span', { class: 'av av-lg' });
+    var pickI = U.el('input', {
+      type: 'file', accept: 'image/*', class: 'hidden-input',
+      id: 'e-avatar', 'aria-label': 'תמונת ישות'
+    });
+    var avErr = U.el('div', { class: 'f-err' });
+    var removeB = U.el('button', { class: 'btn ghost', type: 'button' }, 'הסרת התמונה');
+
+    function paintAvatar() {
+      U.clear(preview);
+      preview.style.background = chosen;
+      preview.classList.toggle('av-img', !!avatarImage);
+      if (avatarImage) preview.appendChild(U.el('img', { src: avatarImage, alt: '' }));
+      else preview.appendChild(U.el('span', { text: (nameI.value.trim()[0] || '?') }));
+      removeB.style.display = avatarImage ? '' : 'none';
+    }
+
+    nameI.addEventListener('input', paintAvatar);
+    pickI.addEventListener('change', function () {
+      var f = pickI.files && pickI.files[0];
+      pickI.value = '';
+      if (!f) return;
+      avErr.textContent = '';
+      window.Files.avatar(f).then(function (url) {
+        avatarImage = url;
+        paintAvatar();
+      }, function (err) { avErr.textContent = err.message; });
+    });
+    removeB.addEventListener('click', function () { avatarImage = ''; paintAvatar(); });
+
+    var avatarRow = U.el('div', { class: 'av-row' }, [
+      preview,
+      U.el('div', { class: 'av-acts' }, [
+        U.el('button', {
+          class: 'btn ghost', type: 'button',
+          onClick: function () { pickI.click(); }
+        }, avatarImage ? 'החלפת התמונה' : 'בחירת תמונה'),
+        removeB
+      ]),
+      pickI
+    ]);
+
+    /* בחירת צבע צריכה להשתקף בתצוגה המקדימה, ולכן העטיפה */
+    var repaintOnColor = swatches.querySelectorAll('.sw');
+    Array.prototype.forEach.call(repaintOnColor, function (b) {
+      b.addEventListener('click', function () { paintAvatar(); });
+    });
+
     var form = U.el('div', { class: 'form' }, [
       group([label('שם', 'e-name'), nameI]),
       group([label('סוג', 'e-type'), typeS]),
+      group([label('תמונה', null), avatarRow, avErr]),
       group([label('צבע', null), swatches])
     ]);
+
+    paintAvatar();
 
     return {
       element: form,
@@ -69,6 +124,7 @@
             name: name,
             color: chosen,
             avatar: name[0],
+            avatarImage: avatarImage || '',
             sortOrder: e.sortOrder != null ? e.sortOrder : Date.now(),
             deleted: 0
           }
@@ -336,6 +392,9 @@
             issueDate: issue || null,
             expiryDate: expiry || null,
             files: (doc && doc.files) || [],
+            /* מצביע הגרסה שורד עריכה. בלעדיו, עריכה של גרסה קודמת
+               הייתה מחזירה אותה לתצוגה ומציגה שני מסמכים נוכחיים. */
+            supersededBy: (doc && doc.supersededBy) || null,
             source: (doc && doc.source) || 'upload',
             notes: notesI ? notesI.value.trim() : '',
             deleted: 0

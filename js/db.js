@@ -152,6 +152,39 @@
     });
   };
 
+  /* שם הקובץ הוא מטא-דאטה של המסמך ולא של ה-blob — הוא זה שנוסע לדרייב
+     ב-`db.json` ומופיע בשם הקובץ שם. השינוי נוגע ברשומת המסמך בלבד. */
+  DB.renameFile = function (doc, blobId, name) {
+    var hit = (doc.files || []).filter(function (f) { return f.blobId === blobId; })[0];
+    if (!hit) return Promise.resolve(doc);
+    hit.name = name;
+    return DB.saveDoc(doc, []);
+  };
+
+  /* סימון גרסה קודמת. מצביע אחד קדימה, בטרנזקציה אחת עם המסמך שדחק
+     אותה — כישלון באמצע לא משאיר שתי גרסאות שתיהן "נוכחיות". SPEC §6.6 */
+  DB.supersede = function (newDoc, oldIds, newBlobs) {
+    return tx(['docs', 'blobs'], 'readwrite').then(function (t) {
+      var store = t.objectStore('docs');
+      newDoc.updatedAt = U.now();
+      if (newDoc.deleted == null) newDoc.deleted = 0;
+      store.put(newDoc);
+      var bs = t.objectStore('blobs');
+      (newBlobs || []).forEach(function (b) { bs.put(b); });
+
+      (oldIds || []).forEach(function (id) {
+        store.get(id).onsuccess = function (e) {
+          var rec = e.target.result;
+          if (!rec || rec.deleted) return;
+          rec.supersededBy = newDoc.id;
+          rec.updatedAt = U.now();
+          store.put(rec);
+        };
+      });
+      return done(t).then(function () { return newDoc; }).then(wrote);
+    });
+  };
+
   DB.removeFile = function (doc, blobId) {
     doc.files = (doc.files || []).filter(function (f) { return f.blobId !== blobId; });
     doc.updatedAt = U.now();

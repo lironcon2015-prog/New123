@@ -92,6 +92,13 @@
     });
   };
 
+  /* שם ברירת מחדל לקובץ שהגיע מהלוח — שם אין לו אחד */
+  F.nameFor = function (mime) {
+    var ext = { 'application/pdf': '.pdf', 'image/png': '.png', 'image/webp': '.webp' }[mime] ||
+              (String(mime || '').indexOf('image/') === 0 ? '.jpg' : '');
+    return 'הדבקה' + ext;
+  };
+
   /* מ-clipboard או מ-drop */
   F.fromDataTransfer = function (dt) {
     if (!dt) return [];
@@ -104,6 +111,40 @@
       }
     });
     return out;
+  };
+
+  /* ---------- אווטאר של ישות ----------
+     ריבוע חתוך מהמרכז, מוקטן ומקודד ל-data URL. נשמר על רשומת הישות
+     ולא בחנות ה-blobs: הוא נצבע בכל כרטיס ובכל שורה, ותצוגה שמחכה
+     לקריאה אסינכרונית מהדיסק מהבהבת. הוא גם מסתנכרן לדרייב עם הישות
+     בלי שורת קוד נוספת בסנכרון.
+
+     ההקטנה ל-192px נעשית פעם אחת בבחירה, ולכן המחיר משולם שם ולא בכל
+     רינדור. איכות יורדת בלולאה עד שהתוצאה נכנסת לתקרה. */
+  F.avatar = function (file) {
+    if (typeof createImageBitmap !== 'function') {
+      return Promise.reject(new Error('הדפדפן הזה לא יודע לקרוא את הקובץ'));
+    }
+    return createImageBitmap(file).then(function (bitmap) {
+      var edge = Math.min(bitmap.width, bitmap.height);
+      var sx = Math.round((bitmap.width - edge) / 2);
+      var sy = Math.round((bitmap.height - edge) / 2);
+      var size = C.AVATAR_EDGE;
+      var canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      canvas.getContext('2d').drawImage(bitmap, sx, sy, edge, edge, 0, 0, size, size);
+      if (bitmap.close) bitmap.close();
+
+      var q = C.AVATAR_QUALITY, url = '';
+      for (var i = 0; i < 4; i++) {
+        url = canvas.toDataURL('image/jpeg', q);
+        if (url.length * 0.75 <= C.AVATAR_MAX_BYTES) return url;
+        q -= 0.15;
+      }
+      return url;
+    }).catch(function () {
+      throw new Error('לא הצלחתי לקרוא את התמונה. נסה קובץ אחר.');
+    });
   };
 
   F.label = function (rec) {
