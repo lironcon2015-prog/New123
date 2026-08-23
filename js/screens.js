@@ -1395,20 +1395,54 @@
     }
     wrap.appendChild(section('פרטיות', pinKids));
 
-    /* ---- גיבוי לדרייב ---- */
+    /* ---- גיבוי לדרייב ----
+       שתי דרכים, ואותו חוזה תחבורה מאחוריהן. ההבדל היחיד שמעניין את
+       המשתמש הוא התחברות: הגשר לא מבקש אותה אף פעם, ו-OAuth מבקש בכל
+       פתיחה. DEC-31. */
+    var mode = S.get(C.K.backupMode) || 'bridge';
+
+    var bridgeUrlI = U.el('input', {
+      class: 'f-i', type: 'text', id: 'b-url', dir: 'ltr',
+      autocomplete: 'off', spellcheck: 'false',
+      placeholder: 'https://script.google.com/…/exec',
+      value: S.get(C.K.bridgeUrl) || ''
+    });
+    var bridgeTokI = U.el('input', {
+      class: 'f-i', type: 'password', id: 'b-token', dir: 'ltr',
+      autocomplete: 'off', spellcheck: 'false',
+      placeholder: 'הסוד שהגדרת ב-SECRET',
+      value: S.get(C.K.bridgeToken) || ''
+    });
+    var bridgeMsg = U.el('div', { class: 'f-err', role: 'status' });
+
     var idInput = U.el('input', {
       class: 'f-i', type: 'text', id: 'd-client', dir: 'ltr',
       autocomplete: 'off', spellcheck: 'false',
       placeholder: '…apps.googleusercontent.com', value: S.get(C.K.driveClientId) || ''
     });
     var driveMsg = U.el('div', { class: 'f-err', role: 'status' });
-    var connected = window.Drive.connected();
+    var connected = window.App.transport().connected();
     var last = S.get(C.K.lastSync);
 
     var driveKids = [
       U.el('p', { class: 'muted small', text:
         'אופציונלי. בלי חיבור הכל נשמר על המכשיר הזה בלבד, ואין גיבוי — ' +
         'מחיקת נתוני האתר מוחקת הכל.' }),
+      segRow('שיטה', [
+        { key: 'bridge', label: 'גשר Apps Script' },
+        { key: 'oauth', label: 'התחברות לגוגל' }
+      ], mode, function (k) {
+        S.set(C.K.backupMode, k).then(function () {
+          window.Sync.transport = window.App.transport();
+          window.App.render();
+        });
+      }),
+      U.el('p', { class: 'muted small', text: mode === 'oauth'
+        ? 'התחברות לגוגל מבקשת אישור בכל פתיחה של האפליקציה, ובתמורה ההרשאה ' +
+          'מצומצמת לקבצים שהאפליקציה עצמה יצרה.'
+        : 'הגשר רץ בחשבון הגוגל שלך ולכן **אינו מבקש התחברות אף פעם** — ' +
+          'מדביקים כתובת וסוד פעם אחת. הסוד הוא מה שמגן, ולכן הוא חייב ' +
+          'להיות אקראי.' }),
       U.el('div', { class: 'set-row' }, [
         U.el('span', { class: 'set-b' }, [
           U.el('span', { class: 'set-l', text: 'חיבור' }),
@@ -1423,6 +1457,91 @@
         U.el('span', { class: 'set-s' },
           U.bidi(new Date(last).toLocaleString('he-IL')))
       ]));
+    }
+
+    /* ---- הגשר ----
+       שני שדות וכפתור בדיקה. אין כאן "התחברות" מפני שאין מה לחבר:
+       הגשר רץ בחשבון, והדפדפן רק פונה אליו. */
+    if (mode === 'bridge') {
+      driveKids.push(U.el('details', { class: 'howto' }, [
+        U.el('summary', { text: 'איך מקימים את הגשר' }),
+        U.el('ol', { class: 'steps' }, [
+          U.el('li', { text: 'script.google.com → New project' }),
+          U.el('li', { text: 'הדבק את tools/bridge.gs מהריפו במקום התוכן' }),
+          U.el('li', { text: 'שנה את SECRET למחרוזת אקראית ארוכה' }),
+          U.el('li', { text: 'Deploy → New deployment → Web app' }),
+          U.el('li', { text: 'Execute as: Me · Who has access: Anyone' }),
+          U.el('li', { text: 'אשר את ההרשאות, והעתק את הכתובת שמסתיימת ב-‎/exec' })
+        ]),
+        U.el('p', { class: 'muted small', text:
+          'הכתובת והסוד הם צמד גישה: מי שמחזיק בשניהם יכול לקרוא ולכתוב ' +
+          'בתיקיית DocVault שלך. הגשר אינו נוגע בשום קובץ מחוצה לה. ' +
+          'אם הסוד דלף — פרוס מחדש עם סוד חדש, וזה מבטל את הישן מיידית.' })
+      ]));
+
+      driveKids.push(U.el('div', { class: 'f-g' }, [
+        U.el('label', { class: 'f-l', for: 'b-url', text: 'כתובת הגשר' }),
+        bridgeUrlI
+      ]));
+      driveKids.push(U.el('div', { class: 'f-g' }, [
+        U.el('label', { class: 'f-l', for: 'b-token', text: 'סוד' }),
+        bridgeTokI, bridgeMsg
+      ]));
+
+      driveKids.push(U.el('button', {
+        class: 'btn wide', type: 'button',
+        onClick: function (e) {
+          var btn = e.currentTarget;
+          btn.disabled = true;
+          bridgeMsg.textContent = 'בודק…';
+          S.set(C.K.bridgeUrl, bridgeUrlI.value.trim()).then(function () {
+            return S.set(C.K.bridgeToken, bridgeTokI.value.trim());
+          }).then(function () {
+            window.Sync.transport = window.App.transport();
+            return window.Bridge.connect();
+          }).then(function (name) {
+            bridgeMsg.textContent = '';
+            UI.toast('הגשר עונה · ' + name);
+            return window.Sync.run({ silent: false });
+          }).then(function () {
+            btn.disabled = false;
+            window.App.render();
+          }, function (err) {
+            btn.disabled = false;
+            bridgeMsg.textContent = err.message;
+          });
+        }
+      }, 'שמירה ובדיקת הגשר'));
+
+      if (connected) {
+        driveKids.push(U.el('button', {
+          class: 'btn ghost wide', type: 'button',
+          onClick: function () {
+            UI.toast('מסנכרן…');
+            window.Sync.run({ silent: false }).then(function (r) {
+              UI.toast(r.error ? 'הסנכרון נכשל: ' + r.error : 'הסנכרון הושלם');
+              window.App.render();
+            });
+          }
+        }, 'סנכרון עכשיו'));
+
+        driveKids.push(U.el('button', {
+          class: 'btn ghost danger wide', type: 'button',
+          onClick: function () {
+            UI.confirm({
+              title: 'ניתוק הגשר',
+              body: 'הכתובת והסוד יימחקו מהמכשיר. הנתונים יישארו במכשיר וגם בדרייב.',
+              ok: 'ניתוק', danger: true
+            }).then(function (yes) {
+              if (!yes) return;
+              window.Bridge.disconnect().then(function () {
+                UI.toast('נותק');
+                window.App.render();
+              });
+            });
+          }
+        }, 'ניתוק הגשר'));
+      }
     }
 
     /* ---- מאיפה משיגים את המזהה ----
@@ -1444,6 +1563,7 @@
       U.el('li', { text: 'העתק את ה-Client ID לשדה שלמטה' })
     ]);
 
+    if (mode === 'oauth') {
     driveKids.push(U.el('details', { class: 'howto' }, [
       U.el('summary', { text: 'איך משיגים מזהה לקוח' }),
       steps,
@@ -1507,6 +1627,7 @@
           });
         }
       }, 'סנכרון עכשיו'));
+    }
     }
 
     driveKids.push(U.el('p', { class: 'muted small', text:

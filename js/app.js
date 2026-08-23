@@ -49,6 +49,12 @@
     }
   }
 
+  /* התחבורה הפעילה. נקראת גם אחרי שינוי בהגדרות, כדי שהחלפה לא תדרוש
+     רענון — הצינור קורא את `Sync.transport` בכל הרצה. */
+  App.transport = function () {
+    return S.get(C.K.backupMode) === 'oauth' ? window.Drive : window.Bridge;
+  };
+
   App.render = function () {
     return Screens.reload().then(function () {
       var parts = parse();
@@ -515,8 +521,11 @@
     Vault.watch(showLock);
     Updater.boot();
 
-    /* ---- סנכרון ---- */
-    window.Sync.transport = window.Drive;
+    /* ---- סנכרון ----
+       שתי תחבורות מממשות את אותו חוזה, והבחירה היא שורה אחת. `bridge`
+       הוא ברירת המחדל מפני שאין בו התחברות חוזרת (DEC-31); `oauth`
+       נשאר למי שמעדיף את ההרשאות המצומצמות של `drive.file`. */
+    window.Sync.transport = App.transport();
     DB.onWrite = function () { window.Sync.queue(); };
 
     /* שלושה טריגרים: עלייה, חזרה לפוקוס, וחזרת רשת. האחרון הוא שורה אחת

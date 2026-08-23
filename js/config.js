@@ -31,6 +31,10 @@
 
     GEMINI_TIMEOUT_MS: 45000,
 
+    /* תקרת קובץ בגשר. base64 מנפח בשליש, ולתשובת Apps Script יש גבול —
+       קובץ שחורג נעצר בצד הלקוח עם מספר, ולא נכשל אצל גוגל בלי הודעה. */
+    BRIDGE_MAX_BYTES: 12 * 1024 * 1024,
+
     DEFAULT_PALETTE: 'a',
     DEFAULT_TYPEFACE: 'assistant',
     DEFAULT_AUTOLOCK_MINUTES: 5,
@@ -49,6 +53,9 @@
       geminiConsentChat: 'geminiConsentChat',
       geminiLastModel: 'geminiLastModel',
       geminiModels: 'geminiModels',
+      backupMode: 'backupMode',
+      bridgeUrl: 'bridgeUrl',
+      bridgeToken: 'bridgeToken',
       driveClientId: 'driveClientId',
       driveFolderId: 'driveFolderId',
       driveDbFileId: 'driveDbFileId',

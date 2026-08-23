@@ -17,6 +17,9 @@
   DEFAULTS[C.K.geminiConsentChat] = false;
   DEFAULTS[C.K.geminiLastModel] = '';
   DEFAULTS[C.K.geminiModels] = [];
+  DEFAULTS[C.K.backupMode] = 'bridge';
+  DEFAULTS[C.K.bridgeUrl] = '';
+  DEFAULTS[C.K.bridgeToken] = '';
   DEFAULTS[C.K.driveClientId] = '';
   DEFAULTS[C.K.driveFolderId] = '';
   DEFAULTS[C.K.driveDbFileId] = '';

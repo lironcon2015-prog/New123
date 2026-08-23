@@ -221,6 +221,9 @@ entities  → { id,           deleted: 1, updatedAt }
 | `geminiConsentChat` | `false` | הסכמה לשליחת מפת הכספת לעוזר (§14.3) |
 | `geminiLastModel` | `''` | המודל האחרון שהצליח — לתצוגה בלבד |
 | `geminiModels` | `[]` | מפל מודלים שהמשתמש הגדיר. ריק = דירוג אוטומטי (§11.5) |
+| `backupMode` | `'bridge'` | `bridge` או `oauth` (§12.7) |
+| `bridgeUrl` | `''` | כתובת ה-Web app של הגשר |
+| `bridgeToken` | `''` | הסוד המשותף עם הגשר |
 | `driveClientId` | `''` | מזהה OAuth של המשתמש |
 | `driveFolderId` | `''` | קאש בלבד — המקור הוא המצביע ב-appDataFolder |
 | `driveDbFileId` | `''` | קאש בלבד |
@@ -862,6 +865,22 @@ Tesseract מתארח עצמית ב-`lib/tesseract/`, נטען עצלה, **אפס
 יש בדיקה שמוחקת את המזהה המקומי ומוודאת שהתיקייה נמצאת מחדש ולא נוצרת שנייה.
 
 **הטוקן חי בזיכרון בלבד.** טוקן גישה ב-IndexedDB הוא התחייבות, לא נוחות.
+
+### 12.7 גשר Apps Script — התחבורה שאינה מבקשת התחברות
+
+`js/bridge.js` + `tools/bridge.gs`. **ברירת המחדל** (DEC-31), ו-OAuth נשאר כחלופה.
+
+הגשר הוא web app של Apps Script שרץ **בחשבון של המשתמש**. הדפדפן שולח POST עם סוד משותף, והגשר עושה את העבודה מול Drive. אין OAuth, אין פופאפ, ואין טוקן שפג — מדביקים כתובת וסוד פעם אחת.
+
+**אותו חוזה תחבורה בדיוק** — `connected · getDb · putDb · uploadBlob · downloadBlob` — ולכן `Sync` אינו יודע מי משרת אותו, וההחלפה היא `App.transport()`.
+
+**`fetch` בלי כותרות, וזה לא שכחה.** גוף מחרוזת בלי `Content-Type` מפורש נשלח כ-`text/plain`, ערך מותר ב-CORS, ולכן הבקשה "פשוטה" ואין preflight. `Content-Type: application/json` מפעיל `OPTIONS`, ו-Apps Script אינו עונה עליו.
+
+**הגשר נוגע בתיקייה אחת.** כל הורדה מאמתת שהקובץ יושב בתוך `DocVault`; אין פעולת מחיקה; אין כתיבה מחוץ לתיקייה. זו הקשחה מכוונת מול נאביגו, שאצלה `download` על מזהה שרירותי מחזיר כל קובץ בחשבון.
+
+**התיקייה מסומנת ב-`description`** (`family-vault-root`) ונמצאת מחדש בלי מזהה שמור — מה ש-`appDataFolder` עושה עבור OAuth.
+
+**תקרת גודל:** `CONFIG.BRIDGE_MAX_BYTES`. אין resumable, והכל base64 בגוף JSON.
 
 ### 12.2 מבנה בדרייב
 
