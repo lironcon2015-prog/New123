@@ -1425,6 +1425,33 @@
       ]));
     }
 
+    /* ---- מאיפה משיגים את המזהה ----
+       השדה ביקש מזהה OAuth בלי לומר מאיפה הוא מגיע, וזה קלט שאי אפשר
+       לנחש. ההוראות כאן ולא רק ב-README, כי מי שנתקע נתקע במסך הזה.
+
+       השורה החשובה היא המקור: GIS דורש **Authorized JavaScript origins**
+       ולא redirect URI, וזו הטעות שמחזירה `redirect_uri_mismatch`.
+       הוא נגזר מ-`location.origin` ולכן הוא תמיד הנכון למכשיר הזה. */
+    var steps = U.el('ol', { class: 'steps' }, [
+      U.el('li', { text: 'console.cloud.google.com — צור פרויקט חדש' }),
+      U.el('li', { text: 'APIs & Services → Library → הפעל את Google Drive API' }),
+      U.el('li', { text: 'OAuth consent screen → External → הוסף את עצמך כ-Test user' }),
+      U.el('li', { text: 'Credentials → Create credentials → OAuth client ID → Web application' }),
+      U.el('li', {}, [
+        U.el('span', { text: 'תחת Authorized JavaScript origins הדבק בדיוק: ' }),
+        U.bidi(location.origin)
+      ]),
+      U.el('li', { text: 'העתק את ה-Client ID לשדה שלמטה' })
+    ]);
+
+    driveKids.push(U.el('details', { class: 'howto' }, [
+      U.el('summary', { text: 'איך משיגים מזהה לקוח' }),
+      steps,
+      U.el('p', { class: 'muted small', text:
+        'זה מקור JavaScript ולא כתובת הפניה — redirect URI במקום origin הוא ' +
+        'הטעות שמחזירה redirect_uri_mismatch. אין צורך ב-Client secret.' })
+    ]));
+
     driveKids.push(U.el('div', { class: 'f-g' }, [
       U.el('label', { class: 'f-l', for: 'd-client', text: 'מזהה לקוח של גוגל' }),
       idInput, driveMsg

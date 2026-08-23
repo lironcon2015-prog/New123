@@ -384,6 +384,13 @@ select.f-i { appearance: none; background-image: none; }
 .set-l { font-size: 15px; }
 .set-s { font-size: 12.5px; color: var(--ink-2); }
 
+/* הוראות מקופלות — נוכחות כשצריך, ולא רועשות כשלא */
+.howto { margin: 12px 0 4px; }
+.howto summary { font-size: 13.5px; color: var(--accent); cursor: pointer; }
+.steps { margin: 10px 0 0; padding-inline-start: 20px; font-size: 13px; color: var(--ink-2); }
+.steps li { margin-bottom: 5px; }
+.steps bdi { color: var(--ink); font-weight: 500; }
+
 .seg { display: flex; gap: 6px; flex-wrap: wrap; }
 .seg-b {
   display: flex; align-items: center; gap: 7px; border: 1px solid var(--line);
