@@ -67,6 +67,8 @@ t('כל 12 הסוגים בפרומפט', keys.every(k => prompt.includes(k)),
 t('שדות מופיעים עם התווית והסוג', prompt.includes('policyNumber — מספר פוליסה (policy)'));
 t('נדרש JSON נקי', /JSON נקי בלבד/.test(prompt));
 t('נאסר להשלים או לנחש', /אל תנחש/.test(prompt) && /אל תמציא/.test(prompt));
+t('נאסר לשנות סדר ספרות', /אל תשנה את סדר הספרות/.test(prompt));
+t('מבנה ת״ז מוסבר במפורש', /ספרת הביקורת היא האחרונה/.test(prompt));
 
 console.log('\n— דירוג מודלים ומפל —');
 await page.evaluate(() => window.Settings.set(window.CONFIG.K.geminiConsentText, true));
@@ -128,6 +130,21 @@ t('ערכים עוברים קנוניזציה לפי ה-kind',
   JSON.stringify(prop.values));
 t('תאריך תפוגה נלקח', prop.expiryDate === '2027-03-20', prop.expiryDate);
 t('יש הודעה שמבקשת בדיקה', /בדוק/.test(prop.notice.text), prop.notice.text);
+
+plan = { '*': { text: '{"typeKey":"id_card","fields":{"idNumber":"212345678","fullName":"ליאור כהן"}}' } };
+const flip = await page.evaluate(() => window.Parse.fromGemini({ text: 'x' }));
+t('ת״ז שהמודל הפך מתוקנת לפי ספרת הביקורת',
+  flip.values.idNumber === '123456782', flip.values.idNumber);
+t('והשדה מסומן לאימות', flip.unverified.indexOf('idNumber') !== -1, JSON.stringify(flip.unverified));
+t('וההודעה אומרת שתוקן סדר ספרות',
+  /סדר הספרות תוקן/.test(flip.notice.text), flip.notice.text);
+t('שדה אחר לא נגוע', flip.values.fullName === 'ליאור כהן');
+
+plan = { '*': { text: '{"typeKey":"id_card","fields":{"idNumber":"123456782"}}' } };
+const clean = await page.evaluate(() => window.Parse.fromGemini({ text: 'x' }));
+t('ת״ז תקינה עוברת בלי תיקון ובלי סימון',
+  clean.values.idNumber === '123456782' && clean.unverified.length === 0);
+t('וההודעה חוזרת להיות רגילה', /בדוק/.test(clean.notice.text) && !/סדר הספרות/.test(clean.notice.text));
 
 plan = { '*': { text: '{"typeKey":"generic","fields":{},"expiryDate":"2026-02-30"}' } };
 const badDate = await page.evaluate(() => window.Parse.fromGemini({ text: 'x' }));

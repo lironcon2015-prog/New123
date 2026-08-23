@@ -645,6 +645,8 @@
         location.hash = '#/doc/new';
       } else if (kind === 'mrz') {
         window.App.pickFiles(null, true, 'mrz');
+      } else if (kind === 'paste') {
+        window.App.pasteRoute();
       } else {
         window.App.pickFiles(null, kind === 'camera');
       }
@@ -656,6 +658,7 @@
            String(window.Parse.ASSET_MB).replace('.', '.') + 'MB' },
       { icon: 'i-camera', t: 'צילום', s: 'מצלמת המכשיר', k: 'camera' },
       { icon: 'i-upload', t: 'בחירת קובץ', s: 'תמונה או PDF', k: 'file' },
+      { icon: 'i-paste', t: 'הדבקה מהלוח', s: 'צילום מסך או פרטים שהעתקת', k: 'paste' },
       { icon: 'i-edit', t: 'הזנה ידנית', s: 'בלי קובץ', k: 'manual' }
     ];
 
@@ -672,8 +675,34 @@
         return b;
       })),
       U.el('p', { class: 'muted small', text:
-        'אפשר גם להדביק תמונה או טקסט מהלוח, או לגרור קובץ לחלון.' })
+        'אפשר גם לגרור קובץ לחלון, או להדביק עם Ctrl+V מכל מסך.' })
     ]);
+  };
+
+  /* ---------- יעד הדבקה ----------
+     מסלול הנסיגה כשהדפדפן אינו נותן לקרוא את הלוח בקוד. מסגרת מקווקוות
+     צבעונית — "ממתין לפעולה עכשיו", להבדיל מהמסגרת הניטרלית של מצב ריק. */
+  Screens.pasteSheet = function (reason) {
+    var target = U.el('div', {
+      class: 'paste-target', contenteditable: 'true', role: 'textbox',
+      inputmode: 'none', 'aria-label': 'הדבק כאן',
+      tabindex: '0'
+    }, U.el('span', { class: 'paste-hint', text: 'הדבק כאן' }));
+
+    var sheet = UI.sheet('הדבקה מהלוח', [
+      U.el('p', { class: 'sheet-p', text: reason ||
+        'הצמד את הסמן למסגרת והדבק — Ctrl+V במחשב, או לחיצה ארוכה והדבקה בנייד.' }),
+      target
+    ]);
+
+    target.addEventListener('paste', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      sheet.close();
+      window.App.ingestPaste(e.clipboardData);
+    });
+
+    setTimeout(function () { target.focus(); }, 80);
   };
 
   /* ---------- הגדרות ---------- */

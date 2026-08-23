@@ -43,6 +43,20 @@
       validate: function (v) {
         if (!digits(v)) return bad('חסר ערך');
         return israeliIdValid(v) ? ok : bad('ספרת ביקורת נכשלה');
+      },
+
+      /* ספרת הביקורת של ת״ז היא **האחרונה**. מודל שקורא מסמך בעברית מעביר
+         אותה לפעמים לראש המספר — סדר שנראה סביר לעין ושגוי לחלוטין.
+
+         התיקון בטוח מאותה סיבה שתיקון המילוי ב-MRZ בטוח: **ספרת הביקורת
+         היא השופט.** מסובבים, ומקבלים רק אם המסובב עובר בעוד המקורי נכשל.
+         חל על ערכים שמכונה הפיקה בלבד — הזנה ידנית שגויה היא שגיאת הקלדה,
+         וסיבוב שלה היה הופך טעות אחת למספר תקין אחר, וזה גרוע יותר. */
+      repair: function (v) {
+        var s = digits(v);
+        if (s.length !== 9 || israeliIdValid(s)) return null;
+        var rotated = s.slice(1) + s[0];
+        return israeliIdValid(rotated) ? rotated : null;
       }
     },
 
@@ -167,6 +181,13 @@
   /* ---------- שירותים נגזרים ---------- */
 
   KINDS.get = function (kind) { return KINDS[kind] || KINDS.text; };
+
+  /* תיקון ערך שמכונה הפיקה. מחזיר ערך מתוקן רק אם הוא עובר ולידציה
+     בעוד המקורי נכשל, אחרת null. אין ל-kind אחר תיקון, וזה בכוונה. */
+  KINDS.repair = function (kind, value) {
+    var k = KINDS.get(kind);
+    return k.repair ? k.repair(value) : null;
+  };
 
   /* סוג ה-input נגזר מהרישום ולא מ-if על שם ה-kind */
   KINDS.inputType = function (kind) { return KINDS.get(kind).inputType || 'text'; };

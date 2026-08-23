@@ -208,30 +208,64 @@
     document.body.appendChild(fileInput);
   }
 
-  /* הדבקה — שני מסלולי משנה. SPEC §7.1 */
+  /* הדבקה — שני מסלולי משנה. SPEC §7.1.
+     שלושת הדרכים להגיע לכאן — Ctrl+V גלובלי, כפתור בגיליון ההוספה, ויעד
+     ההדבקה — נשפכות לפונקציה אחת, כדי שלא יתפצלו בהתנהגות. */
+  App.ingestPaste = function (dt) {
+    var files = Files.fromDataTransfer(dt);
+    if (files.length) { ingest(files, 'paste', ''); return true; }
+
+    var text = dt && dt.getData && dt.getData('text/plain');
+    return App.ingestText(text);
+  };
+
+  App.ingestText = function (text) {
+    if (!text || !text.trim()) return false;
+    App.staged = [];
+    App.proposal = null;
+    if (window.Gemini.ready('text')) {
+      runGemini({ text: text.trim() }).then(openForm);
+    } else {
+      UI.toast('כדי לפרסר טקסט, הפעל את זה בהגדרות');
+    }
+    return true;
+  };
+
+  /* קריאת הלוח ביוזמת המשתמש. נתמכת ברוב הדפדפנים המודרניים ודורשת
+     מחווה — ולכן היא נקראת מתוך לחיצה. איפה שהיא חסומה או לא קיימת,
+     נופלים ליעד הדבקה ידני במקום להשאיר כפתור שלא עושה כלום. */
+  App.pasteRoute = function () {
+    var nav = navigator.clipboard;
+    if (!nav || !nav.read) {
+      Screens.pasteSheet();
+      return;
+    }
+    nav.read().then(function (items) {
+      for (var i = 0; i < items.length; i++) {
+        var imgType = items[i].types.filter(function (t) { return t.indexOf('image/') === 0; })[0];
+        if (imgType) {
+          return items[i].getType(imgType).then(function (blob) {
+            ingest([new File([blob], 'הדבקה', { type: blob.type })], 'paste', '');
+          });
+        }
+      }
+      return (nav.readText ? nav.readText() : Promise.resolve('')).then(function (txt) {
+        if (!App.ingestText(txt)) {
+          Screens.pasteSheet('אין תמונה או טקסט בלוח.');
+        }
+      });
+    }).catch(function () {
+      Screens.pasteSheet('הדפדפן לא נתן לקרוא את הלוח.');
+    });
+  };
+
   function bindPaste() {
     document.addEventListener('paste', function (e) {
       if (locked) return;
       var tag = (e.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
-
-      var files = Files.fromDataTransfer(e.clipboardData);
-      if (files.length) {
-        e.preventDefault();
-        ingest(files, 'paste', '');
-        return;
-      }
-      var text = e.clipboardData && e.clipboardData.getData('text/plain');
-      if (text && text.trim()) {
-        e.preventDefault();
-        App.staged = [];
-        App.proposal = null;
-        if (window.Gemini.ready('text')) {
-          runGemini({ text: text.trim() }).then(openForm);
-        } else {
-          UI.toast('הדבק תמונה, או הפעל פרסינג טקסט בהגדרות');
-        }
-      }
+      if (e.target.isContentEditable) return;
+      if (App.ingestPaste(e.clipboardData)) e.preventDefault();
     });
   }
 

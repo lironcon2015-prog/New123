@@ -243,6 +243,32 @@ t('כל מסגרת מצב הריק היא button אחד',
   emptyShape && emptyShape.tag === 'button', emptyShape && emptyShape.tag);
 t('ואין בתוכה כפתור מקונן', emptyShape && emptyShape.inner === 0);
 
+console.log('\n— תיקון סדר ספרות בת״ז —');
+const rep = await page.evaluate(() => {
+  const K = window.KINDS;
+  // ת״ז תקינה: ספרת הביקורת אחרונה
+  const good = '123456782';
+  // מה שמודל מחזיר כשהוא מעביר את ספרת הביקורת לראש
+  const flipped = '212345678';
+  return {
+    goodValid: K.id.validate(good).ok,
+    flippedValid: K.id.validate(flipped).ok,
+    fixed: K.repair('id', flipped),
+    noopOnGood: K.repair('id', good),
+    noopOnJunk: K.repair('id', '111111111'),
+    noopShort: K.repair('id', '12345678'),
+    noKindRepair: K.repair('text', 'משהו')
+  };
+});
+t('ת״ז תקינה עוברת', rep.goodValid === true);
+t('אותה ת״ז עם ספרת הביקורת בראש נכשלת', rep.flippedValid === false);
+t('התיקון מחזיר את המספר הנכון', rep.fixed === '123456782', String(rep.fixed));
+t('מספר תקין לא נוגעים בו', rep.noopOnGood === null, String(rep.noopOnGood));
+t('מספר שגוי באמת לא "מתוקן"', rep.noopOnJunk === null, String(rep.noopOnJunk));
+t('שמונה ספרות אינן מסובבות — שם חסר אפס מוביל, לא סדר',
+  rep.noopShort === null, String(rep.noopShort));
+t('לסוגים אחרים אין תיקון, וזה בכוונה', rep.noKindRepair === null);
+
 console.log('\n— בידוד הדרכון —');
 const iso = await page.evaluate(() => {
   const DT = window.DOC_TYPES, DB = window.DB;

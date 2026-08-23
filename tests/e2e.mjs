@@ -226,6 +226,56 @@ const dropOk = await page.evaluate(() => {
 });
 t('מסלול 4 — גרירה נקלטת', dropOk === true);
 
+// ההדבקה חייבת להיות גלויה בגיליון ההוספה ולא רק דרך Ctrl+V
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+await page.click('.fab');
+await page.waitForSelector('.routes');
+const routeLabels = await page.$$eval('.route-t', e => e.map(x => x.textContent));
+t('להדבקה יש כפתור משלה בגיליון ההוספה',
+  routeLabels.some(l => l.includes('הדבקה')), routeLabels.join(' · '));
+t('וארבעת המסלולים גלויים',
+  routeLabels.length === 5, routeLabels.join(' · '));
+
+await page.evaluate(async () => {
+  const c = document.createElement('canvas'); c.width = c.height = 24;
+  const x = c.getContext('2d'); x.fillStyle = '#357'; x.fillRect(0, 0, 24, 24);
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+});
+await page.click('.route:has-text("הדבקה")');
+await page.waitForSelector('#d-type', { timeout: 10000 });
+t('הכפתור קורא את הלוח ומצרף את התמונה',
+  (await page.locator('.staged .file-row').count()) === 1);
+
+// ואם הדפדפן לא נותן לקרוא את הלוח — יעד הדבקה ידני, לא כפתור מת
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+await page.evaluate(() => {
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { read: () => Promise.reject(new Error('חסום')) }
+  });
+});
+await page.click('.fab');
+await page.waitForSelector('.routes');
+await page.click('.route:has-text("הדבקה")');
+await page.waitForSelector('.paste-target', { timeout: 5000 });
+t('לוח חסום → נפתח יעד הדבקה ידני', await page.isVisible('.paste-target'));
+// גיליון ההוספה עדיין נסגר ברקע, אז מכוונים לגיליון שמכיל את היעד
+t('וההודעה מסבירה למה',
+  (await page.textContent('.sheet:has(.paste-target)')).includes('לא נתן לקרוא'),
+  (await page.textContent('.sheet:has(.paste-target)')).slice(0, 70));
+
+const pastedIn = await page.evaluate(() => {
+  const dt = new DataTransfer();
+  dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'p.png', { type: 'image/png' }));
+  const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+  document.querySelector('.paste-target').dispatchEvent(ev);
+  return ev.defaultPrevented;
+});
+t('הדבקה לתוך היעד נקלטת', pastedIn === true);
+
 // ---------- persistence ----------
 console.log('\n— התמדה ואופליין —');
 await page.goto(BASE + '#/entities');

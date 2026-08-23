@@ -96,20 +96,34 @@
       var allowed = {};
       type.fields.forEach(function (f) { allowed[f.key] = f; });
 
+      var repaired = 0;
       Object.keys((json && json.fields) || {}).forEach(function (k) {
         if (!allowed[k]) return;
         var v = json.fields[k];
         if (v == null || v === '') return;
-        p.values[k] = KINDS.get(allowed[k].kind).canonical(String(v));
+        var canon = KINDS.get(allowed[k].kind).canonical(String(v));
+        var fixed = KINDS.repair(allowed[k].kind, canon);
+        if (fixed) {
+          canon = fixed;
+          repaired++;
+          p.unverified.push(k);   /* תוקן — שיסתכלו עליו */
+        }
+        p.values[k] = canon;
       });
 
       if (json.issueDate && U.isRealDate(json.issueDate)) p.issueDate = json.issueDate;
       if (json.expiryDate && U.isRealDate(json.expiryDate)) p.expiryDate = json.expiryDate;
 
       var n = Object.keys(p.values).length;
-      p.notice = n
-        ? { level: 'ok', text: U.count(n, 'שדה אחד מולא · בדוק אותו לפני שמירה', 'שדות מולאו · בדוק אותם לפני שמירה') }
-        : { level: 'info', text: 'לא זוהו שדות במסמך. מלא ידנית.' };
+      if (repaired) {
+        p.notice = { level: 'warn', text:
+          U.count(repaired, 'סדר הספרות תוקן במספר אחד', 'סדר הספרות תוקן במספרים') +
+          ' לפי ספרת הביקורת — בדוק אותו מול המסמך' };
+      } else {
+        p.notice = n
+          ? { level: 'ok', text: U.count(n, 'שדה אחד מולא · בדוק אותו לפני שמירה', 'שדות מולאו · בדוק אותם לפני שמירה') }
+          : { level: 'info', text: 'לא זוהו שדות במסמך. מלא ידנית.' };
+      }
       return p;
     }, function (e) {
       var p = empty(null);
