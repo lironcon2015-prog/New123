@@ -335,6 +335,15 @@ select.f-i { appearance: none; background-image: none; }
 .form-err { font-size: 13.5px; color: var(--exp-past-fg); margin-top: 10px; }
 .form-err:empty { display: none; }
 
+/* שדה פתוח: התווית היא קלט ולא תווית, ולכן היא נראית קטנה יותר מהערך —
+   העין צריכה למצוא את הערך קודם, בדיוק כמו בשורה רגילה. */
+.f-x-h { display: flex; align-items: center; gap: 6px; }
+.f-x-l {
+  flex: 1; padding: 7px 10px; font-size: 13.5px;
+  background: transparent; border-style: dashed; color: var(--ink-2);
+}
+.f-x-l:focus { background: var(--surface); border-style: solid; }
+
 /* ============ בורר מסגרת ============ */
 .crop { display: flex; flex-direction: column; gap: 8px; }
 .crop-box {

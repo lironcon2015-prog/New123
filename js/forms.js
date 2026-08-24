@@ -176,6 +176,12 @@
     var issueI, expiryI, notesI, titleI;
     var reminderShown = false;
 
+    /* שדות שאין להם עמודה בטבלה, בסוגים שהטבלה מסמנת כפתוחים.
+       {key,label,value} — התווית עצמה ניתנת לעריכה, מפני שהיא מגיעה
+       מהמסמך ולא מהטבלה, ומודל טועה בתוויות בדיוק כפי שהוא טועה בערכים. */
+    var extras = [];
+    var extraHost = U.el('div');
+
     function entityById(id) {
       return entities.filter(function (x) { return x.id === id; })[0] || null;
     }
@@ -199,6 +205,72 @@
       if (doc && doc[which]) return doc[which];
       if (proposal && proposal[which]) return proposal[which];
       return '';
+    }
+
+    /* מקורות השדות הפתוחים, לפי סדר: מה שכבר שמור על המסמך, ואז מה
+       שהפרסינג הציע. שדה שיש לו עמודה בטבלה אינו שדה פתוח גם אם הוא
+       שמור על המסמך — הוא ייכנס לשורה שלו למעלה. */
+    function seedExtras(t) {
+      var defs = {};
+      t.fields.forEach(function (f) { defs[f.key] = 1; });
+      var out = [], seen = {};
+      function add(key, label, value) {
+        var v = value == null ? '' : String(value);
+        if (!key || defs[key] || seen[key]) return;
+        seen[key] = 1;
+        out.push({ key: key, label: String(label || key), value: v });
+      }
+      if (doc) (doc.fields || []).forEach(function (f) { add(f.key, f.label, f.value); });
+      if (proposal) (proposal.extra || []).forEach(function (e) { add(e.key, e.label, e.value); });
+      return out;
+    }
+
+    function extraRow(row, i) {
+      var lI = U.el('input', {
+        class: 'f-i f-x-l', id: 'x-l-' + i, type: 'text', value: row.label,
+        maxlength: '40', 'aria-label': 'שם השדה'
+      });
+      var vI = U.el('input', {
+        class: 'f-i', id: 'x-v-' + i, type: 'text', value: row.value,
+        autocomplete: 'off', 'aria-label': 'ערך השדה'
+      });
+      lI.addEventListener('input', function () { row.label = lI.value; });
+      vI.addEventListener('input', function () { row.value = vI.value; });
+
+      var del = U.el('button', {
+        class: 'iconbtn', type: 'button', 'aria-label': 'הסרת השדה'
+      }, U.icon('i-trash', 20));
+      del.addEventListener('click', function () {
+        var i = extras.indexOf(row);
+        if (i !== -1) extras.splice(i, 1);
+        paintExtras();
+      });
+
+      return group([U.el('div', { class: 'f-x-h' }, [lI, del]), vI]);
+    }
+
+    function paintExtras() {
+      U.clear(extraHost);
+      var t = DT.get(current.typeKey);
+      if (!t || !t.openFields) return;
+
+      if (extras.length) {
+        extraHost.appendChild(U.el('div', { class: 'files-h', text: 'שדות נוספים' }));
+        extras.forEach(function (row, i) { extraHost.appendChild(extraRow(row, i)); });
+      }
+
+      /* הכפתור קיים גם כשאין שדות. סוג פתוח בלי דרך להוסיף שדה ביד הוא
+         סוג פתוח רק כשיש מפתח Gemini, וזה בדיוק מה שאסור. */
+      var add = U.el('button', { class: 'btn ghost wide', type: 'button' }, [
+        U.icon('i-plus', 18), U.el('span', { text: 'הוספת שדה' })
+      ]);
+      add.addEventListener('click', function () {
+        extras.push({ key: '', label: '', value: '' });
+        paintExtras();
+        var all = extraHost.querySelectorAll('.f-x-l');
+        if (all.length) all[all.length - 1].focus();
+      });
+      extraHost.appendChild(add);
     }
 
     function renderFields() {
@@ -228,6 +300,12 @@
         var g = group([lbl, input, U.el('div', { class: 'f-err', id: id + '-err' })]);
         fieldsHost.appendChild(g);
       });
+
+      /* השדות הפתוחים יושבים אחרי העמודות של הטבלה ולפני התאריכים —
+         הם שדות של המסמך, ולא נספח בתחתית הטופס. */
+      extras = seedExtras(t);
+      fieldsHost.appendChild(extraHost);
+      paintExtras();
 
       /* תאריכים — נגזר מ-expiry בטבלה. SPEC §5.1 */
       var issueVal = proposedDate('issueDate');
@@ -328,6 +406,26 @@
         if (!rec.input.value.trim()) rec.input.value = p.values[k];
         if (rec.input.value.trim() === String(p.values[k])) filled++;
       });
+
+      /* אותו כלל בדיוק על השדות הפתוחים: שורה שכבר יש בה ערך אינה נדרסת,
+         ושורה חדשה נוספת. סוג סגור מתעלם מהם — אין להם איפה לשבת. */
+      var openType = DT.get(current.typeKey);
+      if (openType && openType.openFields && (p.extra || []).length) {
+        var have = {};
+        extras.forEach(function (r) { if (r.key) have[r.key] = r; });
+        p.extra.forEach(function (e) {
+          var hit = have[e.key];
+          if (hit) {
+            if (!String(hit.value).trim()) { hit.value = e.value; filled++; }
+            return;
+          }
+          extras.push({ key: e.key, label: e.label, value: e.value });
+          have[e.key] = extras[extras.length - 1];
+          filled++;
+        });
+        paintExtras();
+      }
+
       if (p.expiryDate && expiryI && !expiryI.value) { expiryI.value = p.expiryDate; filled++; }
       if (p.issueDate && issueI && !issueI.value) { issueI.value = p.issueDate; filled++; }
       return { filled: filled, mismatch: null };
@@ -384,6 +482,33 @@
           }
           fields.push(field);
         });
+
+        /* שדות פתוחים. אין להם def בטבלה, ולכן אין להם kind משלהם והם
+           נשמרים כטקסט — אבל הם עוברים את אותו `KINDS.check` ונשמרים
+           באותה צורה בדיוק, כדי שמסך המסמך, ההעתקה והייצוא לא ידעו
+           שיש הבדל. */
+        if (t.openFields) {
+          var taken = {};
+          fields.forEach(function (f) { taken[f.key] = 1; });
+          extras.forEach(function (row) {
+            var lbl = String(row.label == null ? '' : row.label).trim();
+            var val = String(row.value == null ? '' : row.value).trim();
+            /* שורה חצי-ריקה אינה שדה. היא שורה שהמשתמש פתח ולא מילא. */
+            if (!lbl || !val) return;
+
+            var base = window.Parse.extraKey(lbl), key = base, n = 2;
+            while (taken[key]) key = base + '_' + (n++);
+            taken[key] = 1;
+
+            var xf = {
+              key: key, label: lbl, value: KINDS.get('text').canonical(val),
+              kind: 'text', sensitive: false, confidence: null,
+              verified: true, multiline: false
+            };
+            xf.verified = KINDS.check(xf).ok;
+            fields.push(xf);
+          });
+        }
 
         if (missing.length) {
           return { error: 'חסר: ' + missing.join(', ') };

@@ -150,12 +150,18 @@
       ]
     },
 
-    /* שסתום הביטחון */
+    /* שסתום הביטחון.
+
+       `openFields` הוא ההבדל בין שסתום לבין חור בקיר: תעודה שאין לה שורה
+       בטבלה מגיעה לכאן, ובלי הדגל הזה כל מה שנקרא ממנה — חוץ משלושת
+       השדות למטה — נזרק בשקט. עם הדגל, שדה שאין לו עמודה נשמר כפי שהוא,
+       עם התווית שהופיעה במסמך. הדגל אינו מזכיר אף סוג, ולכן סוג פתוח נוסף
+       הוא עדיין שורה בטבלה. */
     generic: {
       label: 'מסמך כללי', icon: 'i-file',
       entityTypes: ['person', 'vehicle', 'home', 'other'],
       expiry: 'optional', allowFiles: true, parse: 'gemini',
-      titleFrom: 'title',
+      titleFrom: 'title', openFields: true,
       fields: [
         { key: 'title',     label: 'כותרת',      kind: 'text', required: true },
         { key: 'issuer',    label: 'גורם מנפיק', kind: 'text' },
@@ -180,6 +186,21 @@
     /* ברירת המחדל של שני הדגלים היא "כן" — סוג צריך לוותר במפורש */
     syncFields: function (key) { return T[key] ? T[key].syncFields !== false : true; },
     notify: function (key) { return T[key] ? T[key].notify !== false : true; },
+
+    /* סוג שמקבל שדות שאינם בעמודות שלו. ברירת המחדל היא "לא" — סוג
+       מוגדר היטב לא אמור לצבור שדות שאיש לא הגדיר. */
+    openFields: function (key) { return !!(T[key] && T[key].openFields); },
+
+    /* תווית קריאה למפתח שדה, מכל מקום בטבלה. מודל שמחזיר `idNumber` על
+       מסמך פתוח אינו מתאר תקלה — הוא מתאר שדה שיש לו שם בעברית בשורה
+       אחרת. בלי החיפוש הזה השורה הייתה מוצגת כ-idNumber. */
+    fieldLabel: function (key) {
+      var hit = null;
+      API.all().forEach(function (t) {
+        t.fields.forEach(function (f) { if (!hit && f.key === key) hit = f.label; });
+      });
+      return hit;
+    },
 
     /* פורמט ה-MRZ קובע את סוג המסמך, ולא להפך: TD3 הוא דרכון, TD1 הוא ת״ז */
     byMrzFormat: function (format) {

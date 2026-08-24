@@ -208,6 +208,71 @@ const failProp = await page.evaluate(() => window.Parse.fromGemini({ text: 'x' }
 t('כשל מוחזר כהודעה ולא כחריגה', failProp.notice.level === 'warn', JSON.stringify(failProp.notice));
 t('ובלי שום שדה מולא', Object.keys(failProp.values).length === 0);
 
+console.log('\n— תעודה שאין לה שורה בטבלה —');
+/* הבאג: מסמך לא מוכר נפל ל-generic, ואז כל מה שנקרא ממנו — חוץ משלושת
+   השדות של generic — נזרק בשקט, והמשתמש ראה טופס כמעט ריק. */
+plan = { '*': { text: JSON.stringify({
+  typeKey: 'generic',
+  fields: { title: 'אישור ניהול חשבון', issuer: 'בנק לאומי', idNumber: '123456782' },
+  extra: { 'מספר חשבון': '12-345-678901', 'סניף': '842', 'סוג חשבון': 'עו״ש', 'ריק': '' },
+  issueDate: '2026-01-15'
+}) } };
+const unk = await page.evaluate(() => window.Parse.fromGemini({ text: 'x' }));
+const byLabel = Object.fromEntries(unk.extra.map(e => [e.label, e.value]));
+
+t('הסוג הפתוח נבחר', unk.typeKey === 'generic', unk.typeKey);
+t('העמודות שיש להן מקום נכנסו לשם',
+  unk.values.title === 'אישור ניהול חשבון' && unk.values.issuer === 'בנק לאומי',
+  JSON.stringify(unk.values));
+t('ומה שאין לו עמודה כבר לא נזרק', unk.extra.length > 0, JSON.stringify(unk.extra));
+t('התוויות הן מה שמודפס במסמך',
+  byLabel['מספר חשבון'] === '12-345-678901' && byLabel['סניף'] === '842',
+  JSON.stringify(byLabel));
+t('שדה ריק אינו נכנס', byLabel['ריק'] === undefined);
+t('מפתח שמוכר משורה אחרת בטבלה מקבל את התווית שלה',
+  unk.extra.some(e => e.key === 'idNumber' && e.label === 'מספר תעודת זהות'),
+  JSON.stringify(unk.extra));
+t('וההודעה סופרת גם אותם',
+  /שדות מולאו/.test(unk.notice.text) && unk.notice.level === 'ok', unk.notice.text);
+t('מפתחות ה-extra יציבים בין הרצות',
+  JSON.stringify(unk.extra) ===
+  JSON.stringify((await page.evaluate(() => window.Parse.fromGemini({ text: 'x' }))).extra));
+
+/* אותה תשובה בדיוק, על סוג סגור: שם זריקה היא הדבר הנכון */
+plan = { '*': { text: JSON.stringify({
+  typeKey: 'vehicle_test',
+  fields: { plate: '8452103', nope: 'לא קיים' },
+  extra: { 'משהו': 'שנקרא' },
+  expiryDate: '2027-01-01'
+}) } };
+const closed = await page.evaluate(() => window.Parse.fromGemini({ text: 'x' }));
+t('סוג סגור אינו אוסף שדות פתוחים', closed.extra.length === 0, JSON.stringify(closed.extra));
+t('והוא עדיין זורק מפתח שאינו בעמודות שלו', closed.values.nope === undefined);
+
+plan = { '*': { text: JSON.stringify({
+  typeKey: 'generic', fields: { title: 'ערמה' },
+  extra: Object.fromEntries(Array.from({ length: 60 }, (_, i) => ['שדה ' + i, 'ערך ' + i]))
+}) } };
+const flood = await page.evaluate(() => window.Parse.fromGemini({ text: 'x' }));
+t('מודל שמפליג נעצר בתקרה', flood.extra.length === 20, String(flood.extra.length));
+
+console.log('\n— הפרומפט מבקש את מה שהיה נזרק —');
+const pr = await page.evaluate(() => window.Gemini.prompt());
+const openKeys = await page.evaluate(() => window.Gemini.openKeys());
+const schema = await page.evaluate(() => window.Gemini.schemaText());
+t('הפרומפט מסביר את extra', /extra/.test(pr));
+const tableOpen = await page.evaluate(() =>
+  window.DOC_TYPES.all().filter(t => window.DOC_TYPES.openFields(t.key)).map(t => t.key));
+t('הטבלה היא שקובעת מי פתוח',
+  openKeys.length > 0 && openKeys.join(',') === tableOpen.join(','),
+  openKeys.join(',') + ' vs ' + tableOpen.join(','));
+t('והפרומפט מפנה לסוגים שהיא סימנה',
+  openKeys.every(k => pr.includes(k)) && /סוג פתוח/.test(pr), openKeys.join(','));
+t('סוג פתוח מסומן ככזה בסכמה', /\[סוג פתוח/.test(schema));
+t('וסוג סגור אינו מסומן',
+  schema.split('\n').filter(l => /\[סוג פתוח/.test(l)).length === openKeys.length,
+  String(openKeys.length));
+
 console.log('\n— הסכמות נפרדות —');
 plan = {};
 hits = [];

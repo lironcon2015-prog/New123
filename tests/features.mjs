@@ -1057,6 +1057,115 @@ t('מנוע התפוגה רואה רק את העדכני', expiries.ok === 1 && 
   JSON.stringify(expiries));
 t('אפס שגיאות במסלול הטופס', errs2.length === 0, errs2.slice(0, 3).join(' | '));
 
+/* ---------- תעודה שאין לה שורה בטבלה, דרך הטופס ----------
+   הדיווח: "הפרסינג לא עובד כראוי אם מדובר בתעודה לא מוכרת". הסוג הפתוח
+   קלט אותה, אבל כל מה שנקרא ממנה מעבר לשלוש העמודות שלו נזרק בדרך —
+   ולכן המשתמש ראה טופס כמעט ריק וקרא לזה "לא עובד". */
+console.log('\n— תעודה לא מוכרת דרך הטופס —');
+
+await p2.click('.fab');
+await p2.waitForSelector('.routes');
+await p2.click('.routes .route:has-text("הזנה ידנית")');
+await p2.waitForSelector('#d-type');
+await p2.selectOption('#d-type', { label: 'מסמך כללי' });
+await p2.waitForSelector('#f-title');
+
+t('לסוג פתוח יש דרך להוסיף שדה ביד',
+  (await p2.locator('button:has-text("הוספת שדה")').count()) === 1);
+
+await p2.selectOption('#d-type', { label: 'טסט' });
+await p2.waitForSelector('#f-plate');
+t('ולסוג סגור אין',
+  (await p2.locator('button:has-text("הוספת שדה")').count()) === 0);
+
+await p2.selectOption('#d-type', { label: 'מסמך כללי' });
+await p2.waitForSelector('#f-title');
+await p2.fill('#f-title', 'אישור ניהול חשבון');
+
+await p2.click('button:has-text("הוספת שדה")');
+await p2.waitForSelector('#x-l-0');
+await p2.fill('#x-l-0', 'מספר חשבון');
+await p2.fill('#x-v-0', '12-345-678901');
+
+/* שורה שנפתחה ולא מולאה — לא אמורה להישמר בכלל */
+await p2.click('button:has-text("הוספת שדה")');
+await p2.waitForSelector('#x-l-1');
+await p2.fill('#x-l-1', 'סניף');
+
+await p2.click('#doc-save');
+await p2.waitForSelector('.doc-head');
+
+const openDoc = await p2.evaluate(() => {
+  const d = window.Screens.state.docs.filter(x => x.typeKey === 'generic')[0];
+  return { fields: d.fields.map(f => f.key + '=' + f.label + '=' + f.value), id: d.id };
+});
+t('השדה שנוסף ביד נשמר על המסמך',
+  openDoc.fields.some(f => /מספר חשבון=12-345-678901$/.test(f)), openDoc.fields.join(' | '));
+t('ושורה חצי-ריקה אינה הופכת לשדה',
+  !openDoc.fields.some(f => /סניף/.test(f)), openDoc.fields.join(' | '));
+
+const shownRows = await p2.evaluate(() =>
+  [...document.querySelectorAll('.row-l')].map(x => x.textContent));
+t('ומסך המסמך מציג אותו כמו כל שדה אחר',
+  shownRows.indexOf('מספר חשבון') !== -1, shownRows.join(','));
+
+await p2.goto(BASE + '#/doc/' + openDoc.id + '/edit');
+await p2.waitForSelector('#x-l-0');
+t('ועריכה חוזרת טוענת אותו ולא מוחקת אותו',
+  (await p2.inputValue('#x-l-0')) === 'מספר חשבון' &&
+  (await p2.inputValue('#x-v-0')) === '12-345-678901');
+
+/* הסרה, ואז שמירה: השדה יורד מהמסמך */
+await p2.click('.f-x-h .iconbtn');
+await p2.click('#doc-save');
+await p2.waitForSelector('.doc-head');
+t('והסרה מורידה אותו',
+  (await p2.evaluate(id => window.Screens.state.docs.filter(x => x.id === id)[0]
+    .fields.every(f => f.label !== 'מספר חשבון'), openDoc.id)) === true);
+
+/* אותו מסלול, אבל מפרסינג: ההצעה נכנסת לטופס בלי שהמשתמש יקליד */
+const proposed = await p2.evaluate(async () => {
+  window.App.proposal = Object.assign(window.Parse.empty('generic'), {
+    values: { title: 'תעודת הסמכה' },
+    extra: [
+      { key: 'x_מספר_רישום', label: 'מספר רישום', value: '55-9931' },
+      { key: 'idNumber', label: 'מספר תעודת זהות', value: '123456782' }
+    ],
+    notice: { level: 'ok', text: 'שדות מולאו' }
+  });
+  window.App.pendingEntityId = 'car';
+  location.hash = '#/doc/new';
+  await window.App.render();
+  return [...document.querySelectorAll('.f-x-l')].map(x => x.value);
+});
+t('הצעת פרסינג מציירת את השדות הפתוחים בטופס',
+  proposed.join(',') === 'מספר רישום,מספר תעודת זהות', proposed.join(','));
+
+await p2.fill('#d-expiry', '2030-01-01');
+await p2.click('#doc-save');
+await p2.waitForSelector('.doc-head');
+const parsedRows = await p2.evaluate(() =>
+  [...document.querySelectorAll('.row-l')].map(x => x.textContent));
+t('והשמירה מעבירה אותם למסמך',
+  parsedRows.indexOf('מספר רישום') !== -1 && parsedRows.indexOf('מספר תעודת זהות') !== -1,
+  parsedRows.join(','));
+
+/* ---------- מה שמסך ההגדרות אומר על הדרייב ----------
+   הדיווח: "בכרטיסיה האחרונה כתוב שהמידע לא נשמר לדרייב, וזה לא נכון".
+   השורה נכתבה לפני שהיה גיבוי ונשארה אחריו. */
+console.log('\n— מסך ההגדרות אינו מכחיש את עצמו —');
+await p2.goto(BASE + '#/settings');
+await p2.waitForSelector('.sect');
+const aboutText = await p2.evaluate(() =>
+  [...document.querySelectorAll('.sect')].pop().textContent);
+t('אין יותר טענה שגיבוי לדרייב לא קיים',
+  !/עדיין לא קיים/.test(aboutText), aboutText);
+t('ומי שאינו מחובר מופנה להגדרה שקיימת',
+  /גיבוי לדרייב קיים ואינו מחובר/.test(aboutText), aboutText);
+t('המסך עצמו עדיין מציע גיבוי לדרייב',
+  (await p2.locator('.sect-h', { hasText: 'גיבוי לדרייב' }).count()) === 1);
+t('אפס שגיאות בשני המסלולים החדשים', errs2.length === 0, errs2.slice(0, 3).join(' | '));
+
 /* ---------- מסמך רב-עמודים ---------- */
 console.log('\n— מסמך רב-עמודים —');
 /* הדיווח: "רואים חלקית". שתי סיבות נפרדות היו לזה — תקרה של 20 עמודים,

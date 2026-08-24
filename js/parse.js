@@ -22,6 +22,7 @@
     return {
       typeKey: typeKey || null,
       values: {},          /* key של שדה בטבלה → ערך */
+      extra: [],           /* {key,label,value} — שדות שאין להם עמודה, בסוג פתוח */
       issueDate: null,
       expiryDate: null,
       unverified: [],      /* שדות שנשמרים לא מאומתים גם אם אין להם ולידטור */
@@ -86,7 +87,24 @@
 
   /* ---------- Gemini ---------- */
   /* הפלט של מודל אינו נאמן יותר מפלט OCR: הוא עובר את אותו מסך אישור,
-     ואת אותם ולידטורים. מה שהמודל החזיר לשדה שאין לו מקום בטבלה — נזרק. */
+     ואת אותם ולידטורים.
+
+     מה שהמודל החזיר לשדה שאין לו מקום בטבלה נזרק — **אלא אם הסוג פתוח**.
+     בסוג סגור זריקה היא הדבר הנכון: המודל ניחש עמודה שאינה קיימת בשורה
+     הזאת. בתעודה שאין לה שורה בטבלה בכלל, אותה זריקה הייתה מוחקת את כל
+     מה שנקרא ומשאירה שלוש שורות ריקות, וזה מה שנראה כמו "הפרסינג לא
+     עובד". סוג פתוח שומר את השדה כפי שהוא, עם תווית. */
+
+  var EXTRA_MAX = 20;   /* תקרה. מודל שמפליג לא הופך טופס לגלילה אינסופית. */
+
+  /* מפתח יציב לשדה שאין לו עמודה. נגזר מהתווית, ולכן פענוח חוזר של אותו
+     מסמך מעדכן את אותה שורה במקום להוסיף שנייה לידה. */
+  function extraKey(label) {
+    return 'x_' + String(label).trim().replace(/\s+/g, '_').slice(0, 40);
+  }
+
+  P.extraKey = extraKey;
+
   P.fromGemini = function (input, onStatus) {
     return window.Gemini.parse(input, onStatus).then(function (json) {
       var type = DT.get(json && json.typeKey) || DT.get('generic');
@@ -95,12 +113,26 @@
 
       var allowed = {};
       type.fields.forEach(function (f) { allowed[f.key] = f; });
+      var open = !!type.openFields;
+
+      var seen = {};
+      function addExtra(key, label, value) {
+        var v = String(value == null ? '' : value).trim();
+        if (!v || !label || seen[key] || p.extra.length >= EXTRA_MAX) return;
+        seen[key] = 1;
+        p.extra.push({ key: key, label: String(label).trim(), value: v });
+      }
 
       var repaired = 0;
       Object.keys((json && json.fields) || {}).forEach(function (k) {
-        if (!allowed[k]) return;
         var v = json.fields[k];
         if (v == null || v === '') return;
+        if (!allowed[k]) {
+          /* המפתח עדיין עשוי להיות מוכר משורה אחרת בטבלה, ואז יש לו
+             תווית בעברית. אם לא — המפתח עצמו הוא כל מה שיש. */
+          if (open) addExtra(k, DT.fieldLabel(k) || k, v);
+          return;
+        }
         var canon = KINDS.get(allowed[k].kind).canonical(String(v));
         var fixed = KINDS.repair(allowed[k].kind, canon);
         if (fixed) {
@@ -111,10 +143,19 @@
         p.values[k] = canon;
       });
 
+      /* `extra` בתשובה הוא תווית→ערך, ולא מפתח→ערך: אלה שדות שהמודל קרא
+         מהמסמך ואין להם שם בטבלה, ולכן השם שלהם הוא מה שמודפס בתעודה. */
+      if (open) {
+        Object.keys((json && json.extra) || {}).forEach(function (lbl) {
+          if (!String(lbl).trim()) return;
+          addExtra(extraKey(lbl), lbl, json.extra[lbl]);
+        });
+      }
+
       if (json.issueDate && U.isRealDate(json.issueDate)) p.issueDate = json.issueDate;
       if (json.expiryDate && U.isRealDate(json.expiryDate)) p.expiryDate = json.expiryDate;
 
-      var n = Object.keys(p.values).length;
+      var n = Object.keys(p.values).length + p.extra.length;
       if (repaired) {
         p.notice = { level: 'warn', text:
           U.count(repaired, 'סדר הספרות תוקן במספר אחד', 'סדר הספרות תוקן במספרים') +
