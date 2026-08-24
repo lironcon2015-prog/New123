@@ -160,10 +160,11 @@ t('אף פונקציה ב-ui.js אינה מוגדרת פעמיים', dupes.lengt
 /* ---------- 4 · אווטאר ---------- */
 console.log('\n— אווטאר של ישות —');
 const av = await page.evaluate(async () => {
-  const c = new OffscreenCanvas(900, 600);
+  /* 4:3 — מתחת ל-AVATAR_WIDE_RATIO, ולכן במסלול הרגיל */
+  const c = new OffscreenCanvas(800, 600);
   const x = c.getContext('2d');
-  x.fillStyle = '#c33'; x.fillRect(0, 0, 900, 600);
-  x.fillStyle = '#fff'; x.fillRect(300, 100, 300, 400);
+  x.fillStyle = '#c33'; x.fillRect(0, 0, 800, 600);
+  x.fillStyle = '#fff'; x.fillRect(260, 100, 280, 400);
   const blob = await c.convertToBlob({ type: 'image/png' });
   const f = new File([blob], 'face.png', { type: 'image/png' });
   const url = await window.Files.avatar(f);
@@ -173,8 +174,63 @@ const av = await page.evaluate(async () => {
 t('האווטאר הוא data URL של JPEG', /^data:image\/jpeg/.test(av.url), av.url);
 t('התמונה נשמרת שלמה ולא נחתכת לריבוע', av.w !== av.h, av.w + 'x' + av.h);
 t('והצלע הקצרה היא שנקבעת', Math.min(av.w, av.h) === 256, av.w + 'x' + av.h);
-t('היחס נשמר', Math.abs(av.w / av.h - 900 / 600) < 0.02, (av.w / av.h).toFixed(3));
+t('היחס נשמר', Math.abs(av.w / av.h - 800 / 600) < 0.02, (av.w / av.h).toFixed(3));
 t('ומתחת לתקרת המשקל', av.bytes <= 120 * 1024, String(av.bytes));
+
+/* ---------- 4b · תמונה רחבה נכנסת שלמה לעיגול ----------
+   DEC-41. העיגול חותך ריבוע מהמרכז, ובתצלום רכב הרוחב הוא הנושא —
+   חיתוך כזה מותיר ידית דלת. */
+const wide = await page.evaluate(async () => {
+  const PAD = [30, 107, 140];      /* הרקע של התצלום */
+  const MARK = [240, 200, 40];     /* סימן בקצה השמאלי ובימני */
+
+  function make(w, h) {
+    const c = new OffscreenCanvas(w, h);
+    const x = c.getContext('2d');
+    x.fillStyle = 'rgb(' + PAD.join(',') + ')'; x.fillRect(0, 0, w, h);
+    x.fillStyle = 'rgb(' + MARK.join(',') + ')';
+    x.fillRect(Math.round(w * .017), Math.round(h * .35), Math.round(w * .05), Math.round(h * .3));
+    x.fillRect(Math.round(w * .933), Math.round(h * .35), Math.round(w * .05), Math.round(h * .3));
+    return c.convertToBlob({ type: 'image/png' })
+      .then(b => window.Files.avatar(new File([b], 'x.png', { type: 'image/png' })));
+  }
+  async function read(url) {
+    const bmp = await createImageBitmap(await (await fetch(url)).blob());
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    const g = c.getContext('2d');
+    const at = (px, py) => Array.from(g.getImageData(px, py, 1, 1).data).slice(0, 3);
+    const near = (p, q) => Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]);
+    return { w: bmp.width, h: bmp.height, at, near, bytes: Math.round(url.length * 0.75) };
+  }
+
+  const r = await read(await make(1200, 400));          /* 3:1 */
+  const mid = Math.round(r.h / 2);
+  const near = await read(await make(800, 600));        /* 4:3 — לא מרופדת */
+  const tall = await read(await make(400, 1200));       /* אנכית — לא מרופדת */
+
+  return {
+    square: r.w === r.h,
+    side: r.w,
+    /* שני הקצוות של המקור שרדו: הם יושבים בשורת האמצע של הפלט */
+    leftMark:  r.near(r.at(Math.round(r.w * .078), mid), MARK) < 110,
+    rightMark: r.near(r.at(Math.round(r.w * .922), mid), MARK) < 110,
+    /* והריפוד הוא הרקע של התצלום עצמו, ולא צבע שהומצא */
+    padTop: r.near(r.at(Math.round(r.w / 2), 6), PAD) < 90,
+    bytes: r.bytes,
+    nearRatio: (near.w / near.h).toFixed(2),
+    tallRatio: (tall.w / tall.h).toFixed(2)
+  };
+});
+t('תמונה רחבה מרופדת לריבוע', wide.square === true, wide.side + 'px');
+t('והצלע אינה עולה על התקרה', wide.side === 384, String(wide.side));
+t('הקצה השמאלי של התצלום שרד את העיגול', wide.leftMark === true);
+t('וגם הימני — כלומר רואים את התמונה כולה', wide.rightMark === true);
+t('הריפוד נדגם מהרקע של התצלום ולא הומצא', wide.padTop === true);
+t('והמשקל נשאר מתחת לתקרה', wide.bytes <= 120 * 1024, String(wide.bytes));
+t('תמונה 4:3 אינה מרופדת', wide.nearRatio === '1.33', wide.nearRatio);
+t('וגם לא תמונה אנכית — שם החיתוך הוא הפנים', wide.tallRatio === '0.33', wide.tallRatio);
 
 const avShown = await page.evaluate(async () => {
   const e = (await window.DB.listEntities()).filter(x => x.name === 'דנה')[0];

@@ -26,6 +26,9 @@
     AVATAR_SHORT_EDGE: 256,
     AVATAR_QUALITY: 0.82,
     AVATAR_MAX_BYTES: 120 * 1024,
+    /* מעל היחס הזה תמונה מרופדת לריבוע כבר בייבוא. DEC-41 */
+    AVATAR_WIDE_RATIO: 1.5,
+    AVATAR_SQUARE_EDGE: 384,
 
     RECENT_MAX: 6,
 
