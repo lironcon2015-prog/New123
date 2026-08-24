@@ -37,6 +37,15 @@
     return 'בתוקף עד ' + window.KINDS.get('date').format(ymd);
   };
 
+  /* תווית קצרה, לאריח שרוחבו 106 פיקסלים. `E.label` הוא הקנון וממשיך
+     להיות מה שמופיע בשורה ובכרטיס; כאן אין מקום למשפט. */
+  E.shortLabel = function (days) {
+    if (days == null) return '';
+    if (days <= 0) return 'פג';
+    if (days === 1) return 'מחר';
+    return days + ' ימים';
+  };
+
   /* מסמך בלי expiryDate אינו נכנס לרשימה כלל — הוא לא "תקין" ולא "חסר" */
   E.group = function (docs, today) {
     var out = { past: [], d30: [], d90: [], ok: [] };
@@ -51,6 +60,20 @@
       out[k].sort(function (a, b) { return a.days - b.days; });
     });
     return out;
+  };
+
+  /* התפוגה הקרובה ביותר מתוך אוסף מסמכים, או null. זה מה שמסך הבית
+     מציג על ישות: לא כמה מסמכים יש לה, אלא מה עומד לפוג בה ומתי.
+     מסמך בלי תאריך אינו משתתף — הוא לא "תקין" ולא "חסר". SPEC §6.7 */
+  E.next = function (docs, today) {
+    var best = null;
+    (docs || []).forEach(function (d) {
+      if (!d.expiryDate) return;
+      var days = E.daysLeft(d.expiryDate, today);
+      if (days == null) return;
+      if (!best || days < best.days) best = { doc: d, days: days, bucket: E.bucket(days) };
+    });
+    return best;
   };
 
   /* DEC-14: סוג עם notify:false מופיע ברשימת התפוגות אבל אינו נספר בבאנר.

@@ -153,7 +153,8 @@
       if (t.gap) { nav.appendChild(U.el('span', { class: 'nav-gap' })); return; }
       var b = U.el('button', {
         class: 'nav-i', type: 'button', dataset: { hash: t.hash }
-      }, [U.icon(t.icon, 24), U.el('span', { text: t.label })]);
+        /* האייקון עטוף, כדי שלטאב הפעיל תהיה כרית ולא רק צבע */
+      }, [U.el('i', {}, U.icon(t.icon, 22)), U.el('span', { text: t.label })]);
       b.addEventListener('click', function () { location.hash = t.hash; });
       nav.appendChild(b);
     });

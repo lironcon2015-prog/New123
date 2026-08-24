@@ -233,27 +233,21 @@
 
   /* ---------- ישויות ---------- */
 
+  /* ---------- מסך הבית ----------
+     המסך מציג תמונות, ולכן התמונה היא שקובעת את הפריסה ולא ההפך: פנים
+     מזוהות בעיגול, ורכב או דירה בפס רחב. `CONFIG.ENTITY_GROUPS` הוא
+     שקובע מי מוצג איך, ואין כאן שם של סוג ישות אחד. DEC-39 */
   Screens.entities = function () {
     var home = C.HOME === 'entities';
-    var wrap = U.el('div', { class: 'scr' }, head(home ? C.APP_NAME : 'ישויות', [
-      U.el('button', {
-        class: 'iconbtn', type: 'button', 'aria-label': 'ישות חדשה',
-        onClick: function () { Screens.entitySheet(null); }
-      }, U.icon('i-plus', 22)),
-      U.el('button', {
-        class: 'iconbtn', type: 'button', 'aria-label': 'עוזר',
-        onClick: function () { location.hash = '#/chat'; }
-      }, U.icon('i-chat', 22))
-    ]));
-
-    /* הבאנר היומי חי במסך הבית, לא במסך התפוגות. מנוע התפוגה חייב משטח
-       בפתיחת האפליקציה — בלעדיו הוא קיים רק למי שנכנס אליו במיוחד. */
-    if (home) {
-      var notice = Screens.noticeBanner(E.group(state.live));
-      if (notice) wrap.appendChild(notice);
-    }
+    var wrap = U.el('div', { class: 'scr scr-home' });
 
     if (!state.entities.length) {
+      wrap.appendChild(head(home ? C.APP_NAME : 'ישויות', [
+        U.el('button', {
+          class: 'iconbtn', type: 'button', 'aria-label': 'ישות חדשה',
+          onClick: function () { Screens.entitySheet(null); }
+        }, U.icon('i-plus', 22))
+      ]));
       wrap.appendChild(UI.empty({
         icon: 'i-users',
         title: 'עוד אין ישויות',
@@ -264,40 +258,87 @@
       return wrap;
     }
 
-    /* ---------- קיבוץ וסידור ----------
-       הסדר בין הקבוצות נגזר מ-`CONFIG.ENTITY_TYPES`, שאדם ראשון בו.
-       זו שורה בטבלה, לא סדר שכתוב כאן.
+    /* ---------- המסד ----------
+       הסימן הוא הפעם היחידה שהאקסנט מופיע בראש המסך, ושורת המצב מחליפה
+       את הבאנר: היא אומרת את אותו דבר בשורה אחת, ולוחצים עליה. */
+    var grouped = E.group(state.live);
+    var flagged = E.notifiable(grouped).length;
 
-       בתוך קבוצה הסדר הוא `sortOrder`, וגרירה כותבת אותו מחדש. זו
-       הדריסה: ברירת המחדל היא סדר היצירה, וגרירה גוברת עליה לתמיד. */
-    C.ENTITY_TYPES.forEach(function (meta) {
-      var mine = state.entities.filter(function (e) { return e.type === meta.key; });
+    var status = U.el('div', { class: 'mast-s' }, [
+      U.el('span', { class: 'quiet', text: U.count(state.live.length, 'מסמך אחד', 'מסמכים') })
+    ]);
+    if (flagged) {
+      status.appendChild(U.el('span', { class: 'sep', text: '·' }));
+      status.appendChild(U.el('button', {
+        class: 'mast-flag', type: 'button',
+        onClick: function () { location.hash = '#/expiries'; }
+      }, [
+        U.el('i'),
+        U.el('span', { text: flagged === 1 ? 'אחד דורש טיפול' : flagged + ' דורשים טיפול' })
+      ]));
+    }
+
+    wrap.appendChild(U.el('div', { class: 'mast' }, [
+      U.el('span', { class: 'mast-tile' }, U.icon('i-case', 25)),
+      U.el('div', { class: 'mast-b' }, [
+        U.el('h1', { class: 'mast-t scr-title', text: home ? C.APP_NAME : 'ישויות' }),
+        status
+      ]),
+      U.el('div', { class: 'scr-actions' }, [
+        U.el('button', {
+          class: 'iconbtn', type: 'button', 'aria-label': 'ישות חדשה',
+          onClick: function () { Screens.entitySheet(null); }
+        }, U.icon('i-plus', 21)),
+        U.el('button', {
+          class: 'iconbtn', type: 'button', 'aria-label': 'עוזר',
+          onClick: function () { location.hash = '#/chat'; }
+        }, U.icon('i-chat', 21))
+      ])
+    ]));
+
+    /* השדה העליון. אלמנט אחד, מאחורי התוכן, ובלי שום תפקיד מלבד עומק. */
+    wrap.appendChild(U.el('div', { class: 'home-field', 'aria-hidden': 'true' }));
+
+    /* ---------- הקבוצות ----------
+       הסדר בין הקבוצות ובין הסוגים בתוכן נגזר מהטבלאות. בתוך קבוצה
+       הסדר הוא `sortOrder`, וגרירה כותבת אותו מחדש — בדיוק כמו קודם. */
+    C.ENTITY_GROUPS.forEach(function (grp) {
+      var types = C.ENTITY_TYPES.filter(function (t) { return t.group === grp.key; });
+      var mine = [];
+      types.forEach(function (t) {
+        state.entities.filter(function (e) { return e.type === t.key; })
+          .forEach(function (e) { mine.push(e); });
+      });
       if (!mine.length) return;
 
-      wrap.appendChild(U.el('div', { class: 'bucket-h', text: meta.label }));
-      var box = U.el('div', { class: 'egroup', dataset: { type: meta.key } });
+      /* התווית נבנית מהסוגים שיש להם ישויות בפועל */
+      var label = types.filter(function (t) {
+        return mine.some(function (e) { return e.type === t.key; });
+      }).map(function (t) { return t.label; });
 
-      mine.forEach(function (e) {
-        var n = state.live.filter(function (d) { return d.entityId === e.id; }).length;
-        var card = U.el('button', {
-          class: 'card ecard', type: 'button', dataset: { id: e.id }
-        }, [
-          UI.avatar(e),
-          U.el('span', { class: 'card-b' }, [
-            U.el('span', { class: 'card-t', text: e.name }),
-            U.el('span', { class: 'card-s', text: U.count(n, 'מסמך אחד', 'מסמכים') })
-          ]),
-          U.el('span', { class: 'card-grip', 'aria-hidden': 'true' }, U.icon('i-grip', 18)),
-          /* שברון שמצביע שמאלה — "היכנס". השברון היורד קורא כ"הרחב",
-             והשורה הזאת מנווטת למסך אחר. */
-          U.el('span', { class: 'card-go' }, U.icon('i-back', 18))
-        ]);
-        card.addEventListener('click', function () { location.hash = '#/entity/' + e.id; });
-        box.appendChild(card);
+      wrap.appendChild(U.el('div', { class: 'grp-h' }, [
+        U.el('b', { text: label.length > 1
+          ? label.slice(0, -1).join(', ') + ' ו' + label[label.length - 1]
+          : label[0] }),
+        U.el('em', { text: String(mine.length) })
+      ]));
+
+      var box = U.el('div', {
+        class: 'egroup ' + grp.layout,
+        dataset: { type: types[0].key, layout: grp.layout }
       });
+      mine.forEach(function (e) { box.appendChild(Screens.entityTile(e, grp.layout)); });
+
+      if (grp.layout === 'rail') {
+        box.appendChild(U.el('button', {
+          class: 'ptile-add', type: 'button', 'aria-label': 'ישות חדשה',
+          onClick: function () { Screens.entitySheet(null); }
+        }, U.icon('i-plus', 22)));
+      }
 
       UI.reorder(box, {
         itemSelector: '.ecard',
+        axis: grp.layout === 'rail' ? 'x' : 'grid',
         onDrop: function (els) { Screens.saveOrder(els); }
       });
       wrap.appendChild(box);
@@ -309,10 +350,51 @@
     return wrap;
   };
 
-  /* כותב `sortOrder` לכל הקבוצה, ולא רק לזו שזזה — מרווח קבוע מונע
-     התנגשות אחרי כמה גרירות, ורשומה בלי `sortOrder` מקבלת אחד. */
-  /* כרטיס שהורם והונח במקומו לא שינה כלום, ו"הסדר נשמר" עליו הוא
-     הודעה על משהו שלא קרה. הטוסט מותנה בכתיבה בפועל. */
+  /* אריח ישות. שתי פריסות, ואותה רשומה מזינה את שתיהן. */
+  Screens.entityTile = function (e, layout) {
+    var mine = state.live.filter(function (d) { return d.entityId === e.id; });
+    var next = E.next(mine);
+    var urgent = next && next.bucket !== 'ok';
+    var meta = U.count(mine.length, 'מסמך אחד', 'מסמכים');
+
+    var card = U.el('button', {
+      class: 'card ecard ' + (layout === 'rail' ? 'ptile' : 'atile'),
+      type: 'button', dataset: { id: e.id }
+    });
+
+    if (layout === 'rail') {
+      card.appendChild(UI.avatar(e, 64, urgent ? next.bucket : null));
+      card.appendChild(U.el('span', { class: 'card-b' }, [
+        U.el('span', { class: 'card-t', text: e.name }),
+        urgent
+          ? U.el('span', { class: 'card-s' },
+              UI.chip(next.bucket, E.shortLabel(next.days)))
+          : U.el('span', { class: 'card-s', text: next ? 'הכל בתוקף' : meta })
+      ]));
+      card.addEventListener('click', function () { location.hash = '#/entity/' + e.id; });
+      return card;
+    }
+
+    /* לוח: התמונה היא הפנים של האריח, והצ׳יפ יושב עליה מתחת לצעיף */
+    var kind = C.ENTITY_TYPES.filter(function (t) { return t.key === e.type; })[0];
+    var band = U.el('span', { class: 'atile-img' }, UI.avatarImage(e));
+    band.appendChild(U.el('span', { class: 'atile-k', text: kind ? kind.label : '' }));
+    if (urgent) {
+      band.appendChild(U.el('span', { class: 'atile-veil' }));
+      band.appendChild(U.el('span', { class: 'atile-c' },
+        UI.chip(next.bucket, E.shortLabel(next.days))));
+    }
+    card.appendChild(band);
+    card.appendChild(U.el('span', { class: 'card-b' }, [
+      U.el('span', { class: 'card-t', text: e.name }),
+      U.el('span', { class: 'card-s', text: urgent
+        ? next.doc.title + ' · ' + meta
+        : meta + (next ? ' · הכל בתוקף' : '') })
+    ]));
+    card.addEventListener('click', function () { location.hash = '#/entity/' + e.id; });
+    return card;
+  };
+
   Screens.saveOrder = function (els) {
     var ids = els.map(function (el) { return el.dataset.id; });
     var wrote = 0;

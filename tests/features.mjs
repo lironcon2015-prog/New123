@@ -53,19 +53,22 @@ await page.evaluate(async () => {
 });
 await page.waitForSelector('.egroup');
 
+/* DEC-39: שתי קבוצות ולא ארבע. הפריסה נגזרת מ-`ENTITY_GROUPS`, והתווית
+   נבנית משמות הסוגים שיש להם ישויות בפועל. */
 const groups = await page.evaluate(() => {
-  const heads = [...document.querySelectorAll('.bucket-h')].map(h => h.textContent);
+  const heads = [...document.querySelectorAll('.grp-h b')].map(h => h.textContent);
   const gs = [...document.querySelectorAll('.egroup')].map(g => ({
-    type: g.dataset.type,
+    layout: g.dataset.layout,
     names: [...g.querySelectorAll('.card-t')].map(x => x.textContent)
   }));
   return { heads, gs };
 });
-t('הקבוצה הראשונה היא אדם', groups.gs[0] && groups.gs[0].type === 'person',
-  JSON.stringify(groups.gs.map(g => g.type)));
-t('ואחריה רכב ובית', groups.gs.map(g => g.type).join(',') === 'person,vehicle,home',
-  groups.gs.map(g => g.type).join(','));
-t('הכותרות הן שמות הסוגים', groups.heads.join(',') === 'אדם,רכב,בית', groups.heads.join(','));
+t('הקבוצה הראשונה היא רצועת האנשים', groups.gs[0] && groups.gs[0].layout === 'rail',
+  JSON.stringify(groups.gs.map(g => g.layout)));
+t('ואחריה לוח הנכסים', groups.gs.map(g => g.layout).join(',') === 'rail,board',
+  groups.gs.map(g => g.layout).join(','));
+t('התווית נבנית מהסוגים שיש להם ישויות', groups.heads.join(' | ') === 'אדם | רכב ובית',
+  groups.heads.join(' | '));
 t('בתוך הקבוצה הסדר הוא sortOrder', groups.gs[0].names.join(',') === 'דנה,איתמר',
   groups.gs[0].names.join(','));
 
@@ -395,12 +398,12 @@ await page.waitForSelector('.scr');
 t('מסך הישות מקפל את הגרסאות הקודמות',
   (await page.locator('.fold', { hasText: 'גרסאות קודמות' }).count()) === 1);
 
-/* ---------- 7 · באנר שנעלם אחרי טיפול ---------- */
-console.log('\n— באנר דורש טיפול —');
-const banner = await page.evaluate(async () => {
-  const DB = window.DB, U = window.U, S = window.Settings, C = window.CONFIG;
-  await S.set(C.K.lastNoticeDay, '');
-  await S.set(C.K.lastNoticeSig, '');
+/* ---------- 7 · מה שדורש טיפול ----------
+   DEC-39: במסך הבית הבאנר נבלע בשורת המצב שבמסד. הוא לא נמחק — הוא עדיין
+   מה שמוצג כשמסך התפוגות הוא מסך הבית, ולכן שתי ההתנהגויות נבדקות. */
+console.log('\n— מה שדורש טיפול —');
+const flag = await page.evaluate(async () => {
+  const DB = window.DB, U = window.U;
   const expired = {
     id: 'b-1', entityId: 'e-car', typeKey: 'vehicle_insurance', title: 'ביטוח פג',
     fields: [
@@ -413,8 +416,8 @@ const banner = await page.evaluate(async () => {
   await DB.saveDoc(expired, []);
   location.hash = '#/entities';
   await window.App.render();
-  const shown = !!document.querySelector('.notice');
-  const clickable = !!document.querySelector('.notice-go');
+  const el = document.querySelector('.mast-flag');
+  const shown = !!el, text = el ? el.textContent : '';
 
   /* טיפול: מסמך מעודכן עם אותה פוליסה ואותה חברה */
   const renewed = JSON.parse(JSON.stringify(expired));
@@ -423,38 +426,65 @@ const banner = await page.evaluate(async () => {
   const plan = window.Versions.plan(renewed, await DB.listDocs());
   await DB.supersede(renewed, plan.supersede, []);
   await window.App.render();
-  return { shown, clickable, after: !!document.querySelector('.notice'), planned: plan.supersede };
+  return { shown, text, after: !!document.querySelector('.mast-flag'), planned: plan.supersede };
 });
-t('באנר מופיע כשיש מסמך שפג', banner.shown === true);
-t('והוא לחיץ', banner.clickable === true);
-t('העלאת המסמך המחודש דחקה את שפג', banner.planned.join(',') === 'b-1', banner.planned.join(','));
-t('ואחרי הטיפול הבאנר נעלם', banner.after === false);
+t('שורת המצב מסמנת מסמך שפג', flag.shown === true);
+t('והיא אומרת כמה', /דורש/.test(flag.text), flag.text);
+t('העלאת המסמך המחודש דחקה את שפג', flag.planned.join(',') === 'b-1', flag.planned.join(','));
+t('ואחרי הטיפול הסימון נעלם', flag.after === false);
 
-const sig = await page.evaluate(async () => {
-  const DB = window.DB, S = window.Settings, C = window.CONFIG, E = window.Expiry;
-  const second = {
-    id: 'b-3', entityId: 'e-car', typeKey: 'vehicle_test', title: 'טסט שפג',
-    fields: [{ key: 'plate', label: 'מספר רישוי', value: '7654321', kind: 'plate', sensitive: false, verified: true }],
-    issueDate: null, expiryDate: '2020-06-01', files: [], source: 'upload', notes: '',
+await page.locator('.mast-flag').count().then(async () => {});
+const flagGo = await page.evaluate(async () => {
+  const DB = window.DB;
+  await DB.saveDoc({
+    id: 'b-5', entityId: 'e-car', typeKey: 'vehicle_test', title: 'טסט שפג מזמן',
+    fields: [{ key: 'plate', label: 'מספר רישוי', value: '3334445', kind: 'plate', sensitive: false, verified: true }],
+    issueDate: null, expiryDate: '2020-02-02', files: [], source: 'upload', notes: '',
     supersededBy: null, deleted: 0
-  };
-  await DB.saveDoc(second, []);
+  }, []);
   location.hash = '#/entities';
   await window.App.render();
+  document.querySelector('.mast-flag').click();
+  await new Promise(r => setTimeout(r, 260));
+  return location.hash;
+});
+t('ולחיצה עליה לוקחת לרשימת התפוגות', flagGo === '#/expiries', flagGo);
+
+/* הבאנר עצמו — במסלול שבו מסך התפוגות הוא מסך הבית */
+const sig = await page.evaluate(async () => {
+  const DB = window.DB, S = window.Settings, C = window.CONFIG;
+  const was = C.HOME;
+  C.HOME = 'expiries';
+  await S.set(C.K.lastNoticeDay, '');
+  await S.set(C.K.lastNoticeSig, '');
+  location.hash = '#/expiries';
+  await window.App.render();
+  const shown = !!document.querySelector('.notice');
+  const clickable = !!document.querySelector('.notice-go');
+
   document.querySelector('.notice .iconbtn').click();
-  await new Promise(r => setTimeout(r, 120));
+  await new Promise(r => setTimeout(r, 140));
   const dismissed = !document.querySelector('.notice');
   await window.App.render();
   const stillGone = !document.querySelector('.notice');
 
   /* מסמך חדש שפג — החתימה השתנתה, והבאנר חוזר גם באותו יום */
-  const third = JSON.parse(JSON.stringify(second));
-  third.id = 'b-4'; third.title = 'טסט נוסף';
-  third.fields = [{ key: 'plate', label: 'מספר רישוי', value: '1112223', kind: 'plate', sensitive: false, verified: true }];
-  await DB.saveDoc(third, []);
+  await DB.saveDoc({
+    id: 'b-4', entityId: 'e-car', typeKey: 'vehicle_test', title: 'טסט נוסף',
+    fields: [{ key: 'plate', label: 'מספר רישוי', value: '1112223', kind: 'plate', sensitive: false, verified: true }],
+    issueDate: null, expiryDate: '2020-06-01', files: [], source: 'upload', notes: '',
+    supersededBy: null, deleted: 0
+  }, []);
   await window.App.render();
-  return { dismissed, stillGone, back: !!document.querySelector('.notice') };
+  const back = !!document.querySelector('.notice');
+
+  C.HOME = was;
+  location.hash = '#/entities';
+  await window.App.render();
+  return { shown, clickable, dismissed, stillGone, back };
 });
+t('כשמסך התפוגות הוא מסך הבית — הבאנר מופיע', sig.shown === true);
+t('והוא לחיץ', sig.clickable === true);
 t('סגירת הבאנר מסתירה אותו', sig.dismissed === true);
 t('והוא נשאר סגור לאותה רשימה', sig.stillGone === true);
 t('אבל חוזר כשנוסף מסמך שדורש טיפול', sig.back === true);
@@ -1341,20 +1371,23 @@ console.log('\n— המשוב בגרירה —');
 await page.goto(BASE + '#/entities');
 await page.waitForSelector('.egroup');
 
+/* DEC-39: הרצועה אופקית, ולכן המחווה נבדקת בציר X. ב-RTL "קדימה" הוא
+   ימינה, ולכן גרירה שמאלה מזיזה את הכרטיס אחורה בסדר. */
 const feel = await page.evaluate(async () => {
-  const box = document.querySelector('.egroup[data-type="person"]');
+  const box = document.querySelector('.egroup.rail');
   const cards = [...box.querySelectorAll('.ecard')];
   if (cards.length < 2) return { skip: true };
   const first = cards[0];
-  const rect = first.getBoundingClientRect();
-  const x = rect.left + rect.width / 2;
-  const ev = (type, y) => new PointerEvent(type, {
+  const r0 = first.getBoundingClientRect(), r1 = cards[1].getBoundingClientRect();
+  const y = r0.top + r0.height / 2;
+  const ev = (type, x) => new PointerEvent(type, {
     pointerId: 1, pointerType: 'touch', bubbles: true, cancelable: true, clientX: x, clientY: y
   });
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const startX = r0.left + r0.width / 2;
 
   /* 1 — ההמתנה נראית */
-  first.dispatchEvent(ev('pointerdown', rect.top + 20));
+  first.dispatchEvent(ev('pointerdown', startX));
   await sleep(80);
   const pressing = first.classList.contains('pressing');
   const pressScale = getComputedStyle(first).transform;
@@ -1363,8 +1396,8 @@ const feel = await page.evaluate(async () => {
   await sleep(400);
   const lifted = first.classList.contains('dragging');
   const atRest = first.style.transform;
-  const step = rect.height + 12;
-  box.dispatchEvent(ev('pointermove', rect.top + 20 + step * 1.7));
+  const step = (r0.left - r1.left) || (r0.width + 10);
+  box.dispatchEvent(ev('pointermove', startX - step * 1.25));
   const following = first.style.transform;
 
   /* 3 — FLIP: השכן שנדחק ננעל למקומו הישן ומשם מונפש */
@@ -1373,25 +1406,28 @@ const feel = await page.evaluate(async () => {
   const sibLocked = sibs.map(c => getComputedStyle(c).transitionDuration);
   await sleep(50);
   const sibMoving = sibs.map(c => getComputedStyle(c).transform).filter(v => v !== 'none')[0] || '';
+  const swapped = [...box.querySelectorAll('.ecard')][0] !== first;
 
   /* 4 — נחיתה, וניקוי מלא */
-  box.dispatchEvent(ev('pointerup', rect.top + 20 + step * 1.7));
+  box.dispatchEvent(ev('pointerup', startX - step * 1.25));
   const landing = first.classList.contains('landing');
   await sleep(500);
   const clean = !first.classList.contains('dragging') &&
                 !first.classList.contains('landing') &&
                 !first.style.transform && !first.style.transition;
-  return { pressing, pressScale, lifted, atRest, following, sibFlip, sibLocked, sibMoving, landing, clean };
+  return { pressing, pressScale, lifted, atRest, following, sibFlip, sibLocked,
+           sibMoving, swapped, landing, clean };
 });
 
 t('הלחיצה הארוכה מסומנת על הכרטיס מהרגע הראשון', feel.pressing === true);
 t('והיא מתקדמת ולא קופצת — הכרטיס כבר מכווץ באמצע ההמתנה',
   /matrix\(0\.9/.test(feel.pressScale), feel.pressScale);
-t('הכרטיס הנישא מתחיל בלי הזזה', /translateY\(0px\)/.test(feel.atRest), feel.atRest);
-t('ומאותו רגע הוא הולך אחרי האצבע ולא קופץ משבצת לשבצת',
-  /translateY\((?!0px)-?\d/.test(feel.following), feel.following);
+t('הכרטיס הנישא מתחיל בלי הזזה', /translate\(0px, ?0px\)/.test(feel.atRest), feel.atRest);
+t('ומאותו רגע הוא הולך אחרי האצבע בציר הרצועה',
+  /translate\(-\d/.test(feel.following), feel.following);
+t('וגרירה ברוחב אריח מחליפה מקום', feel.swapped === true);
 t('השכן שנדחק ננעל ויזואלית למקומו הישן',
-  /translateY\(-?\d/.test(feel.sibFlip), feel.sibFlip);
+  /translate\(-?\d/.test(feel.sibFlip), feel.sibFlip);
 t('ובלי מעבר, אחרת הנעילה עצמה הייתה מונפשת',
   feel.sibLocked.indexOf('0s') !== -1, feel.sibLocked.join(','));
 t('ומשם הוא מחליק אל מקומו החדש', feel.sibMoving !== '', feel.sibMoving);
@@ -1423,6 +1459,147 @@ const quietDrop = await page.evaluate(async () => {
   return document.querySelectorAll('.toast').length;
 });
 t('הנחה במקום אינה מכריזה שהסדר נשמר', quietDrop === 0, String(quietDrop));
+
+/* ---------- מסך הבית נגזר מהתמונה ----------
+   DEC-39. העיגול נושא `avatarImage`, ולכן הוא זה שקובע את הפריסה: פנים
+   בעיגול של 64, רכב ובית בפס רחב. */
+console.log('\n— מסך הבית נגזר מהתמונה —');
+
+const homeScreen = await page.evaluate(async () => {
+  const DB = window.DB;
+  const ymd = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  /* פיקסל אמיתי — כדי שהעיגול ייבדק עם תמונה ולא עם אות */
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC' +
+              'AAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  await DB.saveEntity({ id: 'h-p', type: 'person', name: 'רותם', color: '#4B6B7A',
+    avatar: 'ר', avatarImage: png, avatarFocus: { x: 50, y: 20 }, sortOrder: 1 });
+  await DB.saveEntity({ id: 'h-q', type: 'person', name: 'יעל', color: '#7A5B7E',
+    avatar: 'י', sortOrder: 2 });
+  await DB.saveEntity({ id: 'h-v', type: 'vehicle', name: 'סובארו', color: '#8B6F47',
+    avatar: 'ס', sortOrder: 1 });
+
+  const mk = (id, e, title, exp) => DB.saveDoc({
+    id, entityId: e, typeKey: 'generic', title,
+    fields: [{ key: 'title', label: 'כותרת', value: title, kind: 'text', sensitive: false, verified: true }],
+    issueDate: null, expiryDate: exp, files: [], source: 'upload', notes: '',
+    supersededBy: null, deleted: 0
+  }, []);
+  await mk('h-d1', 'h-p', 'ויזה', ymd(12));
+  await mk('h-d2', 'h-p', 'חוזה', ymd(400));
+  await mk('h-d3', 'h-q', 'אישור', ymd(500));
+  await mk('h-d4', 'h-v', 'רישוי', ymd(600));
+
+  location.hash = '#/entities';
+  await window.App.render();
+
+  const q = sel => document.querySelector(sel);
+  const tile = id => q('.egroup .ecard[data-id="' + id + '"]');
+
+  const urgent = tile('h-p'), calm = tile('h-q'), asset = tile('h-v');
+  const img = urgent.querySelector('.av img');
+
+  return {
+    railLayout: urgent.closest('.egroup').dataset.layout,
+    boardLayout: asset.closest('.egroup').dataset.layout,
+    hasImg: !!img,
+    focus: img ? img.style.objectPosition : '',
+    avSize: Math.round(urgent.querySelector('.av').getBoundingClientRect().width),
+    ring: urgent.querySelector('.av').className,
+    chip: (urgent.querySelector('.card-s .chip') || {}).textContent || '',
+    calmRing: calm.querySelector('.av').className,
+    calmChip: !!calm.querySelector('.card-s .chip'),
+    calmText: calm.querySelector('.card-s').textContent,
+    band: !!asset.querySelector('.atile-img'),
+    bandBlank: !!asset.querySelector('.atile-img .av-blank'),
+    kind: (asset.querySelector('.atile-k') || {}).textContent || '',
+    assetChip: !!asset.querySelector('.atile-c'),
+    mark: !!q('.mast-tile'),
+    field: !!q('.home-field'),
+    navPill: !!q('.nav-i.on i')
+  };
+});
+
+t('אנשים יושבים ברצועה', homeScreen.railLayout === 'rail', homeScreen.railLayout);
+t('ורכב ובית בלוח', homeScreen.boardLayout === 'board', homeScreen.boardLayout);
+t('התמונה של הישות ממלאת את העיגול', homeScreen.hasImg === true);
+t('והמסגרת שנבחרה נשמרת', homeScreen.focus === '50% 20%', homeScreen.focus);
+t('העיגול הוא 64 ולא 40', homeScreen.avSize === 64, String(homeScreen.avSize));
+t('ישות שדורשת מבט נושאת טבעת בצבע הדלי',
+  /ring-d30/.test(homeScreen.ring), homeScreen.ring);
+t('והצ׳יפ אומר כמה נשאר', /\d+ ימים|מחר/.test(homeScreen.chip), homeScreen.chip);
+t('ישות רגועה נשארת בלי טבעת — DEC-05', !/ring-/.test(homeScreen.calmRing), homeScreen.calmRing);
+t('ובלי צ׳יפ', homeScreen.calmChip === false);
+t('היא פשוט אומרת שהכל בתוקף', homeScreen.calmText === 'הכל בתוקף', homeScreen.calmText);
+t('לאריח הנכס יש פס תמונה', homeScreen.band === true);
+t('ובלי תמונה יורד עליו אייקון הסוג', homeScreen.bandBlank === true);
+t('והתווית על הפס היא שם הסוג', homeScreen.kind === 'רכב', homeScreen.kind);
+t('נכס רגוע אינו מקבל צ׳יפ על התמונה', homeScreen.assetChip === false);
+t('הסימן יושב בראש המסך', homeScreen.mark === true);
+t('ומאחוריו שדה אחד', homeScreen.field === true);
+t('ולטאב הפעיל יש כרית', homeScreen.navPill === true);
+
+/* התפוגה הקרובה, ותווית שנכנסת לאריח בן 106 פיקסלים */
+const nextApi = await page.evaluate(() => {
+  const E = window.Expiry;
+  const docs = [
+    { id: 'x1', expiryDate: '2030-01-01' },
+    { id: 'x2', expiryDate: '2027-01-01' },
+    { id: 'x3', expiryDate: null }
+  ];
+  const t0 = new Date(2026, 0, 1);
+  return {
+    pick: E.next(docs, t0).doc.id,
+    none: E.next([{ id: 'y', expiryDate: null }], t0),
+    empty: E.next([], t0),
+    short: [E.shortLabel(-4), E.shortLabel(0), E.shortLabel(1), E.shortLabel(12), E.shortLabel(null)]
+  };
+});
+t('E.next בוחרת את הקרובה ביותר', nextApi.pick === 'x2', nextApi.pick);
+t('מסמך בלי תאריך אינו משתתף', nextApi.none === null);
+t('ורשימה ריקה מחזירה null', nextApi.empty === null);
+t('התווית הקצרה נכנסת לאריח',
+  nextApi.short.join('|') === 'פג|פג|מחר|12 ימים|', nextApi.short.join('|'));
+
+/* גרירה בלוח — שני צירים, ולא רק מעלה ומטה */
+const board = await page.evaluate(async () => {
+  const DB = window.DB;
+  await DB.saveEntity({ id: 'h-h', type: 'home', name: 'הדירה', color: '#5B6480',
+    avatar: 'ה', sortOrder: 2 });
+  location.hash = '#/entities';
+  await window.App.render();
+
+  const box = document.querySelector('.egroup.board');
+  const cards = [...box.querySelectorAll('.ecard')];
+  if (cards.length < 2) return { skip: true };
+
+  const r0 = cards[0].getBoundingClientRect(), r1 = cards[1].getBoundingClientRect();
+  const ev = (type, x, y) => new PointerEvent(type, {
+    pointerId: 3, pointerType: 'touch', bubbles: true, cancelable: true, clientX: x, clientY: y
+  });
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+  const before = [...box.querySelectorAll('.card-t')].map(x => x.textContent);
+  /* הראשון ב-RTL הוא הימני. גוררים אותו שמאלה, אל מעבר למרכז השני. */
+  const sx = r0.left + r0.width / 2, sy = r0.top + r0.height / 2;
+  cards[0].dispatchEvent(ev('pointerdown', sx, sy));
+  await sleep(420);
+  box.dispatchEvent(ev('pointermove', r1.left + r1.width / 2 - 12, sy));
+  await sleep(60);
+  const mid = [...box.querySelectorAll('.card-t')].map(x => x.textContent);
+  box.dispatchEvent(ev('pointerup', r1.left + r1.width / 2 - 12, sy));
+  await sleep(500);
+  const rows = await DB.listEntities();
+  return {
+    before, mid,
+    saved: rows.filter(r => r.type !== 'person').sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(r => r.name)
+  };
+});
+t('גרירה אופקית בלוח מחליפה מקום',
+  board.mid[0] !== board.before[0], board.before.join(',') + ' → ' + board.mid.join(','));
+t('והסדר החדש נשמר', board.saved.join(',') === board.mid.join(','),
+  board.saved.join(',') + ' vs ' + board.mid.join(','));
 
 await browser.close();
 console.log(`\nסה״כ: ${pass} עברו, ${fail} נכשלו`);

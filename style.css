@@ -52,12 +52,21 @@
 }
 
 /* פלטות — טוקנים בלבד. DEC-06 */
-:root[data-pal="a"] { --accent:#4A4080; --accent-strong:#3A3166; --accent-soft:#EDEBF6; --accent-on:#fff; }
-:root[data-pal="b"] { --accent:#1F5350; --accent-strong:#163E3C; --accent-soft:#E4EFEE; --accent-on:#fff; }
+/* `--tint-1/2` ו-`--glow` נגזרים מהאקסנט ואינם צבע רביעי: הם אותו גוון
+   בשקיפות. DEC-39 — משטח שיש בו עומק במקום off-white אחיד. */
+:root[data-pal="a"] {
+  --accent:#4A4080; --accent-strong:#3A3166; --accent-soft:#EDEBF6; --accent-on:#fff;
+  --tint-1:rgba(74,64,128,.26); --tint-2:rgba(74,64,128,.11); --glow:rgba(74,64,128,.34);
+}
+:root[data-pal="b"] {
+  --accent:#1F5350; --accent-strong:#163E3C; --accent-soft:#E4EFEE; --accent-on:#fff;
+  --tint-1:rgba(31,83,80,.24); --tint-2:rgba(31,83,80,.10); --glow:rgba(31,83,80,.32);
+}
 :root[data-pal="c"] {
   --accent:#A9492E; --accent-strong:#8A3A24; --accent-soft:#F7E9E4; --accent-on:#fff;
   /* הדריסה היחידה המותרת מחוץ לטוקני האקסנט: טרקוטה מתנגשת ב"פג" */
   --exp-past-fg:#9B1C2E; --exp-past-bg:#FAEAEC;
+  --tint-1:rgba(169,73,46,.22); --tint-2:rgba(169,73,46,.09); --glow:rgba(169,73,46,.30);
 }
 
 /* ============ בסיס ============ */
@@ -182,12 +191,151 @@ body.locked .app { padding: 0; }
   overflow: hidden;
 }
 .av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* הטבעת היא המקום היחיד במסך הבית שבו הקשת החמה נוגעת בישות עצמה */
+/* הטבעת נכתבת כטוקן ולא כ-box-shadow, כדי שהמסגרת הלבנה של הרצועה
+   והטבעת של הדלי לא ידרסו זו את זו לפי סדר הסלקטורים. הצבע הוא בדיוק
+   צבע הצ׳יפ של אותו דלי — אותו סימן, שתי צורות. */
+.av { --ring: 0 0 0 0 transparent; }
+.av.ring-past { --ring: 0 0 0 3px var(--exp-past-fg); }
+.av.ring-d30  { --ring: 0 0 0 3px var(--exp-d30-fg); }
+.av.ring-d90  { --ring: 0 0 0 3px var(--exp-d90-fg); }
 .av-lg { width: 64px; height: 64px; font-size: 24px; }
 
 .av-row { display: flex; align-items: center; gap: 14px; }
 .av-host { flex: none; }
 .av-acts { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .av-acts .btn { margin-top: 0; padding: 8px 16px; font-size: 13.5px; }
+
+/* ============ מסך הבית ============ */
+/* DEC-39. המסך מציג תמונות, ולכן הפריסה נגזרת מהן: פנים בעיגול, רכב
+   או דירה בפס רחב. */
+.scr-home { position: relative; }
+
+/* השדה: שני ענני אקסנט רכים ושכבת גרעין. גרדיאנט אחד במסך, אף גוון חדש. */
+.home-field {
+  position: absolute; inset-inline: -16px; top: -8px; height: 356px;
+  pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(112% 74% at 82% -14%, var(--tint-1), transparent 60%),
+    radial-gradient(86% 62% at 8% 6%, var(--tint-2), transparent 64%),
+    linear-gradient(180deg, var(--accent-soft) 0%, rgba(246, 245, 242, 0) 92%);
+}
+/* בלי הגרעין השדה נראה כמו גרדיאנט של תבנית ולא כמו נייר */
+.home-field::after {
+  content: ""; position: absolute; inset: 0; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.055'/%3E%3C/svg%3E");
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 88%);
+  mask-image: linear-gradient(180deg, #000 0%, transparent 88%);
+}
+.scr-home > *:not(.home-field) { position: relative; z-index: 1; }
+
+.mast { display: flex; align-items: center; gap: 11px; padding: 16px 0 0; }
+.mast-tile {
+  flex: none; width: 44px; height: 44px; border-radius: 15px;
+  background: linear-gradient(148deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: var(--accent-on); display: grid; place-items: center;
+  box-shadow: 0 5px 14px var(--glow), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+.mast-b { flex: 1; min-width: 0; }
+.mast-t {
+  font-size: 21px; font-weight: 700; letter-spacing: -.032em; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mast-s {
+  display: flex; align-items: center; gap: 6px; margin-top: 1px;
+  font-size: 12.5px; font-weight: 500; color: var(--accent-strong);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.mast-s .quiet { opacity: .66; font-weight: 400; }
+.mast-s .sep { opacity: .38; }
+.mast-flag {
+  background: transparent; border: 0; padding: 0; font: inherit; font-weight: 600;
+  cursor: pointer; color: var(--exp-d30-fg); display: inline-flex; align-items: center; gap: 5px;
+}
+.mast-flag i { width: 6px; height: 6px; border-radius: var(--r-pill); background: currentColor; }
+.mast .iconbtn { color: var(--accent-strong); }
+
+.grp-h { display: flex; align-items: center; gap: 9px; margin: 26px 2px 12px; }
+.grp-h b { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.grp-h em {
+  font-style: normal; font-size: 11px; font-weight: 700; line-height: 1;
+  padding: 4px 8px; border-radius: var(--r-pill);
+  background: var(--accent-soft); color: var(--accent-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- הרצועה ---- */
+.egroup.rail {
+  flex-direction: row; align-items: stretch; gap: 10px;
+  margin-inline-end: -16px; padding: 0 0 4px 16px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.egroup.rail::-webkit-scrollbar { display: none; }
+.egroup.rail .card + .card { margin-top: 0; }
+
+/* זכוכית: השדה נראה דרך האריח במקום להיחסם בו */
+.egroup.rail .ptile {
+  flex: none; width: 106px; display: block; text-align: center;
+  padding: 12px 10px 14px; border-radius: var(--r-card);
+  background: rgba(255, 255, 255, .62);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  backdrop-filter: blur(16px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, .78);
+  box-shadow: 0 6px 18px rgba(18, 19, 24, .07);
+}
+@supports not (backdrop-filter: blur(2px)) {
+  .egroup.rail .ptile { background: rgba(255, 255, 255, .93); }
+}
+.egroup.rail .ptile .av {
+  margin: 0 auto;
+  box-shadow: 0 0 0 2.5px var(--surface), var(--ring), 0 3px 10px rgba(18, 19, 24, .14);
+}
+.egroup.rail .ptile .card-b { margin-top: 11px; align-items: center; }
+.egroup.rail .ptile .card-t { font-size: 13.5px; }
+.egroup.rail .ptile .card-s { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.egroup.rail .ptile .chip { display: inline-block; font-size: 11.5px; padding: 3px 9px; }
+
+.ptile-add {
+  flex: none; width: 106px; border-radius: var(--r-card);
+  background: transparent; color: var(--accent);
+  border: 1.5px dashed var(--accent-soft);
+  display: grid; place-items: center; cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.ptile-add:hover { border-color: var(--accent); }
+.ptile-add:active { transform: scale(.97); }
+
+/* ---- הלוח ---- */
+.egroup.board {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+}
+.egroup.board .card + .card { margin-top: 0; }
+.egroup.board .atile {
+  display: block; padding: 0; overflow: hidden;
+  border-radius: var(--r-card); box-shadow: 0 4px 18px rgba(18, 19, 24, .07);
+}
+.atile-img { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; }
+.atile-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.av-blank { display: grid; place-items: center; width: 100%; height: 100%; color: rgba(255, 255, 255, .82); }
+/* התווית והצ׳יפ יושבים על התמונה, ולכן יש להם רקע מטושטש וצעיף ולא ריבוע */
+.atile-k {
+  position: absolute; top: 9px; inset-inline-start: 10px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
+  padding: 3px 8px; border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, .74); color: var(--ink-2);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+.atile-veil {
+  position: absolute; inset-inline: 0; bottom: 0; height: 58px;
+  background: linear-gradient(180deg, rgba(20, 18, 16, 0) 0%, rgba(20, 18, 16, .42) 100%);
+}
+.atile-c { position: absolute; bottom: 8px; inset-inline-end: 9px; }
+.egroup.board .atile .card-b { padding: 11px 14px 14px; }
+.egroup.board .atile .card-t { font-size: 15.5px; letter-spacing: -.012em; }
+.egroup.board .atile .card-s {
+  font-size: 12px; color: var(--ink-3); margin-top: 1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* ============ צ׳יפ ============ */
 .chip {
@@ -454,26 +602,43 @@ select.f-i { appearance: none; background-image: none; }
   position: fixed; inset-inline: 0; bottom: 0; z-index: 20;
   height: calc(var(--nav-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
-  background: var(--surface); border-top: 1px solid var(--line);
-  display: flex; align-items: flex-start; padding-top: 9px;
+  /* שקוף למחצה, והתוכן נגלל מתחתיו — זה מה שנותן למסך עומק בלי להוסיף
+     ולו רכיב אחד. DEC-39 */
+  background: rgba(255, 255, 255, .74);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  border-top: 1px solid rgba(233, 230, 225, .8);
+  display: flex; align-items: flex-start; padding-top: 7px;
   max-width: 560px; margin-inline: auto;
+}
+@supports not (backdrop-filter: blur(2px)) {
+  .nav { background: var(--surface); }
 }
 body.locked .nav, body.locked .fab { display: none; }
 .nav-i {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
   background: transparent; border: 0; font-size: 10.5px; color: var(--ink-3); cursor: pointer;
   transition: transform var(--dur-fast) var(--ease);
 }
 .nav-i:active { transform: scale(.97); }
+/* הכרית מסמנת את הטאב הפעיל, ומוסיפה אקסנט במקום שכבר נושא משמעות */
+.nav-i i {
+  display: grid; place-items: center; width: 48px; height: 30px;
+  border-radius: var(--r-pill); background: transparent;
+  transition: background var(--dur-base) var(--ease);
+}
 .nav-i.on { color: var(--accent); }
+.nav-i.on i { background: var(--accent-soft); }
 .nav-gap { flex: 1; }
 
 .fab {
   position: fixed; bottom: calc(36px + env(safe-area-inset-bottom)); z-index: 21;
   inset-inline-start: 50%; transform: translateX(50%);
   width: 56px; height: 56px; border-radius: var(--r-pill);
-  background: var(--accent); color: var(--accent-on); border: 0;
-  display: grid; place-items: center; cursor: pointer; box-shadow: var(--shadow);
+  background: linear-gradient(150deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: var(--accent-on); border: 0;
+  display: grid; place-items: center; cursor: pointer;
+  box-shadow: 0 8px 22px var(--glow), 0 2px 6px rgba(18, 19, 24, .14);
   transition: transform var(--dur-fast) var(--ease);
 }
 .fab:active { transform: translateX(50%) scale(.97); }

@@ -113,18 +113,42 @@
 
   /* ---------- צ׳יפ תפוגה ---------- */
   /* צבע לעולם לא לבדו — הצ׳יפ נושא גם טקסט */
+  /* התמונה של הישות בפס רחב, לאריחי הלוח. אותו `avatarImage` ואותה
+     מסגרת שנבחרה — רק חלון אחר. בלי תמונה יורד אייקון הסוג על משטח
+     בגוון הישות, כדי שהאריח לא ייראה שבור. */
+  UI.avatarImage = function (entity) {
+    var e = entity || {};
+    if (e.avatarImage) {
+      var img = U.el('img', { src: e.avatarImage, alt: '' });
+      img.style.objectPosition = UI.focusCss(e.avatarFocus);
+      return img;
+    }
+    var meta = (window.CONFIG.ENTITY_TYPES.filter(function (t) {
+      return t.key === e.type;
+    })[0] || {});
+    return U.el('span', {
+      class: 'av-blank',
+      style: 'background:' + (e.color || '#8D929B')
+    }, U.icon(meta.icon || 'i-doc', 30));
+  };
+
   UI.chip = function (bucket, text) {
     return U.el('span', { class: 'chip ' + bucket, text: text });
   };
 
   /* אווטאר: תמונה אם יש, ואות אם אין. התמונה היא data URL על הרשומה
      ולכן היא נצבעת בפריים הראשון — בלי קריאה אסינכרונית ובלי הבהוב. */
-  UI.avatar = function (entity, size) {
+  /* `ring` הוא מפתח דלי תפוגה, ואז האווטאר נושא טבעת בצבע הדלי. זה
+     המקום היחיד במסך הבית שבו הקשת החמה נוגעת בישות עצמה. */
+  UI.avatar = function (entity, size, ring) {
     var e = entity || { name: '?', color: '#8D929B' };
     var style = 'background:' + (e.color || '#8D929B');
     if (size) style += ';width:' + size + 'px;height:' + size + 'px;font-size:' +
                        Math.round(size * 0.38) + 'px';
-    var box = U.el('span', { class: 'av' + (e.avatarImage ? ' av-img' : ''), style: style });
+    var box = U.el('span', {
+      class: 'av' + (e.avatarImage ? ' av-img' : '') + (ring ? ' ring-' + ring : ''),
+      style: style
+    });
     if (e.avatarImage) {
       var img = U.el('img', { src: e.avatarImage, alt: '' });
       /* המסגרת שנבחרה. ברירת המחדל היא מרכז — וזה בדיוק מה שאווטאר
@@ -295,16 +319,26 @@
      אוטומטית מזיזה את כולם, ומטמון היה נכון רק עד לגלילה הראשונה. */
   UI.reorder = function (container, opts) {
     var HOLD_MS = 320, SLOP = 10, EDGE = 76, MAX_STEP = 14, LAND_MS = 200;
-    var timer = null, active = null, startY = 0, dragged = false;
-    var pointerY = 0, raf = null, pressing = null;
-    var grabOffset = 0, homeTop = 0;
+    var timer = null, active = null, startX = 0, startY = 0, dragged = false;
+    var pointerX = 0, pointerY = 0, raf = null, pressing = null;
+    var grabDX = 0, grabDY = 0, homeLeft = 0, homeTop = 0;
+
+    /* ---------- הציר ----------
+       'y' רשימה, 'x' רצועה אופקית, 'grid' לוח דו-טורי. הציר מגיע מהקורא
+       ולא נגזר מה-DOM, מפני שאותו מיכל יכול להיראות אחרת בשתי רזולוציות
+       והמחווה חייבת להיות יציבה. DEC-39 */
+    var axis = opts.axis || 'y';
+    var movesX = axis !== 'y', movesY = axis !== 'x';
+    function rtl() { return getComputedStyle(container).direction === 'rtl'; }
 
     function items() {
       return Array.prototype.slice.call(container.querySelectorAll(opts.itemSelector));
     }
 
-    /* מי גולל בפועל — האב הקרוב שאפשר לגלול בו, או החלון */
+    /* מי גולל בפועל — האב הקרוב שאפשר לגלול בו, או החלון.
+       ברצועה אופקית זה המיכל עצמו, ולכן הוא נבדק ראשון. */
     function scroller() {
+      if (movesX && container.scrollWidth > container.clientWidth) return container;
       var el = container.parentNode;
       while (el && el.nodeType === 1) {
         var st = getComputedStyle(el);
@@ -314,10 +348,11 @@
       return null;
     }
 
-    function scrollBy(dy) {
+    function scrollBy(d) {
       var el = scroller();
-      if (el) el.scrollTop += dy;
-      else window.scrollBy(0, dy);
+      if (movesX && el === container) { container.scrollLeft += (rtl() ? -d : d); return; }
+      if (el) el.scrollTop += d;
+      else window.scrollBy(0, d);
     }
 
     /* המקום שהכרטיס תופס בזרימה, בלי ההזזה שרוכבת עליו. המדידה מנטרלת
@@ -326,25 +361,41 @@
       if (!active) return;
       var t = active.style.transform;
       active.style.transform = 'none';
-      homeTop = active.getBoundingClientRect().top;
+      var r = active.getBoundingClientRect();
+      homeLeft = r.left; homeTop = r.top;
       active.style.transform = t;
     }
 
-    /* ההזזה שמשאירה את הכרטיס תחת האצבע */
+    /* ההזזה שמשאירה את הכרטיס תחת האצבע. רק בציר שהמחווה נעה בו — כרטיס
+       ברשימה אנכית שנגרר גם הצידה נראה כאילו הוא נשמט מהיד. */
     function lift() {
       if (!active) return;
+      var dx = movesX ? (pointerX - grabDX) - homeLeft : 0;
+      var dy = movesY ? (pointerY - grabDY) - homeTop : 0;
       active.style.transform =
-        'translateY(' + ((pointerY - grabOffset) - homeTop) + 'px) scale(1.03)';
+        'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px) scale(1.03)';
     }
 
     function tick() {
       if (!active) { raf = null; return; }
-      var top = pointerY - EDGE;
-      var bottom = (window.innerHeight - EDGE) - pointerY;
-      if (top < 0) scrollBy(-Math.min(MAX_STEP, Math.ceil(-top / 4)));
-      else if (bottom < 0) scrollBy(Math.min(MAX_STEP, Math.ceil(-bottom / 4)));
+
+      /* גלילה אוטומטית בקצה. ברצועה אופקית הקצוות הם של המיכל, וברשימה
+         הם של החלון — האצבע מגיעה לשוליים במקום אחר לגמרי. */
+      var lead, trail;
+      if (movesX && scroller() === container) {
+        var cr = container.getBoundingClientRect();
+        lead = pointerX - (cr.left + EDGE / 2);
+        trail = (cr.right - EDGE / 2) - pointerX;
+        if (rtl()) { var t = lead; lead = trail; trail = t; }
+      } else {
+        lead = pointerY - EDGE;
+        trail = (window.innerHeight - EDGE) - pointerY;
+      }
+      if (lead < 0) scrollBy(-Math.min(MAX_STEP, Math.ceil(-lead / 4)));
+      else if (trail < 0) scrollBy(Math.min(MAX_STEP, Math.ceil(-trail / 4)));
+
       measureHome();
-      place(pointerY);
+      place(pointerX, pointerY);
       lift();
       raf = requestAnimationFrame(tick);
     }
@@ -360,45 +411,58 @@
       el.classList.add('dragging');
       container.classList.add('reordering');
       var r = el.getBoundingClientRect();
-      grabOffset = pointerY - r.top;
-      homeTop = r.top;
+      grabDX = pointerX - r.left; grabDY = pointerY - r.top;
+      homeLeft = r.left; homeTop = r.top;
       lift();
       if (navigator.vibrate) navigator.vibrate(15);
       try { el.setPointerCapture(pointerId); } catch (err) { /* לא חוסם */ }
       if (!raf) raf = requestAnimationFrame(tick);
     }
 
-    function place(y) {
+    /* האם השכן הזה בא **אחרי** נקודת המגע בסדר הקריאה — כלומר האם
+       הנגרר צריך להישתל לפניו.
+       ב-RTL סדר הקריאה הוא מימין לשמאל, ולכן "מוקדם יותר" הוא X גדול
+       יותר. בלוח דו-טורי השורה גוברת על הטור. */
+    function isAfter(x, y, r) {
+      var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      if (axis === 'y') return y < cy;
+      if (axis === 'grid' && Math.abs(cy - y) > r.height * 0.6) return y < cy;
+      return rtl() ? x > cx : x < cx;
+    }
+
+    function place(x, y) {
       if (!active) return;
-      var sibs = items().filter(function (x) { return x !== active; });
-      var tops = sibs.map(function (x) {
-        var r = x.getBoundingClientRect();
-        return { top: r.top, mid: r.top + r.height / 2 };
-      });
+      var sibs = items().filter(function (s) { return s !== active; });
+      var rects = sibs.map(function (s) { return s.getBoundingClientRect(); });
 
       var before = null;
       for (var i = 0; i < sibs.length; i++) {
-        if (y < tops[i].mid) { before = sibs[i]; break; }
+        if (isAfter(x, y, rects[i])) { before = sibs[i]; break; }
       }
+      /* המיכל רשאי להחזיק ילדים שאינם פריטים — ברצועה יושב בסופה כפתור
+         "ישות חדשה". `appendChild` היה משתיל את הנגרר **אחריו**, ולכן
+         הסוף נמדד מול הפריט האחרון ולא מול הילד האחרון. */
+      var last = sibs[sibs.length - 1];
       var needed = before
         ? before.previousElementSibling !== active
-        : container.lastElementChild !== active;
+        : (last ? last.nextElementSibling !== active : false);
       if (!needed) return;
 
       if (before) container.insertBefore(active, before);
-      else container.appendChild(active);
+      else container.insertBefore(active, last.nextSibling);
 
       /* FLIP. ההפרש נמדד מול המקום שבו השכן **נראה** רגע קודם — כולל
          באמצע הנפשה קודמת — ולכן החלפה רודפת החלפה ממשיכה ברצף במקום
          להתחיל מחדש מקפיצה. */
-      sibs.forEach(function (x, i) {
-        var d = tops[i].top - x.getBoundingClientRect().top;
-        if (!d) return;
-        x.style.transition = 'none';
-        x.style.transform = 'translateY(' + d + 'px)';
+      sibs.forEach(function (s, i) {
+        var now = s.getBoundingClientRect();
+        var dx = rects[i].left - now.left, dy = rects[i].top - now.top;
+        if (!dx && !dy) return;
+        s.style.transition = 'none';
+        s.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px)';
       });
       requestAnimationFrame(function () {
-        sibs.forEach(function (x) { x.style.transition = ''; x.style.transform = ''; });
+        sibs.forEach(function (s) { s.style.transition = ''; s.style.transform = ''; });
       });
 
       measureHome();
@@ -413,8 +477,8 @@
     container.addEventListener('pointerdown', function (e) {
       var el = e.target.closest ? e.target.closest(opts.itemSelector) : null;
       if (!el || !container.contains(el)) return;
-      startY = e.clientY;
-      pointerY = e.clientY;
+      startX = e.clientX; startY = e.clientY;
+      pointerX = e.clientX; pointerY = e.clientY;
       dragged = false;
       clearTimeout(timer);
       unpress();
@@ -425,18 +489,17 @@
     });
 
     container.addEventListener('pointermove', function (e) {
-      pointerY = e.clientY;
+      pointerX = e.clientX; pointerY = e.clientY;
       if (!active) {
-        /* תנועה לפני שההמתנה הבשילה היא גלילה, לא גרירה */
-        if (timer && Math.abs(e.clientY - startY) > SLOP) {
-          clearTimeout(timer); timer = null;
-          unpress();
-        }
+        /* תנועה לפני שההמתנה הבשילה היא גלילה, לא גרירה — ולכן נמדדת
+           על שני הצירים: ברצועה אופקית הגלילה היא בדיוק בציר הגרירה. */
+        var moved = Math.max(Math.abs(e.clientX - startX), Math.abs(e.clientY - startY));
+        if (timer && moved > SLOP) { clearTimeout(timer); timer = null; unpress(); }
         return;
       }
       e.preventDefault();
       measureHome();
-      place(e.clientY);
+      place(e.clientX, e.clientY);
       lift();
     });
 

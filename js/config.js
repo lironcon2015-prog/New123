@@ -77,11 +77,22 @@
     MIRRORED: ['palette', 'typeface'],
     LS_PREFIX: 'fv.',
 
+    /* `group` הוא העמודה שקובעת איפה הסוג מוצג במסך הבית. DEC-39.
+       מסך הבית מציג תמונות, ולתמונה של אדם ולתמונה של בית מגיעה מסגרת
+       אחרת: פנים מזוהות בעיגול, ורכב או דירה בפס רחב. */
     ENTITY_TYPES: [
-      { key: 'person',  label: 'אדם',  icon: 'i-person' },
-      { key: 'vehicle', label: 'רכב',  icon: 'i-car' },
-      { key: 'home',    label: 'בית',  icon: 'i-home' },
-      { key: 'other',   label: 'אחר',  icon: 'i-doc' }
+      { key: 'person',  label: 'אדם',  icon: 'i-person', group: 'people' },
+      { key: 'vehicle', label: 'רכב',  icon: 'i-car',    group: 'assets' },
+      { key: 'home',    label: 'בית',  icon: 'i-home',   group: 'assets' },
+      { key: 'other',   label: 'אחר',  icon: 'i-doc',    group: 'assets' }
+    ],
+
+    /* קבוצות מסך הבית, לפי סדר התצוגה. אין להן תווית משלהן: התווית
+       נבנית משמות הסוגים שיש להם ישויות בפועל, ולכן משפחה בלי רכב
+       רואה "בית" ולא "רכב ובית". */
+    ENTITY_GROUPS: [
+      { key: 'people', layout: 'rail'  },
+      { key: 'assets', layout: 'board' }
     ],
 
     /* עמומים בכוונה: אווטאר שמתחרה באקסנט הופך את מסך הבית לרועש */
