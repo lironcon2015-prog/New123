@@ -1250,6 +1250,180 @@ t('ומספר העמודים החיים נשאר חסום', deep.drawn <= 6, Str
 
 await page.evaluate(() => { document.querySelector('.backdrop').remove(); });
 
+/* ---------- הכפתור "חזור" אחרי שמירה ----------
+   הדיווח: "אחרי שמירה, חזור מחזיר אותי לטופס. אבל פלואו השמירה נגמר —
+   הוא אמור להחזיר אותי לרשימת מסמכי הישות."
+   נכון. הטופס נשאר רשומה בהיסטוריה אחרי שסיים את תפקידו. */
+console.log('\n— חזור אחרי שמירה —');
+
+async function backBtn(pg) {
+  await pg.locator('.scr-head .iconbtn').first().click();
+  await pg.waitForTimeout(350);
+  return pg.evaluate(() => location.hash);
+}
+
+await p2.goto(BASE + '#/entity/car');
+await p2.waitForSelector('.scr');
+await p2.click('.fab');
+await p2.waitForSelector('.routes');
+await p2.click('.routes .route:has-text("הזנה ידנית")');
+await p2.waitForSelector('#d-type');
+
+const stampOnForm = await p2.evaluate(() => history.state);
+t('לכל רשומת היסטוריה יש חותמת עומק ומקור',
+  stampOnForm && typeof stampOnForm.d === 'number' && stampOnForm.from === '#/entity/car',
+  JSON.stringify(stampOnForm));
+
+await p2.selectOption('#d-type', { label: 'טסט' });
+await p2.waitForSelector('#f-plate');
+await p2.fill('#f-plate', '7778889');
+await p2.fill('#d-expiry', '2029-05-05');
+await p2.click('#doc-save');
+await p2.waitForSelector('.doc-head');
+
+const savedHash = await p2.evaluate(() => location.hash);
+t('השמירה מגיעה למסמך שנשמר', /^#\/doc\//.test(savedHash), savedHash);
+t('והטופס ירד מההיסטוריה במקום להישאר בה',
+  (await p2.evaluate(() => history.state.from)) === '#/entity/car',
+  await p2.evaluate(() => JSON.stringify(history.state)));
+
+t('לחיצה אחת על חזור מחזירה לרשימת מסמכי הישות, ולא לטופס',
+  (await backBtn(p2)) === '#/entity/car');
+
+/* עריכה: אותו כלל, אבל היעד כבר יושב מאחורינו — ולכן חוזרים אליו
+   במקום לדחוף עותק שני שלו שייראה כאילו "חזור" לא עשה כלום. */
+const editId = await p2.evaluate(() =>
+  window.Screens.state.docs.filter(d => d.fields.some(f => f.value === '7778889'))[0].id);
+await p2.evaluate(id => { location.hash = '#/doc/' + id; }, editId);
+await p2.waitForSelector('.doc-head');
+await p2.evaluate(id => { location.hash = '#/doc/' + id + '/edit'; }, editId);
+await p2.waitForSelector('#f-plate');
+await p2.fill('#f-plate', '7778880');
+await p2.click('#doc-save');
+await p2.waitForSelector('.doc-head');
+t('שמירת עריכה נוחתת על המסמך',
+  (await p2.evaluate(() => location.hash)) === '#/doc/' + editId,
+  await p2.evaluate(() => location.hash));
+t('וחזור ממנו יוצא מהמסמך ולא נתקע על עותק כפול שלו',
+  (await backBtn(p2)) === '#/entity/car');
+
+/* קישור שנפתח ישירות: אין מאחוריו שום רשומה שלנו, ולכן "חזור" חייב
+   ליפול להורה הלוגי במקום להוציא מהאפליקציה. */
+const fresh = await ctx2.newPage();
+await fresh.goto(BASE + '#/doc/' + editId);
+await fresh.waitForSelector('.doc-head');
+t('בקישור שנפתח ישירות אין עומק היסטוריה',
+  (await fresh.evaluate(() => history.state.d)) === 0,
+  await fresh.evaluate(() => JSON.stringify(history.state)));
+t('וחזור לוקח להורה הלוגי במקום לצאת מהאפליקציה',
+  (await backBtn(fresh)) === '#/entity/car');
+await fresh.close();
+
+/* מסמך מחוק אינו יעד לחזרה */
+await p2.evaluate(id => { location.hash = '#/doc/' + id; }, editId);
+await p2.waitForSelector('.doc-head');
+await p2.click('.scr-body .btn.danger');
+await p2.waitForSelector('.sheet .btn.danger, .confirm .btn.danger, .backdrop');
+await p2.locator('.btn.danger', { hasText: 'מחיקה' }).last().click();
+await p2.waitForTimeout(400);
+t('מחיקת מסמך נוחתת על הישות',
+  (await p2.evaluate(() => location.hash)) === '#/entity/car',
+  await p2.evaluate(() => location.hash));
+t('ולא משאירה את המסמך המחוק מאחור',
+  (await p2.evaluate(() => history.state.from)) !== '#/doc/' + editId,
+  await p2.evaluate(() => JSON.stringify(history.state)));
+
+/* ---------- המשוב בגרירה ----------
+   הדיווח: "הגרירה עובדת אבל לא חלק. הפידבק לא מספיק טוב."
+   שלושה חוסרים, וכולם במשוב: אין סימן שהלחיצה הארוכה מתקדמת, הכרטיס
+   אינו הולך אחרי האצבע אלא קופץ משבצת לשבצת, והשכנים נעים בבת אחת. */
+console.log('\n— המשוב בגרירה —');
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.egroup');
+
+const feel = await page.evaluate(async () => {
+  const box = document.querySelector('.egroup[data-type="person"]');
+  const cards = [...box.querySelectorAll('.ecard')];
+  if (cards.length < 2) return { skip: true };
+  const first = cards[0];
+  const rect = first.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const ev = (type, y) => new PointerEvent(type, {
+    pointerId: 1, pointerType: 'touch', bubbles: true, cancelable: true, clientX: x, clientY: y
+  });
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  /* 1 — ההמתנה נראית */
+  first.dispatchEvent(ev('pointerdown', rect.top + 20));
+  await sleep(80);
+  const pressing = first.classList.contains('pressing');
+  const pressScale = getComputedStyle(first).transform;
+
+  /* 2 — הכרטיס נישא, ואז הולך אחרי האצבע */
+  await sleep(400);
+  const lifted = first.classList.contains('dragging');
+  const atRest = first.style.transform;
+  const step = rect.height + 12;
+  box.dispatchEvent(ev('pointermove', rect.top + 20 + step * 1.7));
+  const following = first.style.transform;
+
+  /* 3 — FLIP: השכן שנדחק ננעל למקומו הישן ומשם מונפש */
+  const sibs = [...box.querySelectorAll('.ecard')].filter(c => c !== first);
+  const sibFlip = sibs.map(c => c.style.transform).filter(Boolean)[0] || '';
+  const sibLocked = sibs.map(c => getComputedStyle(c).transitionDuration);
+  await sleep(50);
+  const sibMoving = sibs.map(c => getComputedStyle(c).transform).filter(v => v !== 'none')[0] || '';
+
+  /* 4 — נחיתה, וניקוי מלא */
+  box.dispatchEvent(ev('pointerup', rect.top + 20 + step * 1.7));
+  const landing = first.classList.contains('landing');
+  await sleep(500);
+  const clean = !first.classList.contains('dragging') &&
+                !first.classList.contains('landing') &&
+                !first.style.transform && !first.style.transition;
+  return { pressing, pressScale, lifted, atRest, following, sibFlip, sibLocked, sibMoving, landing, clean };
+});
+
+t('הלחיצה הארוכה מסומנת על הכרטיס מהרגע הראשון', feel.pressing === true);
+t('והיא מתקדמת ולא קופצת — הכרטיס כבר מכווץ באמצע ההמתנה',
+  /matrix\(0\.9/.test(feel.pressScale), feel.pressScale);
+t('הכרטיס הנישא מתחיל בלי הזזה', /translateY\(0px\)/.test(feel.atRest), feel.atRest);
+t('ומאותו רגע הוא הולך אחרי האצבע ולא קופץ משבצת לשבצת',
+  /translateY\((?!0px)-?\d/.test(feel.following), feel.following);
+t('השכן שנדחק ננעל ויזואלית למקומו הישן',
+  /translateY\(-?\d/.test(feel.sibFlip), feel.sibFlip);
+t('ובלי מעבר, אחרת הנעילה עצמה הייתה מונפשת',
+  feel.sibLocked.indexOf('0s') !== -1, feel.sibLocked.join(','));
+t('ומשם הוא מחליק אל מקומו החדש', feel.sibMoving !== '', feel.sibMoving);
+t('ההרפיה מנחיתה את הכרטיס במקום לתלוש אותו', feel.landing === true);
+t('ואחרי הנחיתה לא נשאר עליו שום סגנון inline', feel.clean === true);
+
+const sibTrans = await page.evaluate(() => fetch('/style.css').then(r => r.text()));
+t('לשכנים יש משך מעבר מוגדר, ולא ברירת מחדל של הדפדפן',
+  /\.egroup\.reordering \.card,[\s\S]{0,60}transition: transform/.test(sibTrans));
+t('והכיווץ של :active מנוטרל באמצע גרירה',
+  /\.egroup\.reordering \.card:active[\s\S]{0,80}transform: none/.test(sibTrans));
+
+/* כרטיס שהורם והונח במקומו לא שינה כלום, ו"הסדר נשמר" עליו הוא הודעה
+   על משהו שלא קרה. */
+const quietDrop = await page.evaluate(async () => {
+  document.querySelectorAll('.toast').forEach(x => x.remove());
+  const box = document.querySelector('.egroup[data-type="person"]');
+  const first = box.querySelector('.ecard');
+  const rect = first.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const ev = (type, y) => new PointerEvent(type, {
+    pointerId: 2, pointerType: 'touch', bubbles: true, cancelable: true, clientX: x, clientY: y
+  });
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  first.dispatchEvent(ev('pointerdown', rect.top + 20));
+  await sleep(420);
+  box.dispatchEvent(ev('pointerup', rect.top + 20));
+  await sleep(450);
+  return document.querySelectorAll('.toast').length;
+});
+t('הנחה במקום אינה מכריזה שהסדר נשמר', quietDrop === 0, String(quietDrop));
+
 await browser.close();
 console.log(`\nסה״כ: ${pass} עברו, ${fail} נכשלו`);
 process.exit(fail ? 1 : 0);

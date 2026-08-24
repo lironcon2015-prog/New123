@@ -34,11 +34,14 @@
     ]);
   }
 
-  function backHead(title, actions) {
+  /* `parent` הוא ההורה הלוגי של המסך. ברוב הפעמים ההיסטוריה כבר מכילה
+     אותו והכפתור פשוט חוזר; הוא נדרש כשאין היסטוריה בכלל — קישור שנפתח
+     ישירות — ואז "חזור" שמוציא מהאפליקציה הוא לא מה שהמשתמש ביקש. */
+  function backHead(title, actions, parent) {
     return U.el('div', { class: 'scr-head' }, [
       U.el('button', {
         class: 'iconbtn i-flip', type: 'button', 'aria-label': 'חזרה',
-        onClick: function () { history.back(); }
+        onClick: function () { window.App.back(parent); }
       }, U.icon('i-back', 22)),
       U.el('h1', { class: 'scr-title', text: title }),
       actions ? U.el('div', { class: 'scr-actions' }, actions) : null
@@ -308,15 +311,19 @@
 
   /* כותב `sortOrder` לכל הקבוצה, ולא רק לזו שזזה — מרווח קבוע מונע
      התנגשות אחרי כמה גרירות, ורשומה בלי `sortOrder` מקבלת אחד. */
+  /* כרטיס שהורם והונח במקומו לא שינה כלום, ו"הסדר נשמר" עליו הוא
+     הודעה על משהו שלא קרה. הטוסט מותנה בכתיבה בפועל. */
   Screens.saveOrder = function (els) {
     var ids = els.map(function (el) { return el.dataset.id; });
+    var wrote = 0;
     return Promise.all(ids.map(function (id, i) {
       var e = state.byId[id];
       if (!e || e.sortOrder === (i + 1) * 1000) return null;
       e.sortOrder = (i + 1) * 1000;
+      wrote++;
       return DB.saveEntity(e);
     })).then(function () {
-      UI.toast('הסדר נשמר');
+      if (wrote) UI.toast('הסדר נשמר');
       return Screens.reload();
     });
   };
@@ -330,7 +337,7 @@
         class: 'iconbtn', type: 'button', 'aria-label': 'עריכת ישות',
         onClick: function () { Screens.entitySheet(e); }
       }, U.icon('i-edit', 22))
-    ]));
+    ], '#/entities'));
 
     var all = state.docs.filter(function (d) { return d.entityId === id; });
     if (!all.length) {
@@ -395,13 +402,15 @@
 
   Screens.saveDocOrder = function (els) {
     var ids = els.map(function (el) { return el.dataset.id; });
+    var wrote = 0;
     return Promise.all(ids.map(function (id, i) {
       var doc = state.docs.filter(function (d) { return d.id === id; })[0];
       if (!doc || doc.sortOrder === (i + 1) * 1000) return null;
       doc.sortOrder = (i + 1) * 1000;
+      wrote++;
       return DB.saveDoc(doc, []);
     })).then(function () {
-      UI.toast('הסדר נשמר');
+      if (wrote) UI.toast('הסדר נשמר');
       return Screens.reload();
     });
   };
@@ -442,7 +451,7 @@
         class: 'iconbtn', type: 'button', 'aria-label': 'עריכת מסמך',
         onClick: function () { location.hash = '#/doc/' + id + '/edit'; }
       }, U.icon('i-edit', 22))
-    ]));
+    ], '#/entity/' + doc.entityId));
 
     var body = U.el('div', { class: 'scr-body' });
     wrap.appendChild(body);
@@ -554,7 +563,9 @@
           if (!yes) return;
           DB.deleteDoc(doc.id).then(function () {
             UI.toast('המסמך נמחק');
-            location.hash = '#/entity/' + doc.entityId;
+            /* מסמך מחוק אינו יעד לחזרה. הרשומה שלו מוחלפת, אחרת "חזור"
+               היה מציג "המסמך לא נמצא" למי שרק מחק אותו. */
+            window.App.swap('#/entity/' + doc.entityId);
           });
         });
       }
@@ -693,7 +704,7 @@
     if (docId && !doc) return Screens.missing('המסמך לא נמצא');
 
     if (!state.entities.length) {
-      var w = U.el('div', { class: 'scr' }, backHead('מסמך חדש'));
+      var w = U.el('div', { class: 'scr' }, backHead('מסמך חדש', null, '#/entities'));
       w.appendChild(UI.empty({
         icon: 'i-users',
         title: 'צריך ישות אחת לפחות',
@@ -706,7 +717,11 @@
 
     var proposal = doc ? null : window.App.proposal;
     var staged = (proposal && proposal.dropFiles) ? [] : window.App.staged;
-    var wrap = U.el('div', { class: 'scr' }, backHead(doc ? 'עריכת מסמך' : 'מסמך חדש'));
+    /* ההורה של הטופס: עריכה חוזרת למסמך, ומסמך חדש לישות שאליה הוא נתלה */
+    var formParent = doc ? '#/doc/' + doc.id
+      : '#/entity/' + (window.App.pendingEntityId || (state.entities[0] || {}).id || '');
+    var wrap = U.el('div', { class: 'scr' },
+      backHead(doc ? 'עריכת מסמך' : 'מסמך חדש', null, formParent));
 
     var noticeBox = U.el('div');
     wrap.appendChild(noticeBox);
@@ -901,7 +916,9 @@
           msg = 'נשמר כגרסה קודמת — יש מסמך עדכני יותר';
         }
         UI.toast(msg);
-        location.hash = '#/doc/' + r.value.id;
+        /* הטופס סיים. הוא יורד מההיסטוריה במקום להישאר בה, ולכן "חזור"
+           מהמסמך השמור מוביל למי ששלח לטופס ולא לטופס עצמו. */
+        window.App.leave('#/doc/' + r.value.id);
       });
     }
     wrap.appendChild(save);
@@ -951,7 +968,8 @@
           DB.deleteEntity(entity.id).then(function () {
             sheet.close();
             UI.toast('הישות נמחקה');
-            location.hash = '#/entities';
+            /* אותו כלל כמו במסמך מחוק — הרשומה מוחלפת ולא נדחפת */
+            window.App.swap('#/entities');
           });
         });
       });
@@ -1123,7 +1141,7 @@
 
   Screens.chat = function () {
     var Chat = window.Chat;
-    var wrap = U.el('div', { class: 'scr' }, backHead('עוזר'));
+    var wrap = U.el('div', { class: 'scr' }, backHead('עוזר', null, '#/' + C.HOME));
 
     if (!Chat.ready()) {
       var noKey = !window.Gemini.configured();
@@ -1941,7 +1959,7 @@
   };
 
   Screens.missing = function (msg) {
-    var wrap = U.el('div', { class: 'scr' }, backHead('לא נמצא'));
+    var wrap = U.el('div', { class: 'scr' }, backHead('לא נמצא', null, '#/' + C.HOME));
     wrap.appendChild(UI.empty({
       icon: 'i-file', title: msg,
       sub: 'ייתכן שהוא נמחק', action: 'למסך הבית',

@@ -274,10 +274,30 @@
         וברשימה ארוכה מהמסך זה חצי מהמקרים.
 
      אחרי הגרירה נבלע קליק אחד — אחרת שחרור על כרטיס היה מנווט אליו. */
+  /* ---------- סידור מחדש בגרירה ----------
+     הלוגיקה עבדה; מה שלא עבד הוא המשוב, ובמחווה שנמשכת שנייה שלמה
+     המשוב **הוא** התכונה. שלושה דברים תוקנו, וכולם על מה שהעין רואה:
+
+     1. **הכרטיס הולך אחרי האצבע.** קודם הוא נשאר בזרימה וקפץ משבצת
+        לשבצת ברגע שחצה אמצע של שכן — כלומר האצבע זזה והכרטיס עמד, ואז
+        קפץ. עכשיו הוא נישא ב-`translateY`, ומקומו בזרימה נמדד מחדש
+        אחרי כל החלפה כדי שיישאר בדיוק תחת הנקודה שנתפסה בו.
+
+     2. **השכנים מחליקים.** FLIP: מודדים לפני ההזזה, מזיזים ב-DOM,
+        ואז מחזירים אותם ויזואלית למקום הישן — ומשם CSS מנפיש אותם אל
+        החדש. הפער נפתח במקום להיפתח בבת אחת.
+
+     3. **ללחיצה הארוכה יש התקדמות.** 320ms של שום דבר ואז קפיצה
+        נקראים כתקלה. `.pressing` מכווץ את הכרטיס לאורך ההמתנה, ולכן
+        האצבע מקבלת תשובה עוד לפני שהגרירה התחילה.
+
+     המדידה נשארת `getBoundingClientRect` בכל פריים ולא מטמון: גלילה
+     אוטומטית מזיזה את כולם, ומטמון היה נכון רק עד לגלילה הראשונה. */
   UI.reorder = function (container, opts) {
-    var HOLD_MS = 320, SLOP = 10, EDGE = 76, MAX_STEP = 14;
+    var HOLD_MS = 320, SLOP = 10, EDGE = 76, MAX_STEP = 14, LAND_MS = 200;
     var timer = null, active = null, startY = 0, dragged = false;
-    var pointerY = 0, raf = null;
+    var pointerY = 0, raf = null, pressing = null;
+    var grabOffset = 0, homeTop = 0;
 
     function items() {
       return Array.prototype.slice.call(container.querySelectorAll(opts.itemSelector));
@@ -300,21 +320,49 @@
       else window.scrollBy(0, dy);
     }
 
+    /* המקום שהכרטיס תופס בזרימה, בלי ההזזה שרוכבת עליו. המדידה מנטרלת
+       את ה-transform ומחזירה אותו באותו פריים, ולכן אין הבהוב. */
+    function measureHome() {
+      if (!active) return;
+      var t = active.style.transform;
+      active.style.transform = 'none';
+      homeTop = active.getBoundingClientRect().top;
+      active.style.transform = t;
+    }
+
+    /* ההזזה שמשאירה את הכרטיס תחת האצבע */
+    function lift() {
+      if (!active) return;
+      active.style.transform =
+        'translateY(' + ((pointerY - grabOffset) - homeTop) + 'px) scale(1.03)';
+    }
+
     function tick() {
       if (!active) { raf = null; return; }
       var top = pointerY - EDGE;
       var bottom = (window.innerHeight - EDGE) - pointerY;
       if (top < 0) scrollBy(-Math.min(MAX_STEP, Math.ceil(-top / 4)));
       else if (bottom < 0) scrollBy(Math.min(MAX_STEP, Math.ceil(-bottom / 4)));
+      measureHome();
       place(pointerY);
+      lift();
       raf = requestAnimationFrame(tick);
     }
 
     function begin(el, pointerId) {
       active = el;
       dragged = true;
+      unpress();
+      el.classList.remove('landing');
+      /* נעילת המעבר על הנגרר בלבד: הוא חייב לעקוב אחרי האצבע 1:1,
+         בעוד שהשכנים דווקא צריכים את ההנפשה. */
+      el.style.transition = 'none';
       el.classList.add('dragging');
       container.classList.add('reordering');
+      var r = el.getBoundingClientRect();
+      grabOffset = pointerY - r.top;
+      homeTop = r.top;
+      lift();
       if (navigator.vibrate) navigator.vibrate(15);
       try { el.setPointerCapture(pointerId); } catch (err) { /* לא חוסם */ }
       if (!raf) raf = requestAnimationFrame(tick);
@@ -323,16 +371,43 @@
     function place(y) {
       if (!active) return;
       var sibs = items().filter(function (x) { return x !== active; });
+      var tops = sibs.map(function (x) {
+        var r = x.getBoundingClientRect();
+        return { top: r.top, mid: r.top + r.height / 2 };
+      });
+
       var before = null;
       for (var i = 0; i < sibs.length; i++) {
-        var r = sibs[i].getBoundingClientRect();
-        if (y < r.top + r.height / 2) { before = sibs[i]; break; }
+        if (y < tops[i].mid) { before = sibs[i]; break; }
       }
-      if (before) {
-        if (before.previousElementSibling !== active) container.insertBefore(active, before);
-      } else if (container.lastElementChild !== active) {
-        container.appendChild(active);
-      }
+      var needed = before
+        ? before.previousElementSibling !== active
+        : container.lastElementChild !== active;
+      if (!needed) return;
+
+      if (before) container.insertBefore(active, before);
+      else container.appendChild(active);
+
+      /* FLIP. ההפרש נמדד מול המקום שבו השכן **נראה** רגע קודם — כולל
+         באמצע הנפשה קודמת — ולכן החלפה רודפת החלפה ממשיכה ברצף במקום
+         להתחיל מחדש מקפיצה. */
+      sibs.forEach(function (x, i) {
+        var d = tops[i].top - x.getBoundingClientRect().top;
+        if (!d) return;
+        x.style.transition = 'none';
+        x.style.transform = 'translateY(' + d + 'px)';
+      });
+      requestAnimationFrame(function () {
+        sibs.forEach(function (x) { x.style.transition = ''; x.style.transform = ''; });
+      });
+
+      measureHome();
+    }
+
+    function unpress() {
+      if (!pressing) return;
+      pressing.classList.remove('pressing');
+      pressing = null;
     }
 
     container.addEventListener('pointerdown', function (e) {
@@ -342,6 +417,9 @@
       pointerY = e.clientY;
       dragged = false;
       clearTimeout(timer);
+      unpress();
+      pressing = el;
+      el.classList.add('pressing');
       var id = e.pointerId;
       timer = setTimeout(function () { begin(el, id); }, HOLD_MS);
     });
@@ -349,11 +427,17 @@
     container.addEventListener('pointermove', function (e) {
       pointerY = e.clientY;
       if (!active) {
-        if (timer && Math.abs(e.clientY - startY) > SLOP) { clearTimeout(timer); timer = null; }
+        /* תנועה לפני שההמתנה הבשילה היא גלילה, לא גרירה */
+        if (timer && Math.abs(e.clientY - startY) > SLOP) {
+          clearTimeout(timer); timer = null;
+          unpress();
+        }
         return;
       }
       e.preventDefault();
+      measureHome();
       place(e.clientY);
+      lift();
     });
 
     /* הבלם על הגלילה. חייב להיות לא-פסיבי, אחרת `preventDefault` מתעלם. */
@@ -364,11 +448,33 @@
 
     function end() {
       clearTimeout(timer); timer = null;
+      unpress();
       if (raf) { cancelAnimationFrame(raf); raf = null; }
       if (!active) return;
-      active.classList.remove('dragging');
-      container.classList.remove('reordering');
+
+      var el = active;
       active = null;
+      container.classList.remove('reordering');
+
+      /* נחיתה. הנעילה שהגרירה שמה משתחררת קודם, אחרת `transform: ''`
+         היה מתלישׁ את הכרטיס למקומו בלי מעבר. */
+      el.style.transition = '';
+      el.classList.add('landing');
+      el.style.transform = '';
+
+      var settled = false;
+      function settle() {
+        if (settled) return;
+        settled = true;
+        el.classList.remove('dragging', 'landing');
+        el.style.transform = '';
+        el.removeEventListener('transitionend', settle);
+      }
+      el.addEventListener('transitionend', settle);
+      /* בלי מעבר — `prefers-reduced-motion` — אין `transitionend`,
+         והכרטיס היה נשאר מורם לנצח. */
+      setTimeout(settle, LAND_MS + 60);
+
       if (opts.onDrop) opts.onDrop(items());
     }
 

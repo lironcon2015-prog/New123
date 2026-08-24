@@ -144,10 +144,35 @@ body.locked .app { padding: 0; }
 }
 .egroup.reordering, .dgroup.reordering { touch-action: none; }
 .egroup.reordering .card-grip, .dgroup.reordering .card-grip { opacity: 1; }
-.card.dragging {
-  opacity: .92; box-shadow: 0 8px 24px rgba(18, 19, 24, .18);
-  transform: scale(1.02); position: relative; z-index: 2;
+
+/* ההמתנה נראית. בלי זה יש 320ms של שום דבר ואז קפיצה, וזה נקרא כתקלה
+   ולא כמחווה — האצבע לא יודעת אם המכשיר בכלל שם לב אליה. */
+.egroup .card.pressing, .dgroup .card.pressing {
+  transform: scale(.96);
+  transition: transform 320ms var(--ease);
 }
+.egroup .card.pressing .card-grip, .dgroup .card.pressing .card-grip { opacity: 1; }
+
+/* השכנים מחליקים אל מקומם החדש. ה-transform עצמו נכתב מ-FLIP ב-ui.js;
+   מה שיושב כאן הוא רק משך המעבר. */
+.egroup.reordering .card, .dgroup.reordering .card {
+  transition: transform 170ms var(--ease);
+}
+/* הכיווץ של `:active` נכון לנגיעה קצרה ושגוי באמצע גרירה — הוא היה
+   נאבק ב-transform שנושא את הכרטיס. */
+.egroup.reordering .card:active, .dgroup.reordering .card:active { transform: none; }
+
+/* הנגרר עצמו: מורם, בלי מעבר (ui.js נועל אותו inline כדי שיעקוב אחרי
+   האצבע 1:1), ומעל כולם. */
+.card.dragging {
+  opacity: .96;
+  box-shadow: 0 14px 30px rgba(18, 19, 24, .24);
+  position: relative; z-index: 3;
+  cursor: grabbing;
+}
+.egroup.reordering .card.dragging, .dgroup.reordering .card.dragging { transition: none; }
+/* הנחיתה — הכרטיס מחליק אל המשבצת במקום להיתלש אליה */
+.card.landing { transition: transform 200ms var(--ease), box-shadow 200ms var(--ease); }
 .card-old { opacity: .72; }
 .card-ic { flex: none; width: 40px; height: 40px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--ink-2); display: grid; place-items: center; }
 

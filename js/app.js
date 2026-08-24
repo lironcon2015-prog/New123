@@ -33,6 +33,65 @@
     return h.split('/').filter(Boolean);
   }
 
+  /* ---------- היסטוריה ----------
+     לא כל מסך הוא יעד. מסך טופס הוא צעד בדרך: ברגע שהשמירה הסתיימה
+     הוא סיים את תפקידו, ולחיצה על "חזור" צריכה להוביל למי ששלח אליו —
+     רשימת המסמכים של הישות — ולא להחזיר אותו ריק למסך.
+
+     ההבחנה נשענת על חותמת שמוטבעת על כל רשומת היסטוריה: `d` הוא העומק
+     בתוך האפליקציה, ו-`from` הוא ההאש שממנו הגענו. שניהם נשמרים ב-
+     `history.state` ולכן שורדים רענון — ופתיחה ישירה של קישור, שאין
+     מאחוריה שום רשומה שלנו, מזוהה כ-`d === 0` ואינה מוציאה מהאפליקציה. */
+  var lastHash = null, lastDepth = -1, swapMark = null;
+
+  App.at = function () { return location.hash || '#/' + C.HOME; };
+
+  function stamp() {
+    var st = history.state;
+    if (st && typeof st.d === 'number') {
+      /* רשומה שכבר ביקרנו בה — חזור או קדימה. החותמת שלה היא האמת. */
+      lastDepth = st.d;
+      lastHash = App.at();
+      return;
+    }
+    var mark = swapMark || (lastDepth < 0
+      ? { d: 0, from: null }
+      : { d: lastDepth + 1, from: lastHash });
+    swapMark = null;
+    history.replaceState(mark, '');
+    lastDepth = mark.d;
+    lastHash = App.at();
+  }
+
+  /* מחליף את הרשומה הנוכחית במקום לדחוף אחת חדשה. העומק והמקור נשמרים,
+     מפני שמבחינת ההיסטוריה זו אותה עמדה — רק התוכן שלה השתנה. */
+  App.swap = function (hash) {
+    if (App.at() === hash) return App.render();
+    var st = history.state;
+    swapMark = {
+      d: (st && typeof st.d === 'number') ? st.d : 0,
+      from: st ? st.from : null
+    };
+    location.replace(location.pathname + location.search + hash);
+  };
+
+  /* יציאה ממסך שאינו יעד. אם המסך שמאחורינו הוא בדיוק היעד — חוזרים
+     אליו במקום לדחוף עותק שני שלו, שאחרת לחיצה אחת על "חזור" הייתה
+     נראית כאילו לא קרה כלום. */
+  App.leave = function (hash) {
+    var st = history.state;
+    if (st && st.d > 0 && st.from === hash) { history.back(); return; }
+    App.swap(hash);
+  };
+
+  /* "חזור". `fallback` הוא ההורה הלוגי של המסך, ומשמש כשאין מאחורינו
+     רשומה משלנו — קישור שנפתח ישירות, או טאב חדש. */
+  App.back = function (fallback) {
+    var st = history.state;
+    if (st && st.d > 0) { history.back(); return; }
+    App.swap(fallback || '#/' + C.HOME);
+  };
+
   function screenFor(parts) {
     switch (parts[0]) {
       case 'quick':    return Screens.quick();
@@ -547,6 +606,7 @@
     Zoom.boot();
 
     window.addEventListener('hashchange', function () {
+      stamp();
       if (locked) return;
       App.render();
     });
@@ -575,6 +635,7 @@
       .then(function () { return S.load(); })
       .then(function () {
         if (!location.hash) location.hash = '#/' + C.HOME;
+        stamp();
         if (Vault.enabled() && Vault.hasPin() && !Vault.isUnlocked()) {
           showLock();
         } else {
