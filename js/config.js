@@ -115,4 +115,33 @@
       { key: 'system',    label: 'מחסנית מערכת' }
     ]
   };
+
+  /* ---------- קובץ המפתחות — DEC-42 ----------
+     מכשיר שני מקבל את ההגדרות בקובץ אחד במקום בהקלדה. הטבלה היא המקור
+     היחיד: היא קובעת מה נכתב לקובץ, מה מוצג לפני האישור ומה נכתב
+     ל-settings — כלומר **מפתח נייד נוסף הוא שורה כאן ואפס קוד חדש**.
+
+     `secret` ממסך את הערך בתצוגה. `pref` מסמן העדפה ולא מפתח: היא
+     נוסעת, אבל אינה מצדיקה קובץ בפני עצמה.
+
+     היא יושבת מחוץ לליטרל מפני שהיא קוראת את `K`, ואובייקט אינו יכול
+     להצביע על עצמו בזמן שהוא נבנה. */
+  var K = window.CONFIG.K;
+  window.CONFIG.KEYFILE = {
+    APP: 'family-vault',
+    KIND: 'keys',
+    FORMAT: 1,
+    FIELDS: [
+      { key: K.backupMode, label: 'שיטת הגיבוי', type: 'enum', pref: true,
+        options: [
+          { key: 'bridge', label: 'גשר Apps Script' },
+          { key: 'oauth',  label: 'התחברות לגוגל' }
+        ] },
+      { key: K.bridgeUrl,     label: 'כתובת הגשר',        type: 'text' },
+      { key: K.bridgeToken,   label: 'סוד הגשר',          type: 'text', secret: true },
+      { key: K.driveClientId, label: 'מזהה לקוח של גוגל', type: 'text' },
+      { key: K.geminiKey,     label: 'מפתח Gemini',       type: 'text', secret: true },
+      { key: K.geminiModels,  label: 'מפל המודלים',       type: 'list', pref: true }
+    ]
+  };
 })();

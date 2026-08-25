@@ -1907,6 +1907,110 @@
 
     wrap.appendChild(section('פרסינג בענן', gemKids));
 
+    /* ---- מפתחות למכשיר נוסף — DEC-42 ----
+       מכשיר שני אינו צריך להקים כלום מחדש: הוא צריך את אותן מחרוזות.
+       הייצוא מוציא אותן כקובץ אחד, והייבוא כותב אותן ומסנכרן — ומאותו
+       רגע יש שם גם את כל הכספת. */
+    var kfMsg = U.el('div', { class: 'f-err', role: 'status' });
+    var kfInput = U.el('input', {
+      type: 'file', accept: 'application/json,.json',
+      class: 'hidden-input', id: 'kf-file', 'aria-label': 'קובץ מפתחות'
+    });
+
+    function readText(file) {
+      return new Promise(function (res, rej) {
+        var r = new FileReader();
+        r.onload = function () { res(String(r.result || '')); };
+        r.onerror = function () { rej(new Error('קריאת הקובץ נכשלה')); };
+        r.readAsText(file);
+      });
+    }
+
+    function importKeyFile(file) {
+      kfMsg.textContent = 'קורא את הקובץ…';
+      readText(file).then(function (text) {
+        var keys = window.KeyFile.parse(text);
+        var rows = window.KeyFile.rows(keys);
+        return UI.confirm({
+          title: 'טעינת המפתחות',
+          body: 'בקובץ: ' + rows.map(function (r) { return r.label; }).join(' · ') +
+                '. מה שקיים במכשיר יוחלף, ומה שאינו בקובץ יישאר. ' +
+                'ההסכמות לשליחה לגוגל אינן נוסעות בקובץ — כל אחד מאשר במכשיר שלו.',
+          ok: 'טעינה'
+        }).then(function (yes) {
+          if (!yes) { kfMsg.textContent = ''; return null; }
+          return window.KeyFile.apply(keys).then(function (n) {
+            window.Sync.transport = window.App.transport();
+            kfMsg.textContent = '';
+            UI.toast(U.count(n, 'מפתח אחד נטען', 'מפתחות נטענו'));
+            if (!window.App.transport().connected()) return null;
+            UI.toast('מסנכרן…');
+            return window.Sync.run({ silent: false }).then(function (r) {
+              UI.toast(r.error ? 'הסנכרון נכשל: ' + r.error : 'הסנכרון הושלם');
+            });
+          }).then(function () { window.App.render(); });
+        });
+      }).catch(function (e) {
+        kfMsg.textContent = e.message;
+      });
+    }
+
+    kfInput.addEventListener('change', function () {
+      var file = kfInput.files && kfInput.files[0];
+      /* מתאפס לפני הקריאה, אחרת בחירה חוזרת באותו קובץ אינה מפעילה
+         `change` והמסך נראה כאילו הלחיצה לא נקלטה. */
+      kfInput.value = '';
+      if (file) importKeyFile(file);
+    });
+
+    /* מי שיש לו מה לשלוח בא לכאן כדי לשלוח; מי שאין לו בא כדי לטעון.
+       הכפתור הראשי הוא זה שמתאים למכשיר שעומדים מולו. */
+    var kfHas = window.KeyFile.has();
+
+    var keyKids = [
+      U.el('p', { class: 'muted small', text:
+        'קובץ אחד שנושא את כתובת הגשר, הסוד, מזהה הלקוח ומפתח Gemini — ' +
+        'ולא נושא מסמכים. מי שטוען אותו מקבל את ההגדרות, ובסנכרון שרץ ' +
+        'מיד אחריו מקבל גם את כל הכספת.' }),
+      kfInput
+    ];
+
+    if (kfHas) {
+      keyKids.push(U.el('button', {
+        class: 'btn wide', type: 'button',
+        onClick: function () {
+          UI.confirm({
+            title: 'שליחת המפתחות',
+            body: 'הקובץ מכיל את סוד הגשר ואת מפתח Gemini בגלוי, ומי שמחזיק ' +
+                  'בו יכול לקרוא ולכתוב בתיקיית הגיבוי. שלח אותו בערוץ שאתה ' +
+                  'סומך עליו, ומחק אותו משם אחרי שנטען בצד השני.',
+            ok: 'שליחה'
+          }).then(function (yes) {
+            if (!yes) return;
+            window.Share.file(window.KeyFile.blob(), window.KeyFile.name(),
+              'application/json').then(function (mode) {
+              UI.toast(mode === 'cancel' ? 'בוטל'
+                : mode === 'share' ? 'הקובץ נשלח' : 'הקובץ ירד למכשיר');
+            });
+          });
+        }
+      }, 'שליחת המפתחות שלי'));
+    }
+
+    keyKids.push(U.el('button', {
+      class: kfHas ? 'btn ghost wide' : 'btn wide', type: 'button',
+      onClick: function () { kfInput.click(); }
+    }, 'טעינת קובץ מפתחות'));
+    keyKids.push(kfMsg);
+
+    if (!kfHas) {
+      keyKids.push(U.el('p', { class: 'muted small', text:
+        'אין עדיין מה לשלוח מהמכשיר הזה — אחרי שיוגדר גשר או מפתח Gemini, ' +
+        'כפתור השליחה יופיע כאן.' }));
+    }
+
+    wrap.appendChild(section('מפתחות למכשיר נוסף', keyKids));
+
     wrap.appendChild(section('אודות', [
       U.el('div', { class: 'set-row' }, [
         U.el('span', { class: 'set-l', text: 'גרסה' }),
