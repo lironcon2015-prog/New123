@@ -8,5 +8,5 @@ package-lock.json
 /s-*.png
 /mrz-*.png
 
-# קנבס העיצוב הארוז — נוצר מ-docs/design/*.dc.html, 2.5MB של קוד עורך
-docs/design/the-family-vault-redesign.html
+# קבצי עזר ופלט בדיקות שההוק מייצר
+/tests/fixtures/

@@ -6,6 +6,11 @@
 
 ## הרצה
 
+בסשן מרוחק של Claude Code אין צורך בכלום: `.claude/hooks/session-start.sh` מתקין
+playwright בגרסה שתואמת לדפדפן שבתמונה, מייצר את שני קבצי העזר ומרים את השרת.
+מה שלמטה הוא ההרצה הידנית, למי שעובד מקומית.
+
+
 ```bash
 npm i playwright                       # פעם אחת, בשורש הריפו (node_modules ב-.gitignore)
 python3 -m http.server 8777            # IndexedDB לא עובד מעל file://
