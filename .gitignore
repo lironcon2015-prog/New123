@@ -7,3 +7,6 @@ package-lock.json
 # פלט של סוויטות הבדיקה כשמריצים בלי FIXTURES
 /s-*.png
 /mrz-*.png
+
+# קנבס העיצוב הארוז — נוצר מ-docs/design/*.dc.html, 2.5MB של קוד עורך
+docs/design/the-family-vault-redesign.html
