@@ -398,6 +398,97 @@ await page.waitForSelector('#d-type');
 t('בהזנה ידנית בלי קובץ אין כפתור פענוח',
   (await page.locator('.scr > .btn.ghost.wide').count()) === 0);
 
+/* ---------- דלג — DEC-43 ----------
+   הפרסינג הוא מסך שחוסם, ולפעמים המשתמש כבר יודע שאין בו טעם. */
+console.log('\n— דלג —');
+
+/* ביטול לפני שיצאה בקשה: הסיגנל כבר קטוע, ולכן שום דבר לא נשלח. */
+hits = [];
+const preAbort = await page.evaluate(() => {
+  const ac = new AbortController();
+  ac.abort();
+  return window.Gemini.parse({ text: 'פוליסה' }, null, ac.signal)
+    .then(() => ({ msg: 'עבר' }), e => ({ msg: e.message, canceled: !!e.canceled }));
+});
+t('דילוג לפני השליחה נעצר', /דולג/.test(preAbort.msg), preAbort.msg);
+t('ומסומן כביטול ולא ככשל', preAbort.canceled === true);
+t('ואפס בקשות יצאו', hits.filter(u => u.includes(':generateContent')).length === 0);
+
+/* ביטול באמצע: אותו AbortError של הטיימאאוט, ושתי הודעות שונות. */
+plan = { '*': { hang: true } };
+const midAbort = await page.evaluate(() => {
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), 150);
+  return window.Gemini.parse({ text: 'פוליסה' }, null, ac.signal)
+    .then(() => ({ msg: 'עבר' }), e => ({ msg: e.message, canceled: !!e.canceled }));
+});
+t('דילוג באמצע בקשה תלויה נעצר', /דולג/.test(midAbort.msg), midAbort.msg);
+t('ואינו מתחזה לטיימאאוט', midAbort.canceled === true && !/זמן רב/.test(midAbort.msg));
+
+/* ומכאן דרך המסך, על בקשה שלעולם אינה עונה */
+await page.evaluate(async () => {
+  await window.Settings.set(window.CONFIG.K.geminiKey, 'FAKE');
+  await window.Settings.set(window.CONFIG.K.geminiConsentImage, true);
+});
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+await page.click('.fab');
+await page.waitForSelector('.routes');
+const [ch2] = await Promise.all([
+  page.waitForEvent('filechooser'),
+  page.click('.route:has-text("בחירת קובץ")')
+]);
+await ch2.setFiles({ name: 'doc.png', mimeType: 'image/png', buffer: png });
+await page.waitForSelector('.sheet:has-text("קריאת המסמך")');
+const waitTxt = await page.textContent('.sheet:has-text("קריאת המסמך")');
+t('גיליון ההמתנה אומר לאן הקובץ הולך', /נשלח לגוגל/.test(waitTxt));
+t('ויש בו דלג', /דלג/.test(waitTxt), waitTxt.slice(0, 80));
+t('שאומר מה יקרה אחריו', /מסך המסמך/.test(waitTxt));
+t('והטופס עוד לא נפתח', (await page.locator('#d-type').count()) === 0);
+
+await page.click('.sheet:has-text("קריאת המסמך") .btn:has-text("דלג")');
+await page.waitForSelector('#d-type', { timeout: 3000 });
+t('דלג פותח את מסך המסמך מיד', await page.isVisible('#d-type'));
+await page.waitForTimeout(700);
+t('הגיליון נסגר', (await page.locator('.sheet:has-text("קריאת המסמך")').count()) === 0);
+t('ושום שדה לא מולא', (await page.inputValue('#f-policyNumber').catch(() => '')) === '');
+const skipScreen = await page.textContent('.scr');
+t('הקובץ עצמו נשאר מצורף', skipScreen.includes('doc.png'));
+
+/* סגירת הגיליון היא דילוג — אחרת הצינור ממשיך מאחורי מסך שכבר נעלם */
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+await page.click('.fab');
+await page.waitForSelector('.routes');
+const [ch3] = await Promise.all([
+  page.waitForEvent('filechooser'),
+  page.click('.route:has-text("בחירת קובץ")')
+]);
+await ch3.setFiles({ name: 'doc.png', mimeType: 'image/png', buffer: png });
+await page.waitForSelector('.sheet:has-text("קריאת המסמך")');
+await page.keyboard.press('Escape');
+await page.waitForSelector('#d-type', { timeout: 3000 });
+t('Escape על הגיליון מתנהג כמו דלג', await page.isVisible('#d-type'));
+
+/* דילוג וכישלון אינם אותו מסך: כישלון ממשיך לטופס עם הודעה שאומרת
+   מה קרה, ודילוג ממשיך לטופס נקי — בלי "הפרסינג נכשל" שלא נכשל. */
+plan = { '*': { status: 500 } };
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+await page.click('.fab');
+await page.waitForSelector('.routes');
+const [ch4] = await Promise.all([
+  page.waitForEvent('filechooser'),
+  page.click('.route:has-text("בחירת קובץ")')
+]);
+await ch4.setFiles({ name: 'doc.png', mimeType: 'image/png', buffer: png });
+await page.waitForSelector('#d-type', { timeout: 15000 });
+await page.waitForTimeout(300);
+const failTxt = await page.textContent('.scr');
+t('פרסינג שנכשל אומר את זה ולא נראה כמו דילוג', /הפרסינג נכשל/.test(failTxt),
+  failTxt.slice(0, 90));
+t('והדילוג אינו מדווח ככישלון', !/הפרסינג נכשל/.test(skipScreen), skipScreen.slice(0, 90));
+
 t('אפס שגיאות', errs.length === 0, errs.slice(0, 2).join(' | '));
 await browser.close();
 console.log(`\nסה״כ: ${pass} עברו, ${fail} נכשלו`);

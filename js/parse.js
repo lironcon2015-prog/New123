@@ -105,8 +105,8 @@
 
   P.extraKey = extraKey;
 
-  P.fromGemini = function (input, onStatus) {
-    return window.Gemini.parse(input, onStatus).then(function (json) {
+  P.fromGemini = function (input, onStatus, signal) {
+    return window.Gemini.parse(input, onStatus, signal).then(function (json) {
       var type = DT.get(json && json.typeKey) || DT.get('generic');
       var p = empty(type.key);
       p.origin = 'gemini';
@@ -167,6 +167,9 @@
       }
       return p;
     }, function (e) {
+      /* דילוג אינו כישלון ולכן אינו הופך להצעה עם הודעה: הוא חוזר
+         כדחייה, ומי שקרא כבר סגר את הגיליון ופתח את הטופס. DEC-43. */
+      if (e && e.canceled) throw e;
       var p = empty(null);
       p.notice = { level: 'warn', text: 'הפרסינג נכשל: ' + e.message };
       return p;

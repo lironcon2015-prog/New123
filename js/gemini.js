@@ -156,13 +156,33 @@
      שם את כל הקריאות הבאות — כלומר הופך את הסדר שהמשתמש בחר להמלצה.
      המחיר הוא קריאה כושלת אחת כשהמודל הראשון עמוס. `geminiLastModel`
      עדיין נכתב, לתצוגה בלבד. */
-  function request(parts, onStatus) {
-    return send([{ role: 'user', parts: parts }], onStatus);
+  function request(parts, onStatus, signal) {
+    return send([{ role: 'user', parts: parts }], onStatus, signal);
   }
 
-  function send(contents, onStatus) {
+  /* `signal` הוא הדילוג של המשתמש (DEC-43), ואינו הטיימאאוט. שניהם
+     מגיעים בסוף כ-AbortError מאותו `fetch`, ולכן מי שקטע נזכר כאן —
+     "דילגתי" ו"השירות לא ענה" הם שני דברים שונים לגמרי למי שמסתכל. */
+  function send(contents, onStatus, signal) {
     var ctrl = new AbortController();
     var timer = setTimeout(function () { ctrl.abort(); }, C.GEMINI_TIMEOUT_MS);
+    var canceled = false;
+
+    function onAbort() { canceled = true; ctrl.abort(); }
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else if (signal.addEventListener) signal.addEventListener('abort', onAbort);
+    }
+    function stop() {
+      clearTimeout(timer);
+      if (signal && signal.removeEventListener) signal.removeEventListener('abort', onAbort);
+    }
+    function why(e) {
+      if (!e || e.name !== 'AbortError') return e;
+      var out = new Error(canceled ? 'הפרסינג דולג' : 'הבקשה ארכה זמן רב מדי');
+      out.canceled = canceled;
+      return out;
+    }
 
     return G.cascade(ctrl.signal).then(function (names) {
       if (!names.length) throw new Error('לא נמצאו מודלים זמינים למפתח הזה');
@@ -177,19 +197,18 @@
           S.set(C.K.geminiLastModel, model);
           return text;
         }, function (e) {
-          if (e.name === 'AbortError') throw new Error('הבקשה ארכה זמן רב מדי');
+          if (e.name === 'AbortError') throw why(e);
           if (e.status === 400 || e.status === 403) throw e;
           return next(e);
         });
       }
       return next(null);
     }).then(function (text) {
-      clearTimeout(timer);
+      stop();
       return text;
     }, function (e) {
-      clearTimeout(timer);
-      if (e.name === 'AbortError') throw new Error('הבקשה ארכה זמן רב מדי');
-      throw e;
+      stop();
+      throw why(e);
     });
   }
 
@@ -270,7 +289,7 @@
   }
 
   /* input: { blob, mime } לתמונה, או { text } לטקסט חופשי */
-  G.parse = function (input, onStatus) {
+  G.parse = function (input, onStatus, signal) {
     var kind = input.blob ? 'image' : 'text';
     if (!G.configured()) return Promise.reject(new Error('לא הוגדר מפתח'));
     if (!G.consented(kind)) return Promise.reject(new Error('לא ניתנה הסכמה לשליחה'));
@@ -284,7 +303,17 @@
       : Promise.resolve([head, { text: '\nהמסמך:\n' + input.text }]);
 
     return partsP
-      .then(function (parts) { return request(parts, onStatus); })
+      .then(function (parts) {
+        /* דילוג בזמן ההמרה ל-base64 עוצר **לפני** השליחה ולא אחריה.
+           קובץ של כמה מגה-בייט הוא מאות מילישניות שבהן הכפתור כבר על
+           המסך, ובלי הבדיקה הזאת הלחיצה עליו הייתה שולחת בכל זאת. */
+        if (signal && signal.aborted) {
+          var e = new Error('הפרסינג דולג');
+          e.canceled = true;
+          throw e;
+        }
+        return request(parts, onStatus, signal);
+      })
       .then(extractJson);
   };
 

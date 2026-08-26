@@ -173,6 +173,83 @@ t('ותאריך התפוגה נכון', ocr.a.ok && ocr.a.f.expiryDate === '2031
 t('תעודת זהות נקראת מתמונה', ocr.b.ok === true, ocr.b.reason + ' ' + (ocr.b.m || ''));
 t('ומספר התעודה נכון', ocr.b.ok && ocr.b.f.documentNumber === '004821639', ocr.b.ok && ocr.b.f.documentNumber);
 
+/* ---------- דלג — DEC-43 ----------
+   ה-OCR רץ על המכשיר ואי אפשר לקטוע אותו באמצע ריצה, ולכן מה שנבדק כאן
+   הוא הדבר שמסוכן בו: הקריאה **ממשיכה** ברקע, והתוצאה שלה מגיעה למסך
+   שכבר נפתח. דרכון הוא סוג ש`allowFiles:false`, כלומר הצעה שתגיע באיחור
+   תמחק את הצילום מתחת לטופס הפתוח. */
+console.log('\n— דלג בקריאה על המכשיר —');
+
+const shot = await page.evaluate(async (s) => {
+  const c = document.createElement('canvas');
+  c.width = 1400; c.height = 900;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  x.fillStyle = '#111';
+  x.font = '46px "Courier New", monospace';
+  x.textBaseline = 'top';
+  const top = c.height - 40 - s.td3.length * 80;
+  s.td3.forEach((l, i) => x.fillText(l, 14, top + i * 80));
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  const buf = await blob.arrayBuffer();
+  let out = '';
+  new Uint8Array(buf).forEach(b => { out += String.fromCharCode(b); });
+  return btoa(out);
+}, samples);
+
+/* נקודת עגינה לרגע שבו הקריאה שרצה ברקע באמת הסתיימה. בלעדיה הבדיקה
+   הייתה מודדת השהיה שרירותית ולא את מה שקרה כשהתוצאה הגיעה. */
+await page.evaluate(() => {
+  window.__mrz = { done: false, type: null };
+  const orig = window.Parse.fromMrz;
+  window.Parse.fromMrz = function () {
+    return orig.apply(this, arguments).then(r => {
+      window.__mrz.done = true;
+      window.__mrz.type = r.typeKey;
+      window.__mrz.drop = !!r.dropFiles;
+      return r;
+    });
+  };
+});
+
+/* בלי ישות אחת לפחות, מסך המסמך החדש הוא מסך ריק ואין בו טופס */
+await page.evaluate(async () => {
+  await window.DB.saveEntity({ id: window.U.id(), type: 'person', name: 'ליאור',
+    color: '#4B6B7A', avatar: 'ל' });
+});
+await page.goto(BASE + '#/entities');
+await page.waitForSelector('.nav');
+await page.click('.fab');
+await page.waitForSelector('.routes');
+const [chooser] = await Promise.all([
+  page.waitForEvent('filechooser'),
+  page.click('.route:has-text("סריקת דרכון")')
+]);
+await chooser.setFiles({ name: 'mrz.png', mimeType: 'image/png', buffer: Buffer.from(shot, 'base64') });
+
+await page.waitForSelector('.sheet:has-text("קריאת המסמך")');
+const onDevice = await page.textContent('.sheet:has-text("קריאת המסמך")');
+t('גיליון הקריאה המקומית אומר שכלום לא נשלח', /לא נשלח/.test(onDevice));
+t('ויש בו דלג', /דלג/.test(onDevice), onDevice.slice(0, 80));
+
+const tSkip = Date.now();
+await page.click('.sheet:has-text("קריאת המסמך") .btn:has-text("דלג")');
+await page.waitForSelector('#d-type', { timeout: 5000 });
+t('דלג אינו ממתין לסיום הקריאה', Date.now() - tSkip < 3000, String(Date.now() - tSkip) + 'ms');
+t('הטופס נפתח עם הצילום מצורף', (await page.textContent('.scr')).includes('mrz.png'));
+
+await page.waitForFunction(() => window.__mrz && window.__mrz.done, null, { timeout: 90000 });
+const late = await page.evaluate(() => ({
+  type: window.__mrz.type, drop: window.__mrz.drop,
+  proposal: window.App.proposal, staged: window.App.staged.length
+}));
+t('הקריאה ברקע אכן הצליחה — ויש מה להתעלם ממנו', late.type === 'passport', String(late.type));
+t('והיא סוג שמוחק את הצילום', late.drop === true);
+await page.waitForTimeout(300);
+t('אחרי דילוג ההצעה המאוחרת אינה מוצבת', late.proposal === null, JSON.stringify(late.proposal));
+t('והצילום לא נמחק מתחת לטופס הפתוח', late.staged === 1, String(late.staged));
+t('והטופס נשאר נקי', (await page.inputValue('#d-type')) !== 'passport');
+
 console.log('\n— אין תלות ברשת —');
 t('אפס בקשות לדומיין חיצוני לאורך כל הקריאה', net.length === 0, net.slice(0, 3).join(' | '));
 t('אפס שגיאות', errs.length === 0, errs.slice(0, 2).join(' | '));

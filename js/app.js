@@ -217,15 +217,57 @@
     else location.hash = '#/doc/new';
   }
 
+  /* ---------- גיליון ההמתנה של הפרסינג — DEC-43 ----------
+     שני המסלולים, על המכשיר ובענן, מציגים את אותו גיליון ולכן גם את
+     אותו **דלג**. דילוג אינו כישלון ואינו ביטול של ההוספה: המסמך ממשיך
+     למסך ההוספה בדיוק כמו פרסינג שלא מצא דבר, והשדות ממולאים ביד.
+
+     **סגירת הגיליון היא דילוג**, ולא רק הכפתור. גיליון שנעלם בהקשה על
+     הרקע בזמן שהצינור ממשיך לרוץ ואז קופץ בחזרה עם תוצאה הוא בדיוק
+     המסך שמלמד לא לסמוך על מה שרואים. */
+  function waitSheet(opts) {
+    var W = { skipped: false };
+    var over = false;
+
+    var status = U.el('p', { class: 'sheet-p', text: opts.status });
+    var sheet = UI.sheet('קריאת המסמך', [
+      status,
+      U.el('p', { class: 'muted small', text: opts.note }),
+      U.el('button', {
+        class: 'btn ghost wide', type: 'button',
+        onClick: function () { W.skip(); }
+      }, 'דלג'),
+      U.el('p', { class: 'muted small', text:
+        'דילוג פותח את מסך המסמך מיד, והשדות נשארים להזנה ידנית.' })
+    ], { onClose: function () { W.skip(); } });
+
+    function finish(skipped) {
+      if (over) return;
+      over = true;
+      W.skipped = skipped;
+      sheet.close();
+      if (skipped && opts.onSkip) opts.onSkip();
+    }
+
+    W.say = function (text) { if (!over) status.textContent = text; };
+    W.done = function () { finish(false); };
+    W.skip = function () { finish(true); };
+    return W;
+  }
+
   /* קריאת MRZ אורכת שניות ומורידה נכסים בפעם הראשונה — מסך שקוף על זה
      ולא ספינר אילם, כי המשתמש צריך לדעת שהוא מחכה להורדה חד-פעמית. */
   function runMrz(image) {
-    var status = U.el('p', { class: 'sheet-p', text: 'מכין את הקריאה…' });
-    var sheet = UI.sheet('קריאת המסמך', [
-      status,
-      U.el('p', { class: 'muted small', text:
-        'הקריאה מתבצעת על המכשיר. שום דבר לא נשלח לשום מקום.' })
-    ]);
+    var settle;
+    var out = new Promise(function (res) { settle = res; });
+
+    var w = waitSheet({
+      status: 'מכין את הקריאה…',
+      note: 'הקריאה מתבצעת על המכשיר. שום דבר לא נשלח לשום מקום.',
+      /* ה-OCR עצמו אינו ניתן לקטיעה באמצע ריצה, ולכן הדילוג פותח את
+         הטופס מיד ומה שממשיך ברקע כבר אינו נוגע במסך. */
+      onSkip: function () { settle(); }
+    });
 
     var LABEL = {
       'loading tesseract core': 'טוען את רכיב הקריאה…',
@@ -235,17 +277,22 @@
       'recognizing text': 'קורא את המסמך…'
     };
 
-    return window.Parse.fromMrz(image.blob, {
+    window.Parse.fromMrz(image.blob, {
       onProgress: function (m) {
-        if (m && LABEL[m.status]) status.textContent = LABEL[m.status];
+        if (m && LABEL[m.status]) w.say(LABEL[m.status]);
       }
     }).then(function (proposal) {
+      /* קריאה שהסתיימה אחרי שדילגו אינה מציבה הצעה ואינה נוגעת בקבצים:
+         `dropFiles` היה מוחק את הצילום מתחת לטופס שכבר פתוח. */
+      if (w.skipped) return;
+      w.done();
       App.proposal = proposal;
       if (proposal.dropFiles) App.staged = [];
-      sheet.close();
-    }).catch(function () {
-      sheet.close();
-    });
+    }, function () {
+      if (!w.skipped) w.done();
+    }).then(function () { settle(); });
+
+    return out;
   }
 
   function attachTo(docId, files) {
@@ -391,21 +438,37 @@
   /* מחזירה את ההצעה. מי שקרא מחליט מה לעשות בה — הצינור מציב אותה
      ופותח טופס, והכפתור שבטופס מזרים אותה לשדות שכבר על המסך. */
   App.runGemini = function (input) {
-    var status = U.el('p', { class: 'sheet-p', text: 'שולח לפרסינג…' });
-    var sheet = UI.sheet('קריאת המסמך', [
-      status,
-      U.el('p', { class: 'muted small', text:
-        input.blob ? 'הקובץ נשלח לגוגל לצורך הפרסינג.' : 'הטקסט נשלח לגוגל לצורך הפרסינג.' })
-    ]);
-    return window.Parse.fromGemini(input, function () {
-      status.textContent = 'קורא…';
-    }).then(function (proposal) {
-      sheet.close();
-      return proposal;
-    }).catch(function (e) {
-      sheet.close();
-      return null;
+    var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    var settle;
+    var out = new Promise(function (res) { settle = res; });
+
+    var w = waitSheet({
+      status: 'שולח לפרסינג…',
+      note: input.blob ? 'הקובץ נשלח לגוגל לצורך הפרסינג.'
+                       : 'הטקסט נשלח לגוגל לצורך הפרסינג.',
+      /* כאן הדילוג קוטע באמת: הבקשה נופלת, והתשובה — אם היא בדרך —
+         אינה מגיעה לשום מקום. */
+      onSkip: function () {
+        if (ctrl) ctrl.abort();
+        settle(null);
+      }
     });
+
+    window.Parse.fromGemini(input, function () { w.say('קורא…'); },
+      ctrl && ctrl.signal)
+      .then(function (proposal) {
+        if (w.skipped) return;
+        w.done();
+        settle(proposal);
+      }, function () {
+        /* `Parse.fromGemini` הופך כשל להצעה שנושאת הודעה, ולכן דחייה
+           כאן היא דילוג בלבד — והגיליון כבר נסגר עם הלחיצה. */
+        if (w.skipped) return;
+        w.done();
+        settle(null);
+      });
+
+    return out;
   };
 
   function runGemini(input) {
