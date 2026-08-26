@@ -79,6 +79,47 @@
     });
   };
 
+  /* ---------- עותק לשליחה — DEC-44 ----------
+     מה שנשמר במכשיר ומה שנשלח לפרסינג אינם חייבים להיות אותו קובץ.
+     הכספת שומרת 2400px כדי שהמסמך ייקרא על המסך; הפרסינג מקבל קטן
+     ממנו, מפני שגוגל מרצפת תמונה ל-768px לפני שהיא קוראת אותה —
+     הפיקסלים העודפים אינם קונים דיוק, הם קונים שניות של העלאה.
+
+     **המקור אינו נוגע בזה.** מה שמוקטן כאן חי עד סוף הבקשה. */
+  F.forParse = function (blob, mime) {
+    var type = mime || blob.type || '';
+    if (type === 'application/pdf' || typeof createImageBitmap !== 'function') {
+      return Promise.resolve({ blob: blob, mime: type });
+    }
+    if (String(type).indexOf('image/') !== 0) {
+      return Promise.resolve({ blob: blob, mime: type });
+    }
+
+    return createImageBitmap(blob).then(function (bitmap) {
+      var edge = Math.max(bitmap.width, bitmap.height);
+      var scale = Math.min(1, C.GEMINI_EDGE / edge);
+      var w = Math.max(1, Math.round(bitmap.width * scale));
+      var h = Math.max(1, Math.round(bitmap.height * scale));
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+      if (bitmap.close) bitmap.close();
+      return new Promise(function (res) {
+        canvas.toBlob(function (out) {
+          /* הקטנה שמייצרת קובץ שמן יותר אינה הקטנה. אותו כלל של
+             `normalize`, ומאותה סיבה: JPEG על תמונה סינתטית מנפח. */
+          res(out && out.size < blob.size
+            ? { blob: out, mime: 'image/jpeg' }
+            : { blob: blob, mime: type });
+        }, 'image/jpeg', C.GEMINI_QUALITY);
+      });
+    }).catch(function () {
+      /* קובץ שאי אפשר לפענח כאן עדיין עשוי להיקרא אצל גוגל. ההקטנה היא
+         אופטימיזציה, ואופטימיזציה שנכשלת אינה מפילה את הפעולה. */
+      return { blob: blob, mime: type };
+    });
+  };
+
   F.normalizeAll = function (fileList) {
     var files = Array.prototype.slice.call(fileList || []);
     var out = [], errors = [];

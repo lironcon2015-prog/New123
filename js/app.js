@@ -454,8 +454,11 @@
       }
     });
 
-    window.Parse.fromGemini(input, function () { w.say('קורא…'); },
-      ctrl && ctrl.signal)
+    /* המפל אינו סוד. מודל שלא ענה ומודל הבא בתור הם ההסבר להמתנה
+       שממשיכה, ובלעדיו הגיליון נראה תקוע. */
+    window.Parse.fromGemini(input, function (model, n) {
+      w.say(n > 1 ? 'המודל לא ענה — מנסה את הבא…' : 'קורא…');
+    }, ctrl && ctrl.signal)
       .then(function (proposal) {
         if (w.skipped) return;
         w.done();

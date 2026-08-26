@@ -14,6 +14,7 @@ page.on('pageerror', e => errs.push(e.message));
 
 // ---------- API מזויף ----------
 let hits = [];
+let sent = [];        /* גודל גוף הבקשה, לבדיקת ההקטנה */
 let plan = {};
 await ctx.route('https://generativelanguage.googleapis.com/**', async route => {
   const url = route.request().url();
@@ -30,10 +31,17 @@ await ctx.route('https://generativelanguage.googleapis.com/**', async route => {
     });
   }
   const model = (url.match(/models\/([^:]+):/) || [])[1];
+  if (model) sent.push((route.request().postData() || '').length);
   // '*' חל על כל מודל — הבדיקות לא צריכות לדעת מי ניצח במפל
   const rule = plan[model] || plan['*'];
   if (rule && rule.hang) return new Promise(() => {});   // לעולם לא עונה
-  if (rule && rule.status) return route.fulfill({ status: rule.status, body: '{}' });
+  if (rule && rule.status) return route.fulfill({ status: rule.status, body: rule.body || '{}' });
+  if (rule && rule.finish) {
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ candidates: [{ finishReason: rule.finish, content: { parts: [] } }] })
+    });
+  }
   return route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ candidates: [{ content: { parts: [{ text: (rule && rule.text) ||
@@ -141,12 +149,29 @@ t('גילוי מחזיר את הרשימה מדורגת', fresh[0].includes('-pr
 t('והוא שואל את ה-API מחדש ולא מהקאש',
   hits.some(u => u.includes('/models?')), String(hits.length));
 
+/* 400 אינו שם נרדף ל"מפתח פסול" — DEC-44. מודל שדחה את הפורמט מחזיר
+   אותו קוד, וקודם הוא עצר את המפל כולו והאשים את המפתח. */
 hits = [];
 plan = { '*': { status: 400 } };
-const bad = await page.evaluate(() => window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message));
+const soft400 = await page.evaluate(() => window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message));
 const used3 = hits.filter(u => u.includes(':generateContent'));
-t('מפתח פסול עוצר את המפל אחרי מודל אחד', used3.length === 1, String(used3.length));
+t('400 סתמי אינו מפיל את המפל', used3.length === 3, String(used3.length));
+t('וההודעה אומרת שהמודל דחה, לא שהמפתח פסול',
+  /המודל דחה/.test(soft400) && !/המפתח/.test(soft400), soft400);
+
+hits = [];
+plan = { '*': { status: 400, body: JSON.stringify({
+  error: { message: 'API key not valid. Please pass a valid API key.' } }) } };
+const bad = await page.evaluate(() => window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message));
+const usedKey = hits.filter(u => u.includes(':generateContent'));
+t('מפתח פסול עוצר את המפל אחרי מודל אחד', usedKey.length === 1, String(usedKey.length));
 t('וההודעה מפנה להגדרות', /המפתח נדחה/.test(bad), bad);
+
+hits = [];
+plan = { '*': { status: 401 } };
+const un = await page.evaluate(() => window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message));
+t('401 גם הוא המפתח, ועוצר מיד',
+  /המפתח נדחה/.test(un) && hits.filter(u => u.includes(':generateContent')).length === 1, un);
 
 console.log('\n— חילוץ JSON —');
 hits = [];
@@ -158,20 +183,92 @@ plan = { '*': { text: 'הנה התשובה: {"typeKey":"generic","fields":{}} ת
 const f2 = await page.evaluate(() => window.Gemini.parse({ text: 'x' }));
 t('פטפוט סביב ה-JSON מסונן', f2.typeKey === 'generic');
 
+/* "התשובה חזרה ריקה" הוא שלושה מצבים שנראים אותו דבר — DEC-44.
+   הראשון שבהם נפוץ דווקא כאן: מודל שמסרב לקרוא תעודת זהות. */
+const said = {};
+for (const fin of ['SAFETY', 'MAX_TOKENS', 'STOP']) {
+  plan = { '*': { finish: fin } };
+  said[fin] = await page.evaluate(() =>
+    window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message));
+}
+t('מודל שסירב לקרוא תעודה אומר את זה', /סירב/.test(said.SAFETY), said.SAFETY);
+t('תשובה שנקטעה באורך אומרת את זה', /נקטעה/.test(said.MAX_TOKENS), said.MAX_TOKENS);
+t('ורק מה שנשאר באמת הוא "ריקה"', /ריקה/.test(said.STOP), said.STOP);
+
 plan = { '*': { text: 'אין לי מושג' } };
 const f3 = await page.evaluate(() => window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message));
 t('תשובה שאינה JSON נכשלת בבירור', /JSON/.test(f3), f3);
 
-console.log('\n— טיימאאוט —');
+console.log('\n— תקרות זמן — DEC-44 —');
+/* **הבדיקה שמכסה את הבאג שדווח.** מודל ראשון שנתקע בלע קודם את התקציב
+   כולו, ה-abort הפיל את הבקשה, והמפל לא רץ מעולם: 45 שניות המתנה
+   וכישלון, בזמן ששני מודלים מהירים יותר עמדו בתור. */
+hits = [];
+plan = { 'gemini-x-pro': { hang: true } };
+await page.evaluate(() => { window.CONFIG.GEMINI_TIMEOUT_MS = 700; });
+const t1 = Date.now();
+const rescued = await page.evaluate(() => window.Gemini.parse({ text: 'פוליסה' })
+  .then(r => r, e => ({ err: e.message })));
+const usedSlow = hits.filter(u => u.includes(':generateContent'));
+t('מודל שנתקע אינו מפיל את המפל', rescued.typeKey === 'vehicle_insurance',
+  JSON.stringify(rescued).slice(0, 80));
+t('והבא בתור הוא שענה', usedSlow.length === 2 && usedSlow[1].includes('flash'),
+  usedSlow.join(' → '));
+t('בלי לחכות לתקרה של כל הפרסינג', Date.now() - t1 < 6000, String(Date.now() - t1));
+
 plan = { '*': { hang: true } };
+hits = [];
 const t0 = Date.now();
-const timedOut = await page.evaluate(async () => {
-  window.CONFIG.GEMINI_TIMEOUT_MS = 900;
-  return window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message);
-});
-t('בקשה תקועה נקטעת ולא נתלית', /זמן רב מדי/.test(timedOut), timedOut);
+const timedOut = await page.evaluate(() =>
+  window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message));
+t('בקשה תקועה נקטעת ולא נתלית', /לא ענה בזמן/.test(timedOut), timedOut);
+t('אחרי שנוסו שלושה מודלים', hits.filter(u => u.includes(':generateContent')).length === 3,
+  String(hits.filter(u => u.includes(':generateContent')).length));
 t('והקטיעה מהירה', Date.now() - t0 < 6000, String(Date.now() - t0));
-await page.evaluate(() => { window.CONFIG.GEMINI_TIMEOUT_MS = 45000; });
+
+/* התקרה העליונה קיימת כדי שנפילה תיגמר, ולא כדי שהיא תהיה זו שקוצבת
+   כל ניסיון. ההודעה שלה שונה, מפני שהמצב שונה. */
+const totalOut = await page.evaluate(async () => {
+  window.CONFIG.GEMINI_TIMEOUT_MS = 9000;
+  window.CONFIG.GEMINI_TOTAL_MS = 700;
+  const out = await window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message);
+  window.CONFIG.GEMINI_TOTAL_MS = 75000;
+  window.CONFIG.GEMINI_TIMEOUT_MS = 25000;
+  return out;
+});
+t('תקרת הפרסינג כולו אומרת משהו אחר', /לא הסתיים בזמן/.test(totalOut), totalOut);
+
+/* הרשימה שגוגל מחזירה היא עשרות שמות. בלי תקרה, מפתח שחרג ממכסה היה
+   מהלך על כולם לפני שנאמר למשתמש משהו. */
+hits = [];
+plan = { '*': { status: 429 } };
+await page.evaluate(() => window.Settings.set(window.CONFIG.K.geminiModels,
+  ['m-1', 'm-2', 'm-3', 'm-4', 'm-5']));
+const capped = await page.evaluate(() => window.Gemini.parse({ text: 'x' }).then(() => 'עבר', e => e.message));
+t('המפל נעצר אחרי שלושה ניסיונות',
+  hits.filter(u => u.includes(':generateContent')).length === 3, String(hits.length));
+t('וההודעה היא של הכישלון האחרון', /מכסת/.test(capped), capped);
+await page.evaluate(() => window.Settings.set(window.CONFIG.K.geminiModels, []));
+
+/* ---------- הגילוי יצא מהמסלול הקריטי — DEC-44 ----------
+   עד כאן כל פרסינג בטעינה חדשה שילם סיבוב רשת שלם רק כדי לשאול אילו
+   מודלים קיימים, לפני שבייט אחד של המסמך יצא. */
+console.log('\n— רשימת המודלים נשמרת בין טעינות —');
+plan = {};
+const seen = await page.evaluate(() => window.Settings.get(window.CONFIG.K.geminiModelsSeen));
+t('הגילוי נשמר להגדרות', (seen || []).length >= 3, JSON.stringify(seen));
+
+await page.reload();
+await page.waitForSelector('.scr-title');
+hits = [];
+await page.evaluate(() => window.Gemini.parse({ text: 'פוליסה' }));
+t('אחרי רענון, הפרסינג מתחיל בבקשה למודל ולא בשאלה',
+  hits[0] && hits[0].includes(':generateContent'), hits.join(' | '));
+t('ובזמן שהמשתמש מחכה לא נשאלה שום שאלה נוספת',
+  !hits.some(u => u.includes('/models?')), hits.join(' | '));
+await page.waitForTimeout(2200);
+t('והרשימה מתרעננת ברקע — אחרי, לא לפני',
+  hits.some(u => u.includes('/models?')), hits.join(' | '));
 
 console.log('\n— מהתשובה להצעה —');
 plan = {};
@@ -397,6 +494,48 @@ await page.click('.route:has-text("הזנה ידנית")');
 await page.waitForSelector('#d-type');
 t('בהזנה ידנית בלי קובץ אין כפתור פענוח',
   (await page.locator('.scr > .btn.ghost.wide').count()) === 0);
+
+/* ---------- מה שנשלח קטן ממה שנשמר — DEC-44 ----------
+   ההעלאה היא רוב ההמתנה במכשיר סלולרי, וזה מה שמקצר אותה. */
+console.log('\n— מה שנשלח בפועל —');
+plan = {};
+const heavy = await page.evaluate(async () => {
+  /* צילום סינתטי רועש בגודל אמיתי של מצלמה — JPEG לא מכווץ אותו לאפס */
+  const c = document.createElement('canvas');
+  c.width = 2400; c.height = 1800;
+  const x = c.getContext('2d');
+  const img = x.createImageData(c.width, c.height);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = (i * 37) % 251;
+    img.data[i] = v; img.data[i + 1] = (v * 3) % 253;
+    img.data[i + 2] = (v * 7) % 249; img.data[i + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+  const small = await window.Files.forParse(blob, 'image/jpeg');
+  const bmp = await createImageBitmap(small.blob);
+  window.__heavy = blob;
+  return { orig: blob.size, size: small.blob.size, w: bmp.width, h: bmp.height,
+           mime: small.mime };
+});
+t('הצלע יורדת לתקרה שבקונפיג', Math.max(heavy.w, heavy.h) === 1600,
+  heavy.w + 'x' + heavy.h);
+t('והמשקל יורד לפחות בחצי', heavy.size < heavy.orig / 2,
+  heavy.orig + ' → ' + heavy.size);
+
+sent = [];
+await page.evaluate(() => window.Gemini.parse({ blob: window.__heavy, mime: 'image/jpeg' }));
+const bodyLen = sent[sent.length - 1] || 0;
+t('הבקשה שיצאה נושאת את המוקטן ולא את המקור',
+  bodyLen < heavy.orig, bodyLen + ' מול ' + Math.round(heavy.orig * 4 / 3));
+
+const cap = await page.evaluate(async () => {
+  const big = new Blob([new Uint8Array(200)], { type: 'application/pdf' });
+  Object.defineProperty(big, 'size', { value: 40 * 1024 * 1024 });
+  return window.Gemini.parse({ blob: big, mime: 'application/pdf' })
+    .then(() => 'עבר', e => e.message);
+});
+t('קובץ גדול מדי נעצר לפני השליחה ולא אחרי דקה', /גדול מדי/.test(cap), cap);
 
 /* ---------- דלג — DEC-43 ----------
    הפרסינג הוא מסך שחוסם, ולפעמים המשתמש כבר יודע שאין בו טעם. */

@@ -7,7 +7,7 @@
 (function () {
   'use strict';
 
-  var C = window.CONFIG, S = window.Settings, DT = window.DOC_TYPES;
+  var C = window.CONFIG, S = window.Settings, DT = window.DOC_TYPES, U = window.U;
   var HOST = 'https://generativelanguage.googleapis.com/v1beta';
 
   /* ---------- מפל המודלים ----------
@@ -28,6 +28,7 @@
 
      המשתמש יכול לדרוס את הכל ברשימה משלו (`geminiModels`). */
   var _models = null;
+  var _refreshed = false;
 
   function key() { return String(S.get(C.K.geminiKey) || '').trim(); }
 
@@ -77,7 +78,8 @@
     if (_models && !force) return Promise.resolve(_models);
     return fetch(HOST + '/models?key=' + encodeURIComponent(key()), { signal: signal })
       .then(function (r) {
-        if (!r.ok) throw httpError(r.status);
+        if (!r.ok) return r.text().then(function (t) { throw httpError(r.status, t); },
+                                        function () { throw httpError(r.status, ''); });
         return r.json();
       })
       .then(function (j) {
@@ -89,6 +91,10 @@
 
         names.sort(G.cmpRank);
         _models = names;
+        /* נשמר כדי שהפרסינג הבא לא יתחיל בשאלה. הרשימה משתנה פעם
+           בכמה חודשים, והמחיר של רשימה מיושנת הוא 404 על שם שהתיישן —
+           שכבר מטופל, מפנה מקום לבא בתור. */
+        S.set(C.K.geminiModelsSeen, names);
         return names;
       });
   }
@@ -105,17 +111,61 @@
       .map(function (n) { return String(n || '').trim(); })
       .filter(Boolean);
     if (chosen.length) return Promise.resolve(chosen);
+    if (_models) return Promise.resolve(_models);
+
+    /* **הרשימה שנשמרה מרגע קודם מוציאה את הגילוי מהמסלול הקריטי.**
+       עד כאן כל פרסינג בטעינה חדשה שילם סיבוב רשת שלם רק כדי לשאול
+       אילו מודלים קיימים — לפני שבייט אחד של המסמך יצא. הרענון עדיין
+       קורה, ברקע, ומשפיע על הפרסינג הבא. */
+    var warm = (S.get(C.K.geminiModelsSeen) || [])
+      .map(function (n) { return String(n || '').trim(); })
+      .filter(Boolean);
+    if (warm.length) {
+      _models = warm;
+      /* הרענון קורה **אחרי** הבקשה של המסמך ולא לפניה: `setTimeout` דוחה
+         אותו אל מעבר לתור המיקרו-משימות, ולכן הוא אינו מתחרה איתה על
+         הרוחב פס דווקא ברגע שבו המשתמש מחכה. פעם אחת בטעינה מספיקה —
+         רשימת המודלים של גוגל משתנה פעם בכמה חודשים. */
+      if (!_refreshed) {
+        _refreshed = true;
+        setTimeout(function () {
+          discover(null, true).catch(function () { /* החמה מספיקה */ });
+        }, 1500);
+      }
+      return Promise.resolve(warm);
+    }
+
+    /* אין רשימה חמה, וזו הפעם הראשונה. גילוי שנכשל ברשת אינו מפיל
+       את הפרסינג אם יש ממה ליפול אחורה. */
     return discover(signal);
   };
 
-  function httpError(status) {
+  /* 400 אינו שם נרדף ל"מפתח פסול" — DEC-44. הוא גם מה שחוזר ממודל
+     שדחה את הפורמט, את הגודל או שדה שאינו מכיר. עד כאן כל 400 עצר את
+     המפל כולו והאשים את המפתח, כלומר שלח את המשתמש לבדוק מפתח תקין
+     במקום לתת למודל הבא לענות. מה שקטלני באמת הוא מה שגוגל אומרת
+     עליו במפורש שהוא המפתח, ורק הוא. */
+  function httpError(status, body) {
+    var reason = '';
+    try {
+      var j = typeof body === 'string' ? JSON.parse(body) : body;
+      reason = (j && j.error && j.error.message) || '';
+    } catch (e) { reason = String(body || ''); }
+
+    var badKey = status === 401 ||
+      (status === 400 && /api[\s_-]*key|API_KEY_INVALID/i.test(reason));
+
     var e = new Error(
-      status === 400 ? 'המפתח נדחה. בדוק אותו בהגדרות.' :
+      badKey         ? 'המפתח נדחה. בדוק אותו בהגדרות.' :
       status === 403 ? 'אין הרשאה למפתח הזה.' :
-      status === 429 ? 'חריגה ממכסת הבקשות.' :
+      status === 429 ? 'חריגה ממכסת הבקשות. נסה שוב בעוד דקה.' :
+      status === 404 ? 'המודל הזה לא קיים יותר.' :
+      status === 400 ? 'המודל דחה את הבקשה.' :
       status >= 500  ? 'שירות הפרסינג לא זמין כרגע.' :
       'הבקשה נכשלה (' + status + ')');
     e.status = status;
+    /* קטלני = אין טעם לנסות מודל אחר עם אותו מפתח */
+    e.fatal = badKey || status === 403;
     return e;
   }
 
@@ -135,13 +185,25 @@
       body: JSON.stringify(body),
       signal: signal
     }).then(function (r) {
-      if (!r.ok) throw httpError(r.status);
+      if (!r.ok) {
+        return r.text().then(function (t) { throw httpError(r.status, t); },
+                             function () { throw httpError(r.status, ''); });
+      }
       return r.json();
     }).then(function (j) {
       var cand = (j.candidates || [])[0];
       var text = cand && cand.content && (cand.content.parts || [])
         .map(function (p) { return p.text || ''; }).join('');
-      if (!text) throw new Error('התשובה חזרה ריקה');
+      if (!text) {
+        /* "התשובה חזרה ריקה" הוא שלושה מצבים שונים שנראים אותו דבר,
+           ואחד מהם נפוץ דווקא כאן: מודל שמסרב לקרוא תעודת זהות. מי
+           שרואה "ריקה" מנסה שוב ושוב; מי שרואה "סירב" יודע למלא ידנית. */
+        var fin = (cand && cand.finishReason) || '';
+        throw new Error(
+          fin === 'MAX_TOKENS' ? 'התשובה נקטעה באמצע' :
+          /SAFETY|PROHIBITED|BLOCK|RECITATION/i.test(fin) ? 'המודל סירב לקרוא את המסמך' :
+          'התשובה חזרה ריקה');
+      }
       return text;
     });
   }
@@ -160,45 +222,87 @@
     return send([{ role: 'user', parts: parts }], onStatus, signal);
   }
 
-  /* `signal` הוא הדילוג של המשתמש (DEC-43), ואינו הטיימאאוט. שניהם
-     מגיעים בסוף כ-AbortError מאותו `fetch`, ולכן מי שקטע נזכר כאן —
-     "דילגתי" ו"השירות לא ענה" הם שני דברים שונים לגמרי למי שמסתכל. */
+  /* **תקרת זמן לניסיון, ולא רק למפל — DEC-44.**
+
+     עד כאן היה מונה אחד בן 45 שניות על הכל: הגילוי, המודל הראשון, וכל
+     מי שאחריו. מודל שנתקע בלע את התקציב כולו, ה-abort הפיל את הבקשה
+     שרצה, והמפל **לא רץ מעולם** — המשתמש חיכה 45 שניות וקיבל "הבקשה
+     ארכה זמן רב מדי" בזמן ששני מודלים מהירים יותר עמדו בתור ולא נשאלו.
+     זה בדיוק הדפוס שדווח: "נכשל, או לוקח זמן ארוך".
+
+     היום: כל ניסיון מקבל את התקרה שלו, ניסיון איטי הוא כישלון של אותו
+     מודל בלבד, ומעליהם תקרה אחת לכל הפרסינג כדי שהנפילה תמיד תיגמר.
+
+     `signal` הוא הדילוג של המשתמש (DEC-43). שלושת המצבים — דילוג, תקרת
+     הכל, ומודל שלא ענה — הם AbortError מאותו `fetch`, ולכן מי שקטע נזכר
+     ומקבל הודעה משלו. */
   function send(contents, onStatus, signal) {
-    var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, C.GEMINI_TIMEOUT_MS);
+    var all = new AbortController();
+    var total = setTimeout(function () { all.abort(); }, C.GEMINI_TOTAL_MS);
     var canceled = false;
 
-    function onAbort() { canceled = true; ctrl.abort(); }
+    function onAbort() { canceled = true; all.abort(); }
     if (signal) {
       if (signal.aborted) onAbort();
       else if (signal.addEventListener) signal.addEventListener('abort', onAbort);
     }
     function stop() {
-      clearTimeout(timer);
+      clearTimeout(total);
       if (signal && signal.removeEventListener) signal.removeEventListener('abort', onAbort);
     }
     function why(e) {
-      if (!e || e.name !== 'AbortError') return e;
-      var out = new Error(canceled ? 'הפרסינג דולג' : 'הבקשה ארכה זמן רב מדי');
+      if (!e || (e.name !== 'AbortError' && !e.slow)) return e;
+      if (e.slow) return e;
+      var out = new Error(canceled ? 'הפרסינג דולג' : 'הפרסינג לא הסתיים בזמן');
       out.canceled = canceled;
       return out;
     }
 
-    return G.cascade(ctrl.signal).then(function (names) {
+    /* ניסיון אחד, עם השעון שלו. קטיעה שמקורה בשעון הזה היא כישלון של
+       המודל ולא של הפרסינג — ולכן היא חוזרת מסומנת, והמפל ממשיך. */
+    function attempt(model) {
+      var one = new AbortController();
+      var timer = setTimeout(function () { one.abort(); }, C.GEMINI_TIMEOUT_MS);
+      function relay() { one.abort(); }
+      all.signal.addEventListener('abort', relay);
+
+      function release() {
+        clearTimeout(timer);
+        all.signal.removeEventListener('abort', relay);
+      }
+
+      return callModel(model, contents, one.signal).then(function (text) {
+        release();
+        return text;
+      }, function (e) {
+        release();
+        if (e && e.name === 'AbortError' && !all.signal.aborted) {
+          var slow = new Error('המודל לא ענה בזמן');
+          slow.slow = true;
+          throw slow;
+        }
+        throw e;
+      });
+    }
+
+    return G.cascade(all.signal).then(function (names) {
       if (!names.length) throw new Error('לא נמצאו מודלים זמינים למפתח הזה');
-      var order = names.slice();
+      /* הרשימה שגוגל מחזירה היא עשרות שמות. בלי תקרה, מפתח שחרג ממכסה
+         היה מהלך על כולם — עשרות סיבובים לפני שנאמר משהו למשתמש. */
+      var order = names.slice(0, Math.max(1, C.GEMINI_TRIES));
 
       var i = 0;
       function next(err) {
+        if (all.signal.aborted) throw why({ name: 'AbortError' });
         if (i >= order.length) throw err || new Error('כל המודלים נכשלו');
         var model = order[i++];
-        if (onStatus) onStatus(model);
-        return callModel(model, contents, ctrl.signal).then(function (text) {
+        if (onStatus) onStatus(model, i);
+        return attempt(model).then(function (text) {
           S.set(C.K.geminiLastModel, model);
           return text;
         }, function (e) {
-          if (e.name === 'AbortError') throw why(e);
-          if (e.status === 400 || e.status === 403) throw e;
+          if (e && e.name === 'AbortError') throw why(e);
+          if (e && e.fatal) throw e;
           return next(e);
         });
       }
@@ -296,9 +400,20 @@
 
     var head = { text: G.prompt() };
 
+    /* מוקטן לפני השליחה — DEC-44. ההעלאה היא רוב ההמתנה במכשיר סלולרי,
+       והפיקסלים שמעבר לזה נזרקים אצל גוגל ממילא. */
     var partsP = input.blob
-      ? blobToB64(input.blob).then(function (b64) {
-          return [head, { inline_data: { mime_type: input.mime || 'image/jpeg', data: b64 } }];
+      ? window.Files.forParse(input.blob, input.mime).then(function (small) {
+          if (small.blob.size > C.GEMINI_MAX_BYTES) {
+            /* נעצר כאן ולא אחרי דקה של העלאה שתיפול בצד השני */
+            throw new Error('הקובץ גדול מדי לפרסינג (' + U.bytes(small.blob.size) +
+              '). צלם אותו במקום לצרף את הקובץ המקורי.');
+          }
+          return blobToB64(small.blob).then(function (b64) {
+            return [head, { inline_data: {
+              mime_type: small.mime || input.mime || 'image/jpeg', data: b64
+            } }];
+          });
         })
       : Promise.resolve([head, { text: '\nהמסמך:\n' + input.text }]);
 

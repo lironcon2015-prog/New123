@@ -17,6 +17,7 @@
   DEFAULTS[C.K.geminiConsentChat] = false;
   DEFAULTS[C.K.geminiLastModel] = '';
   DEFAULTS[C.K.geminiModels] = [];
+  DEFAULTS[C.K.geminiModelsSeen] = [];
   DEFAULTS[C.K.backupMode] = 'bridge';
   DEFAULTS[C.K.bridgeUrl] = '';
   DEFAULTS[C.K.bridgeToken] = '';

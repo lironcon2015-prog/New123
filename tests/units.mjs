@@ -91,6 +91,50 @@ const broken = await page.evaluate(async () => {
 });
 t('קובץ שבור נדחה עם הודעה, לא נשמר בשקט', /HEIC/.test(broken), broken);
 
+/* ---------- עותק לשליחה — DEC-44 ----------
+   מה שנשמר במכשיר ומה שנשלח לפרסינג אינם אותו קובץ, ולכן שני הכיוונים
+   נבדקים: שההקטנה קורית, ושהיא אינה נוגעת במקור. */
+console.log('\n— עותק לשליחה —');
+const parseCopy = await page.evaluate(async () => {
+  const noisy = (w, h) => {
+    const c = new OffscreenCanvas(w, h), x = c.getContext('2d');
+    const img = x.createImageData(w, h);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = (i * 37) % 251;
+      img.data[i] = v; img.data[i+1] = (v * 3) % 253;
+      img.data[i+2] = (v * 7) % 249; img.data[i+3] = 255;
+    }
+    x.putImageData(img, 0, 0);
+    return c.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+  };
+
+  const big = await noisy(2400, 1800);
+  const bigOut = await window.Files.forParse(big, 'image/jpeg');
+  const bmp = await createImageBitmap(bigOut.blob);
+
+  const small = await noisy(600, 400);
+  const smallOut = await window.Files.forParse(small, 'image/jpeg');
+
+  const pdf = new Blob([new Uint8Array([37, 80, 68, 70])], { type: 'application/pdf' });
+  const pdfOut = await window.Files.forParse(pdf, 'application/pdf');
+
+  return {
+    origSize: big.size, sentSize: bigOut.blob.size, w: bmp.width, h: bmp.height,
+    origAfter: big.size, sameBlob: bigOut.blob === big,
+    smallOrig: small.size, smallSent: smallOut.blob.size,
+    pdfSame: pdfOut.blob === pdf && pdfOut.mime === 'application/pdf'
+  };
+});
+t('תמונה גדולה מוקטנת לצלע שבקונפיג',
+  Math.max(parseCopy.w, parseCopy.h) === 1600, parseCopy.w + 'x' + parseCopy.h);
+t('והמשקל יורד', parseCopy.sentSize < parseCopy.origSize / 2,
+  parseCopy.origSize + ' → ' + parseCopy.sentSize);
+t('המקור עצמו אינו נוגע', !parseCopy.sameBlob && parseCopy.origAfter === parseCopy.origSize);
+t('הקטנה לעולם אינה מייצרת קובץ שמן יותר',
+  parseCopy.smallSent <= parseCopy.smallOrig,
+  parseCopy.smallOrig + ' → ' + parseCopy.smallSent);
+t('PDF נשלח כמות שהוא', parseCopy.pdfSame === true);
+
 console.log('\n— ולידטורים —');
 const v = await page.evaluate(() => {
   const K = window.KINDS;
